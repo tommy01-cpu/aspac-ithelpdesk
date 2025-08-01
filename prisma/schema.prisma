@@ -1,0 +1,714 @@
+// Clean Prisma Schema - Core Business Models
+// This contains only the actively used models for the application
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum Priority {
+  Low
+  Medium
+  High
+  Top
+}
+
+enum ApprovalStatus {
+  pending_approval
+  for_clarification
+  rejected
+  approved
+}
+
+enum RequestStatus {
+  for_approval
+  cancelled
+  open
+  on_hold
+  resolved
+  closed
+}
+
+// Core authentication and user management models
+model roles {
+  id         Int          @id @default(autoincrement())
+  name       String       @unique @db.VarChar(50)
+  user_roles user_roles[]
+}
+
+model user_roles {
+  user_id Int
+  role_id Int
+  roles   roles @relation(fields: [role_id], references: [id], onUpdate: NoAction)
+  users   users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, role_id])
+}
+
+// Users model
+model users {
+  id                    Int     @id @default(autoincrement())
+  emp_fname             String  @map("first_name") @db.VarChar(100)
+  emp_mid               String? @map("middle_name") @db.VarChar(100)
+  emp_lname             String  @map("last_name") @db.VarChar(100)
+  emp_suffix            String? @map("suffix") @db.VarChar(20)
+  emp_code              String? @unique @map("employee_id") @db.VarChar(50)
+  post_des              String? @map("job_title") @db.VarChar(100)
+  emp_email             String? @map("corporate_email") @db.VarChar(150)
+  emp_cell              String? @map("corporate_mobile_no") @db.VarChar(20)
+  password              String
+  emp_status            String? @map("status") @default("active") @db.VarChar(20)
+  created_at            DateTime? @default(now()) @db.Timestamp(6)
+  profile_image         String?  @db.VarChar(255)
+  
+  // New fields
+  description           String?
+  landline_no           String? @db.VarChar(20)
+  local_no              String? @db.VarChar(20)
+  requester_view_permission String? @default("own_requests") @db.VarChar(50)
+  
+  // Basic fields
+  department            String?
+  reportingToId         Int?
+  departmentHeadId      Int?
+  isServiceApprover     Boolean @default(false)
+  isTechnician          Boolean @default(false)
+  
+  // Relationships
+  user_roles            user_roles[]
+  requests              Request[]     // Relation to requests
+  attachments           Attachment[]  // Relation to user attachments
+  technician            Technician?   // One-to-one relationship with technician
+  departmentsManaged    Department[]  @relation("DepartmentHeadUser") // Departments where user is head
+  
+  // Approval and History relationships
+  requestApprovals      RequestApproval[] @relation("RequestApprovals")
+  requestHistory        RequestHistory[]  @relation("RequestHistory")
+  approvalConversations ApprovalConversation[] @relation("ApprovalConversations")
+  
+  // Self-referential relationships
+  reportingTo           users?  @relation("UserReporting", fields: [reportingToId], references: [id])
+  directReports         users[] @relation("UserReporting")
+  departmentHead        users?  @relation("DepartmentHead", fields: [departmentHeadId], references: [id])
+  departmentMembers     users[] @relation("DepartmentHead")
+  
+  // SLA Management relationships
+  slaServicesCreated    SLAService[] @relation("SLAServiceCreatedBy")
+  slaServicesUpdated    SLAService[] @relation("SLAServiceUpdatedBy")
+  slaIncidentsCreated   SLAIncident[] @relation("SLAIncidentCreatedBy")
+  slaIncidentsUpdated   SLAIncident[] @relation("SLAIncidentUpdatedBy")
+  
+  // Template relationships
+  templatesCreated      Template[]    @relation("TemplateCreatedBy")
+  templatesUpdated      Template[]    @relation("TemplateUpdatedBy")
+  
+  // Catalog Management relationships
+  serviceCategoriesCreated    ServiceCategory[] @relation("ServiceCategoryCreatedBy")
+  serviceCategoriesUpdated    ServiceCategory[] @relation("ServiceCategoryUpdatedBy")
+  serviceCatalogCreated       ServiceCatalogItem[] @relation("ServiceCatalogCreatedBy")
+  serviceCatalogUpdated       ServiceCatalogItem[] @relation("ServiceCatalogUpdatedBy")
+  incidentCatalogCreated      IncidentCatalogItem[] @relation("IncidentCatalogCreatedBy")
+  incidentCatalogUpdated      IncidentCatalogItem[] @relation("IncidentCatalogUpdatedBy")
+}
+
+// Department Management
+model Department {
+  id                    Int       @id @default(autoincrement())
+  name                  String    @unique
+  description           String?
+  departmentHeadId      Int?      // Reference to users table
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Relationships
+  departmentHead        users?    @relation("DepartmentHeadUser", fields: [departmentHeadId], references: [id])
+
+  @@map("departments")
+}
+
+// Holiday Management
+model Holiday {
+  id                    Int       @id @default(autoincrement())
+  name                  String
+  date                  DateTime  @db.Date
+  description           String?
+  isRecurring           Boolean   @default(false)
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("holidays")
+}
+
+// Skills for Technicians
+model Skill {
+  id                    Int       @id @default(autoincrement())
+  name                  String    @unique
+  category              String?
+  description           String?
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Relationships
+  technicianSkills      TechnicianSkill[]
+
+  @@map("skills")
+}
+
+// Support Groups
+model SupportGroup {
+  id                    Int       @id @default(autoincrement())
+  name                  String    @unique
+  description           String?
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Relationships
+  technicianMemberships TechnicianSupportGroup[]
+  templateAssignments   TemplateSupportGroup[]
+
+  @@map("support_groups")
+}
+
+// Technician Management
+model Technician {
+  id                    Int       @id @default(autoincrement())
+  userId                Int       @unique // Reference to users table
+  displayName           String    @db.VarChar(200)
+  
+  // Contact Information (technician-specific)
+  secondaryEmail        String?   @db.VarChar(150)
+  phone                 String?   @db.VarChar(50)
+  mobile                String?   @db.VarChar(50)
+  smsMailId             String?   @db.VarChar(150)
+  
+  // System Settings
+  vipUser               Boolean   @default(false)
+  enableTelephony       Boolean   @default(false)
+  sipUser               String?   @db.VarChar(100)
+  extensions            String?   @db.VarChar(100)
+  
+  // Financial
+  costPerHour           Decimal   @default(0.00) @db.Decimal(10, 2)
+  allowedToViewCostPerHour Boolean @default(false)
+  
+  // Permissions
+  serviceRequestApprover Boolean  @default(false)
+  purchaseApprover      Boolean   @default(false)
+  isAdmin               Boolean   @default(false)
+  
+  // Login Settings
+  enableLogin           Boolean   @default(false)
+  loginName             String?   @unique @db.VarChar(100)
+  
+  // Additional Information
+  description           String?
+  reportingToId         Int?      // Reference to another technician
+  status                String    @default("active") @db.VarChar(20)
+  isActive              Boolean   @default(true)
+  
+  // Timestamps
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  // Relationships
+  user                  users     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reportingTo           Technician? @relation("TechnicianReporting", fields: [reportingToId], references: [id])
+  directReports         Technician[] @relation("TechnicianReporting")
+  supportGroupMemberships TechnicianSupportGroup[]
+  technicianSkills      TechnicianSkill[]
+  
+  @@map("technicians")
+}
+
+// Technician-Support Group relationship
+model TechnicianSupportGroup {
+  id                    Int       @id @default(autoincrement())
+  technicianId          Int
+  supportGroupId        Int
+  isLead                Boolean   @default(false)
+  assignedDate          DateTime  @default(now())
+  
+  // Relationships
+  technician            Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  supportGroup          SupportGroup @relation(fields: [supportGroupId], references: [id], onDelete: Cascade)
+  
+  @@unique([technicianId, supportGroupId])
+  @@map("technician_support_groups")
+}
+
+// Technician-Skill relationship
+model TechnicianSkill {
+  id                    Int       @id @default(autoincrement())
+  technicianId          Int
+  skillId               Int
+  proficiencyLevel      String    @default("beginner") // beginner, intermediate, advanced, expert
+  yearsOfExperience     Int?
+  certifications        String?   // JSON array of certifications
+  notes                 String?
+  assignedDate          DateTime  @default(now())
+  
+  // Relationships
+  technician            Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  skill                 Skill     @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  
+  @@unique([technicianId, skillId])
+  @@map("technician_skills")
+}
+
+// Operational Hours Management for SLA Calculations
+model OperationalHours {
+  id                    Int       @id @default(autoincrement())
+  organizationId        Int?      // For multi-tenant support
+  workingTimeType       String    @default("standard") // "round-clock" or "standard"
+  
+  // Standard working hours (used when workingTimeType is "standard")
+  standardStartTime     String?   @db.VarChar(5) // "08:00"
+  standardEndTime       String?   @db.VarChar(5) // "18:00"
+  standardBreakStart    String?   @db.VarChar(5) // "12:00"
+  standardBreakEnd      String?   @db.VarChar(5) // "13:00"
+  
+  // Metadata
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  // Relationships
+  workingDays           WorkingDay[]
+  exclusionRules        ExclusionRule[]
+  
+  @@map("operational_hours")
+}
+
+// Working Days Configuration
+model WorkingDay {
+  id                    Int       @id @default(autoincrement())
+  operationalHoursId    Int
+  dayOfWeek             Int       // 0=Sunday, 1=Monday, ..., 6=Saturday
+  isEnabled             Boolean   @default(true)
+  scheduleType          String    @default("standard") // "standard", "custom", "not-set"
+  
+  // Custom working hours (only used when scheduleType is "custom")
+  customStartTime       String?   @db.VarChar(5)
+  customEndTime         String?   @db.VarChar(5)
+  
+  // Relationships
+  operationalHours      OperationalHours @relation(fields: [operationalHoursId], references: [id], onDelete: Cascade)
+  breakHours            BreakHours[]
+  
+  @@unique([operationalHoursId, dayOfWeek])
+  @@map("working_days")
+}
+
+// Break Hours for Working Days
+model BreakHours {
+  id                    Int       @id @default(autoincrement())
+  workingDayId          Int
+  startTime             String    @db.VarChar(5) // "12:00"
+  endTime               String    @db.VarChar(5) // "13:00"
+  
+  // Relationships
+  workingDay            WorkingDay @relation(fields: [workingDayId], references: [id], onDelete: Cascade)
+  
+  @@map("break_hours")
+}
+
+// Exclusion Rules for Special Cases
+model ExclusionRule {
+  id                    Int       @id @default(autoincrement())
+  operationalHoursId    Int
+  excludeOn             String    @db.VarChar(50) // "Specify weeks", "First week", etc.
+  weekSelection         String?   @db.VarChar(50) // Week selection criteria
+  monthSelection        String    @db.VarChar(50) // Month selection criteria
+  
+  // Relationships
+  operationalHours      OperationalHours @relation(fields: [operationalHoursId], references: [id], onDelete: Cascade)
+  
+  @@map("exclusion_rules")
+}
+
+// SLA Management Models
+model SLAService {
+  id                    Int       @id @default(autoincrement())
+  name                  String    @db.VarChar(255)
+  description           String?   @db.Text
+  priority              String    @db.VarChar(20) // 'Low', 'Medium', 'High', 'Top'
+  category              String?   @db.VarChar(100)
+  responseTime          Int       // in hours
+  resolutionTime        Int       // in hours
+  operationalHours      Boolean   @default(true)
+  autoEscalate          Boolean   @default(false)
+  escalationTime        Int       // in hours
+  status                String    @default("active") @db.VarChar(20) // 'active', 'inactive'
+  createdAt             DateTime  @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime  @updatedAt @db.Timestamp(6)
+  createdBy             Int?
+  updatedBy             Int?
+  
+  // Business Rules
+  matchCriteria         String    @default("ALL") @db.VarChar(20) // 'ALL', 'ANY'
+  excludeHolidays       Boolean   @default(true)
+  excludeWeekends       Boolean   @default(false)
+  
+  // Relationships
+  creator               users?    @relation("SLAServiceCreatedBy", fields: [createdBy], references: [id])
+  updater               users?    @relation("SLAServiceUpdatedBy", fields: [updatedBy], references: [id])
+  escalationLevels      SLAServiceEscalation[]
+  templates             Template[]
+  
+  @@map("sla_service")
+}
+
+model SLAServiceEscalation {
+  id                    Int       @id @default(autoincrement())
+  slaServiceId          Int
+  level                 Int
+  timeToEscalate        Int       // in hours
+  escalationGroup       String    @db.VarChar(255)
+  enabled               Boolean   @default(true)
+  timing                String?   @db.VarChar(100) // "2 hours before due"
+  escalateType          String?   @db.VarChar(20) // "before", "after", "at"
+  escalateTo            String?   @db.Text // JSON array of technician IDs
+  
+  // Relationships
+  slaService            SLAService @relation(fields: [slaServiceId], references: [id], onDelete: Cascade)
+  
+  @@unique([slaServiceId, level])
+  @@map("sla_service_escalation")
+}
+
+model SLAIncident {
+  id                    Int       @id @default(autoincrement())
+  name                  String    @db.VarChar(255)
+  description           String?   @db.Text
+  priority              Priority  @default(Medium) // Using the Priority enum for consistency
+  
+  // Resolution Time Components (stored as individual fields to match form structure)
+  resolutionDays        Int       @default(0)
+  resolutionHours       Int       @default(8)
+  resolutionMinutes     Int       @default(0)
+  
+  // Response Time Components (for future use)
+  responseDays          Int       @default(0)
+  responseHours         Int       @default(2)
+  responseMinutes       Int       @default(0)
+  
+  // Operational Hours Settings
+  operationalHoursEnabled    Boolean   @default(false)
+  excludeHolidays           Boolean   @default(false)
+  excludeWeekends           Boolean   @default(false)
+  
+  // Response Escalation Settings (for future use)
+  responseEscalationEnabled Boolean   @default(false)
+  responseEscalationPriority Priority? // escalation priority
+  
+  // Resolution Escalation Settings
+  resolutionEscalationEnabled    Boolean   @default(false)
+  escalateTo                     Json?     // Store array of technician IDs as JSON
+  escalateType                   String?   @db.VarChar(20)  // before, after
+  escalateDays                   Int       @default(0)
+  escalateHours                  Int       @default(0)
+  escalateMinutes                Int       @default(0)
+  
+  // Level 2 Escalation
+  level2Enabled                  Boolean   @default(false)
+  level2EscalateTo               Json?     // Store array of technician IDs as JSON
+  level2Days                     Int       @default(0)
+  level2Hours                    Int       @default(0)
+  level2Minutes                  Int       @default(0)
+  
+  // Level 3 Escalation
+  level3Enabled                  Boolean   @default(false)
+  level3EscalateTo               Json?     // Store array of technician IDs as JSON
+  level3Days                     Int       @default(0)
+  level3Hours                    Int       @default(0)
+  level3Minutes                  Int       @default(0)
+  
+  // Level 4 Escalation
+  level4Enabled                  Boolean   @default(false)
+  level4EscalateTo               Json?     // Store array of technician IDs as JSON
+  level4Days                     Int       @default(0)
+  level4Hours                    Int       @default(0)
+  level4Minutes                  Int       @default(0)
+  
+  // System fields
+  status                String    @default("active") @db.VarChar(20) // 'active', 'inactive'
+  createdAt             DateTime  @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime  @updatedAt @db.Timestamp(6)
+  createdBy             Int?
+  updatedBy             Int?
+  
+  // Business Rules
+  matchCriteria         String    @default("all") @db.VarChar(20) // 'all', 'any'
+  
+  // Relationships
+  creator               users?        @relation("SLAIncidentCreatedBy", fields: [createdBy], references: [id])
+  updater               users?        @relation("SLAIncidentUpdatedBy", fields: [updatedBy], references: [id])
+  priorityMappings      PrioritySLA[]
+  
+  @@map("sla_incident")
+}
+
+// Junction table for Template and Support Groups (many-to-many)
+model TemplateSupportGroup {
+  id                    Int           @id @default(autoincrement())
+  templateId            Int
+  supportGroupId        Int
+  isActive              Boolean       @default(true)
+  loadBalanceType       String        @default("round_robin") @db.VarChar(20) // 'round_robin', 'least_load', 'random'
+  priority              Int           @default(1) // Priority order for assignment
+  createdAt             DateTime      @default(now()) @db.Timestamp(6)
+  
+  // Relationships
+  template              Template      @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  supportGroup          SupportGroup  @relation(fields: [supportGroupId], references: [id], onDelete: Cascade)
+  
+  @@unique([templateId, supportGroupId])
+  @@map("template_support_group")
+}
+
+// Template model for both incident and service templates
+model Template {
+  id                    Int           @id @default(autoincrement())
+  name                  String        @db.VarChar(255)
+  description           String?       @db.Text
+  type                  String        @db.VarChar(20) // 'incident', 'service'
+  categoryId            Int?          // Associated category (for templates)
+  icon                  String?       @db.Text // Template icon (base64 image or URL)
+  fields                Json          // Template field definitions
+  approvalWorkflow      Json?         // Approval workflow configuration
+  slaServiceId          Int?          // Associated SLA (for service templates only)
+  isActive              Boolean       @default(true)
+  createdAt             DateTime      @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime      @updatedAt @db.Timestamp(6)
+  createdBy             Int?
+  updatedBy             Int?
+  
+  // Relationships
+  category              ServiceCategory? @relation("TemplateCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  slaService            SLAService?   @relation(fields: [slaServiceId], references: [id], onDelete: SetNull)
+  creator               users?        @relation("TemplateCreatedBy", fields: [createdBy], references: [id])
+  updater               users?        @relation("TemplateUpdatedBy", fields: [updatedBy], references: [id])
+  supportGroups         TemplateSupportGroup[]
+  serviceCatalogItems   ServiceCatalogItem[] @relation("ServiceTemplate")
+  incidentCatalogItems  IncidentCatalogItem[] @relation("IncidentTemplate")
+  
+  @@map("template")
+}
+
+// Priority-based SLA mapping for incident templates
+model PrioritySLA {
+  id                    Int           @id @default(autoincrement())
+  priority              String        @db.VarChar(20) // 'Low', 'Medium', 'High', 'Top'
+  slaIncidentId         Int           // Links to SLAIncident for incident templates
+  isActive              Boolean       @default(true)
+  createdAt             DateTime      @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime      @updatedAt @db.Timestamp(6)
+  
+  // Relationships
+  slaIncident           SLAIncident   @relation(fields: [slaIncidentId], references: [id], onDelete: Cascade)
+  
+  @@unique([priority])
+  @@map("priority_sla")
+}
+
+// Service Categories
+model ServiceCategory {
+  id                    Int           @id @default(autoincrement())
+  name                  String        @db.VarChar(100)
+  description           String?       @db.Text
+  icon                  String?       @db.VarChar(255)
+  isActive              Boolean       @default(true)
+  serviceCount          Int           @default(0)
+  createdAt             DateTime      @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime      @updatedAt @db.Timestamp(6)
+  createdBy             Int?
+  updatedBy             Int?
+  
+  // Relationships
+  creator               users?        @relation("ServiceCategoryCreatedBy", fields: [createdBy], references: [id])
+  updater               users?        @relation("ServiceCategoryUpdatedBy", fields: [updatedBy], references: [id])
+  templates             Template[]    @relation("TemplateCategory")
+  serviceCatalogItems   ServiceCatalogItem[]
+  incidentCatalogItems  IncidentCatalogItem[]
+  
+  @@map("service_category")
+}
+
+// Service Catalog Items
+model ServiceCatalogItem {
+  id                    Int           @id @default(autoincrement())
+  name                  String        @db.VarChar(255)
+  description           String?       @db.Text
+  categoryId            Int
+  templateId            Int?          // Links to Template
+  isActive              Boolean       @default(true)
+  requestCount          Int           @default(0)
+  createdAt             DateTime      @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime      @updatedAt @db.Timestamp(6)
+  createdBy             Int?
+  updatedBy             Int?
+  
+  // Relationships
+  category              ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  template              Template?     @relation("ServiceTemplate", fields: [templateId], references: [id], onDelete: SetNull)
+  creator               users?        @relation("ServiceCatalogCreatedBy", fields: [createdBy], references: [id])
+  updater               users?        @relation("ServiceCatalogUpdatedBy", fields: [updatedBy], references: [id])
+  
+  @@map("service_catalog_item")
+}
+
+// Request model for service and incident requests
+model Request {
+  id           Int      @id @default(autoincrement())
+  templateId   String
+  templateName String
+  type         String   @db.VarChar(50) // 'service' or 'incident'
+  status       RequestStatus @default(for_approval) // Using enum for request status
+  priority     String   @default("medium") @db.VarChar(50)
+  userId       Int
+  formData     Json
+  attachments  String[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         users    @relation(fields: [userId], references: [id])
+  attachmentFiles Attachment[] // Relation to attachment files
+  
+  // New relations for approvals and history
+  approvals    RequestApproval[]
+  history      RequestHistory[]
+
+  @@index([userId])
+  @@index([templateId])
+  @@index([status])
+
+  @@map("requests")
+}
+
+// Request Approval model - tracks approval workflow
+model RequestApproval {
+  id           Int      @id @default(autoincrement())
+  requestId    Int
+  level        Int      // Approval level (1, 2, 3, etc.)
+  name         String   @db.VarChar(100) // Level name like "Level One", "Level Two"
+  status       ApprovalStatus @default(pending_approval) // Using enum for approval status
+  approverId   Int?     // ID of the user who should approve
+  approverName String?  @db.VarChar(200) // Name of approver (fallback for external/system approvers)
+  approverEmail String? @db.VarChar(200) // Email of approver
+  sentOn       DateTime? // When approval request was sent
+  actedOn      DateTime? // When approval was acted upon
+  comments     String?  @db.Text // Approval comments
+  isAutoApproval Boolean @default(false) // If this was auto-approved by system
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Relationships
+  request      Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  approver     users?   @relation("RequestApprovals", fields: [approverId], references: [id])
+  conversations ApprovalConversation[] // Conversations for this approval
+  
+  @@index([requestId])
+  @@index([approverId])
+  @@index([status])
+  @@map("request_approvals")
+}
+
+// Approval Conversation model - tracks conversations between users and approvers
+model ApprovalConversation {
+  id           String   @id @default(cuid())
+  approvalId   Int      // ID of the approval this conversation belongs to
+  authorId     Int      // ID of the user who wrote the message
+  type         String   @default("user") @db.VarChar(50) // user, technician, system
+  message      String   @db.Text // The conversation message
+  isRead       Boolean  @default(false) // Track if message has been read
+  readBy       Json?    // Array of user IDs who have read this message
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Relationships
+  approval     RequestApproval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+  author       users           @relation("ApprovalConversations", fields: [authorId], references: [id])
+  
+  @@index([approvalId])
+  @@index([authorId])
+  @@index([createdAt])
+  @@map("approval_conversations")
+}
+
+// Request History model - tracks all actions on a request
+model RequestHistory {
+  id           Int      @id @default(autoincrement())
+  requestId    Int
+  action       String   @db.VarChar(200) // Action taken
+  details      String?  @db.Text // Detailed description
+  actorId      Int?     // ID of user who performed action (null for system actions)
+  actorName    String   @db.VarChar(200) // Name of actor (fallback for system actions)
+  actorType    String   @default("user") @db.VarChar(50) // user, system, technician
+  metadata     Json?    // Additional metadata about the action
+  timestamp    DateTime @default(now())
+  
+  // Relationships
+  request      Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  actor        users?   @relation("RequestHistory", fields: [actorId], references: [id])
+  
+  @@index([requestId])
+  @@index([actorId])
+  @@index([timestamp])
+  @@map("request_history")
+}
+
+// Attachment model - file content stored directly in separate database
+model Attachment {
+  id           String   @id @default(cuid())
+  fileName     String   // Generated unique filename
+  originalName String   // Original filename from user
+  mimeType     String   // MIME type of the file
+  size         Int      // File size in bytes
+  fileContent  Bytes    // Binary file content stored in database
+  requestId    Int?     // Optional - for request attachments
+  userId       Int      // User who uploaded the file
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Relationships
+  request      Request? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user         users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([userId])
+  @@index([fileName])
+
+  @@map("attachments")
+}
+
+// Incident Catalog Items
+model IncidentCatalogItem {
+  id                    Int           @id @default(autoincrement())
+  name                  String        @db.VarChar(255)
+  description           String?       @db.Text
+  categoryId            Int
+  templateId            Int?          // Links to Template
+  priority              Priority      @default(Medium)
+  isActive              Boolean       @default(true)
+  usageCount            Int           @default(0)
+  createdAt             DateTime      @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime      @updatedAt @db.Timestamp(6)
+  createdBy             Int?
+  updatedBy             Int?
+  
+  // Relationships
+  category              ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  template              Template?     @relation("IncidentTemplate", fields: [templateId], references: [id], onDelete: SetNull)
+  creator               users?        @relation("IncidentCatalogCreatedBy", fields: [createdBy], references: [id])
+  updater               users?        @relation("IncidentCatalogUpdatedBy", fields: [updatedBy], references: [id])
+  
+  @@map("incident_catalog_item")
+}

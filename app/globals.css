@@ -1,0 +1,189 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+  }
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Status Badge Styles - Prevent hover effects */
+.status-badge {
+  pointer-events: none !important;
+  cursor: default !important;
+}
+
+.status-badge:hover {
+  transform: none !important;
+  box-shadow: none !important;
+  background-color: inherit !important;
+  border-color: inherit !important;
+  color: inherit !important;
+}
+
+/* Allow text selection within status badges */
+.status-badge * {
+  pointer-events: auto;
+  cursor: text;
+}
+
+/* ReactQuill Custom Font Sizes - Alternative approach */
+.ql-editor .ql-size-small {
+  font-size: 0.75rem;
+}
+
+.ql-editor .ql-size-large {
+  font-size: 1.25rem;
+}
+
+.ql-editor .ql-size-huge {
+  font-size: 2rem;
+}
+
+/* Custom font sizes for ReactQuill */
+.ql-editor span[style*="font-size: 10px"] {
+  font-size: 10px !important;
+}
+
+.ql-editor span[style*="font-size: 12px"] {
+  font-size: 12px !important;
+}
+
+.ql-editor span[style*="font-size: 14px"] {
+  font-size: 14px !important;
+}
+
+.ql-editor span[style*="font-size: 16px"] {
+  font-size: 16px !important;
+}
+
+.ql-editor span[style*="font-size: 18px"] {
+  font-size: 18px !important;
+}
+
+.ql-editor span[style*="font-size: 20px"] {
+  font-size: 20px !important;
+}
+
+.ql-editor span[style*="font-size: 22px"] {
+  font-size: 22px !important;
+}
+
+.ql-editor span[style*="font-size: 24px"] {
+  font-size: 24px !important;
+}
+
+.ql-editor span[style*="font-size: 28px"] {
+  font-size: 28px !important;
+}
+
+.ql-editor span[style*="font-size: 32px"] {
+  font-size: 32px !important;
+}
+
+.ql-editor span[style*="font-size: 36px"] {
+  font-size: 36px !important;
+}
+
+.ql-editor span[style*="font-size: 48px"] {
+  font-size: 48px !important;
+}
+
+.ql-editor span[style*="font-size: 72px"] {
+  font-size: 72px !important;
+}
+
+/* ReactQuill Toolbar Size Dropdown */
+.ql-snow .ql-picker.ql-size .ql-picker-label::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item::before {
+  content: 'Normal';
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value=small]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value=small]::before {
+  content: 'Small';
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value=large]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value=large]::before {
+  content: 'Large';
+}
+
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value=huge]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value=huge]::before {
+  content: 'Huge';
+}

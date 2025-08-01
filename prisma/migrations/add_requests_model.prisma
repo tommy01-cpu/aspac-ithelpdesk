@@ -1,0 +1,19 @@
+// Request model
+model requests {
+  id           Int      @id @default(autoincrement())
+  templateId   String
+  templateName String
+  type         String   @db.VarChar(50) // 'service' or 'incident'
+  status       String   @default("open") @db.VarChar(50)
+  priority     String   @default("medium") @db.VarChar(50)
+  userId       Int
+  formData     Json
+  attachments  String[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         users    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([templateId])
+  @@index([status])
+}

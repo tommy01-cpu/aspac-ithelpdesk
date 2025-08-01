@@ -1,0 +1,68 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const requestId = parseInt(params.id);
+    
+    if (isNaN(requestId)) {
+      return NextResponse.json({ error: 'Invalid request ID' }, { status: 400 });
+    }
+
+    // Get the current user
+    const currentUser = await prisma.users.findFirst({
+      where: { emp_email: session.user.email },
+    });
+
+    if (!currentUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    // Get all history records for this request
+    const history = await prisma.requestHistory.findMany({
+      where: {
+        requestId: requestId
+      },
+      orderBy: {
+        timestamp: 'desc'
+      }
+    });
+
+    // Format the history data
+    const formattedHistory = history.map(record => ({
+      id: record.id.toString(),
+      action: record.action,
+      actorName: record.actorName,
+      actorType: record.actorType,
+      details: record.details || '',
+      createdAt: record.timestamp.toISOString()
+    }));
+
+    return NextResponse.json({ 
+      success: true,
+      history: formattedHistory 
+    });
+
+  } catch (error) {
+    console.error('Error fetching request history:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch request history' },
+      { status: 500 }
+    );
+  } finally {
+    await prisma.$disconnect();
+  }
+}

@@ -1,0 +1,1092 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Plus, Edit, Trash2, Clock, Target, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+
+interface ServiceSLA {
+  id: number;
+  name: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  responseTime: number; // in hours
+  resolutionTime: number; // in hours
+  operationalHours: boolean;
+  autoEscalate: boolean;
+  escalationTime: number; // in hours
+  status: 'active' | 'inactive';
+  createdAt: string;
+}
+
+interface PaginationData {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+export const SLAServiceComponent = () => {
+  const [slas, setSLAs] = useState<ServiceSLA[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [selectedSLAs, setSelectedSLAs] = useState<number[]>([]);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingSLA, setEditingSLA] = useState<ServiceSLA | null>(null);
+  const [pagination, setPagination] = useState<PaginationData>({
+    page: 1,
+    limit: 25,
+    total: 0,
+    pages: 0
+  });
+
+  const [newSLA, setNewSLA] = useState({
+    name: '',
+    description: '',
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'critical',
+    responseTime: 2,
+    resolutionTime: 24,
+    operationalHours: false,
+    autoEscalate: false,
+    escalationTime: 4,
+    status: 'active' as 'active' | 'inactive',
+  });
+
+  // Mock data for development
+  const mockSLAs: ServiceSLA[] = [
+    {
+      id: 1,
+      name: 'Critical Service SLA',
+      description: 'SLA for critical business services',
+      priority: 'critical',
+      responseTime: 1,
+      resolutionTime: 4,
+      operationalHours: false,
+      autoEscalate: true,
+      escalationTime: 2,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 2,
+      name: 'Standard Service SLA',
+      description: 'Standard SLA for regular services',
+      priority: 'medium',
+      responseTime: 4,
+      resolutionTime: 24,
+      operationalHours: true,
+      autoEscalate: true,
+      escalationTime: 8,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  useEffect(() => {
+    // Simulate API call
+    setTimeout(() => {
+      setSLAs(mockSLAs);
+      setPagination({
+        page: 1,
+        limit: 25,
+        total: mockSLAs.length,
+        pages: 1
+      });
+      setLoading(false);
+    }, 1000);
+  }, []);
+
+  const handleAddSLA = async () => {
+    if (newSLA.name && newSLA.description) {
+      const newId = Math.max(...slas.map(s => s.id), 0) + 1;
+      const slaToAdd: ServiceSLA = {
+        ...newSLA,
+        id: newId,
+        createdAt: new Date().toISOString(),
+      };
+      
+      setSLAs([...slas, slaToAdd]);
+      setNewSLA({
+        name: '',
+        description: '',
+        priority: 'medium',
+        responseTime: 2,
+        resolutionTime: 24,
+        operationalHours: false,
+        autoEscalate: false,
+        escalationTime: 4,
+        status: 'active',
+      });
+      setIsAddModalOpen(false);
+    }
+  };
+
+  const handleEditSLA = (sla: ServiceSLA) => {
+    setEditingSLA(sla);
+    setNewSLA({
+      name: sla.name,
+      description: sla.description,
+      priority: sla.priority,
+      responseTime: sla.responseTime,
+      resolutionTime: sla.resolutionTime,
+      operationalHours: sla.operationalHours,
+      autoEscalate: sla.autoEscalate,
+      escalationTime: sla.escalationTime,
+      status: sla.status,
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateSLA = async () => {
+    if (editingSLA && newSLA.name && newSLA.description) {
+      setSLAs(slas.map(sla => 
+        sla.id === editingSLA.id 
+          ? { ...sla, ...newSLA }
+          : sla
+      ));
+      
+      setNewSLA({
+        name: '',
+        description: '',
+        priority: 'medium',
+        responseTime: 2,
+        resolutionTime: 24,
+        operationalHours: false,
+        autoEscalate: false,
+        escalationTime: 4,
+        status: 'active',
+      });
+      setEditingSLA(null);
+      setIsEditModalOpen(false);
+    }
+  };
+
+  const handleDeleteSLA = async (slaId: number) => {
+    if (confirm('Are you sure you want to delete this SLA?')) {
+      setSLAs(slas.filter(sla => sla.id !== slaId));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedSLAs.length === 0) return;
+    
+    if (confirm(`Are you sure you want to delete ${selectedSLAs.length} selected SLA(s)?`)) {
+      setSLAs(slas.filter(sla => !selectedSLAs.includes(sla.id)));
+      setSelectedSLAs([]);
+    }
+  };
+
+  const handleSelectSLA = (slaId: number) => {
+    setSelectedSLAs(prev => 
+      prev.includes(slaId) 
+        ? prev.filter(id => id !== slaId)
+        : [...prev, slaId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedSLAs.length === slas.length) {
+      setSelectedSLAs([]);
+    } else {
+      setSelectedSLAs(slas.map(sla => sla.id));
+    }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage);
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'critical': return 'bg-red-100 text-red-800';
+      case 'high': return 'bg-orange-100 text-orange-800';
+      case 'medium': return 'bg-blue-100 text-blue-800';
+      case 'low': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const filteredSLAs = slas.filter(sla => 
+    sla.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    sla.description.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="p-6">
+      {/* Header Section */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900 mb-6">Service SLA Management</h1>
+        
+        {/* Search and Filter */}
+        <div className="flex items-center gap-4 mb-4">
+          <div className="flex-1 max-w-md">
+            <Input
+              placeholder="Search service SLAs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full"
+            />
+          </div>
+        </div>
+        
+        {/* Top Action Bar */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-slate-800 hover:bg-slate-900 text-white">
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Service SLA
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Add New Service SLA</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="name">SLA Name *</Label>
+                      <Input
+                        id="name"
+                        value={newSLA.name}
+                        onChange={(e) => setNewSLA(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="Enter SLA name"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="priority">Priority *</Label>
+                      <Select value={newSLA.priority} onValueChange={(value: 'low' | 'medium' | 'high' | 'critical') => setNewSLA(prev => ({ ...prev, priority: value }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                          <SelectItem value="critical">Critical</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="description">Description</Label>
+                    <Textarea
+                      id="description"
+                      value={newSLA.description}
+                      onChange={(e) => setNewSLA(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="Enter SLA description"
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="responseTime">Response Time (hours)</Label>
+                      <Input
+                        id="responseTime"
+                        type="number"
+                        min="0"
+                        value={newSLA.responseTime}
+                        onChange={(e) => setNewSLA(prev => ({ ...prev, responseTime: Number(e.target.value) }))}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="resolutionTime">Resolution Time (hours)</Label>
+                      <Input
+                        id="resolutionTime"
+                        type="number"
+                        min="0"
+                        value={newSLA.resolutionTime}
+                        onChange={(e) => setNewSLA(prev => ({ ...prev, resolutionTime: Number(e.target.value) }))}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="escalationTime">Escalation Time (hours)</Label>
+                      <Input
+                        id="escalationTime"
+                        type="number"
+                        min="0"
+                        value={newSLA.escalationTime}
+                        onChange={(e) => setNewSLA(prev => ({ ...prev, escalationTime: Number(e.target.value) }))}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="operationalHours"
+                        checked={newSLA.operationalHours}
+                        onCheckedChange={(checked) => setNewSLA(prev => ({ ...prev, operationalHours: checked as boolean }))}
+                      />
+                      <Label htmlFor="operationalHours">Apply during operational hours only</Label>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="autoEscalate"
+                        checked={newSLA.autoEscalate}
+                        onCheckedChange={(checked) => setNewSLA(prev => ({ ...prev, autoEscalate: checked as boolean }))}
+                      />
+                      <Label htmlFor="autoEscalate">Auto Escalate</Label>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="status">Status</Label>
+                    <Select value={newSLA.status} onValueChange={(value: 'active' | 'inactive') => setNewSLA(prev => ({ ...prev, status: value }))}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                
+                <div className="flex justify-end space-x-2 pt-4">
+                  <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleAddSLA}>
+                    Add Service SLA
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+            
+            {/* Edit SLA Modal */}
+            <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Edit Service SLA</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="editName">SLA Name *</Label>
+                      <Input
+                        id="editName"
+                        value={newSLA.name}
+                        onChange={(e) => setNewSLA(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="Enter SLA name"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="editPriority">Priority *</Label>
+                      <Select value={newSLA.priority} onValueChange={(value: 'low' | 'medium' | 'high' | 'critical') => setNewSLA(prev => ({ ...prev, priority: value }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                          <SelectItem value="critical">Critical</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="editDescription">Description</Label>
+                    <Textarea
+                      id="editDescription"
+                      value={newSLA.description}
+                      onChange={(e) => setNewSLA(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="Enter SLA description"
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="editResponseTime">Response Time (hours)</Label>
+                      <Input
+                        id="editResponseTime"
+                        type="number"
+                        min="0"
+                        value={newSLA.responseTime}
+                        onChange={(e) => setNewSLA(prev => ({ ...prev, responseTime: Number(e.target.value) }))}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="editResolutionTime">Resolution Time (hours)</Label>
+                      <Input
+                        id="editResolutionTime"
+                        type="number"
+                        min="0"
+                        value={newSLA.resolutionTime}
+                        onChange={(e) => setNewSLA(prev => ({ ...prev, resolutionTime: Number(e.target.value) }))}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="editEscalationTime">Escalation Time (hours)</Label>
+                      <Input
+                        id="editEscalationTime"
+                        type="number"
+                        min="0"
+                        value={newSLA.escalationTime}
+                        onChange={(e) => setNewSLA(prev => ({ ...prev, escalationTime: Number(e.target.value) }))}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="editOperationalHours"
+                        checked={newSLA.operationalHours}
+                        onCheckedChange={(checked) => setNewSLA(prev => ({ ...prev, operationalHours: checked as boolean }))}
+                      />
+                      <Label htmlFor="editOperationalHours">Apply during operational hours only</Label>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="editAutoEscalate"
+                        checked={newSLA.autoEscalate}
+                        onCheckedChange={(checked) => setNewSLA(prev => ({ ...prev, autoEscalate: checked as boolean }))}
+                      />
+                      <Label htmlFor="editAutoEscalate">Auto Escalate</Label>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="editStatus">Status</Label>
+                    <Select value={newSLA.status} onValueChange={(value: 'active' | 'inactive') => setNewSLA(prev => ({ ...prev, status: value }))}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                
+                <div className="flex justify-end space-x-2 pt-4">
+                  <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleUpdateSLA}>
+                    Update Service SLA
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+            
+            <Button variant="outline" className="text-red-600 hover:bg-red-50" disabled={selectedSLAs.length === 0} onClick={handleDeleteSelected}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
+          </div>
+          
+          {/* Right side - Pagination info and controls */}
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-slate-600">
+              {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, pagination.total)} of {pagination.total}
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm text-slate-600">
+                Page {currentPage} of {pagination.pages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === pagination.pages}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-600">Show</span>
+              <Select value={pageSize.toString()} onValueChange={(value) => setPageSize(Number(value))}>
+                <SelectTrigger className="w-16">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-sm text-slate-600">per page</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Service SLA Table */}
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200">
+        <table className="w-full">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="text-left p-4 w-12">
+                <Checkbox
+                  checked={selectedSLAs.length === filteredSLAs.length && filteredSLAs.length > 0}
+                  onCheckedChange={handleSelectAll}
+                />
+              </th>
+              <th className="text-left p-4 font-medium text-slate-900">SLA Name</th>
+              <th className="text-left p-4 font-medium text-slate-900">Priority</th>
+              <th className="text-left p-4 font-medium text-slate-900">Response Time</th>
+              <th className="text-left p-4 font-medium text-slate-900">Resolution Time</th>
+              <th className="text-left p-4 font-medium text-slate-900">Auto Escalate</th>
+              <th className="text-left p-4 font-medium text-slate-900">Status</th>
+              <th className="text-left p-4 font-medium text-slate-900">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={8} className="text-center py-8">
+                  <div className="flex justify-center items-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  </div>
+                </td>
+              </tr>
+            ) : filteredSLAs.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="text-center py-8 text-slate-500">
+                  No service SLAs found
+                </td>
+              </tr>
+            ) : (
+              filteredSLAs.map((sla) => (
+                <tr key={sla.id} className="border-b border-slate-200 hover:bg-slate-50">
+                  <td className="p-4">
+                    <Checkbox
+                      checked={selectedSLAs.includes(sla.id)}
+                      onCheckedChange={() => handleSelectSLA(sla.id)}
+                    />
+                  </td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                        <Target className="h-4 w-4 text-blue-600" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-slate-900">{sla.name}</div>
+                        <div className="text-sm text-slate-500">{sla.description}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(sla.priority)}`}>
+                      {sla.priority.charAt(0).toUpperCase() + sla.priority.slice(1)}
+                    </span>
+                  </td>
+                  <td className="p-4 text-slate-900">{sla.responseTime}h</td>
+                  <td className="p-4 text-slate-900">{sla.resolutionTime}h</td>
+                  <td className="p-4">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      sla.autoEscalate ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {sla.autoEscalate ? 'Yes' : 'No'}
+                    </span>
+                  </td>
+                  <td className="p-4">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      sla.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {sla.status === 'active' ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-800" onClick={() => handleEditSLA(sla)}>
+                        <Edit className="h-4 w-4 mr-1" />
+                        Edit
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-800" onClick={() => handleDeleteSLA(sla.id)}>
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Delete
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+import { Plus, Edit, Trash2, Clock, Target, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+
+interface ServiceSLA {
+  id: number;
+  name: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  responseTime: number; // in hours
+  resolutionTime: number; // in hours
+  operationalHours: boolean;
+  autoEscalate: boolean;
+  escalationTime: number; // in hours
+  status: 'active' | 'inactive';
+  createdAt: string;
+}
+
+interface PaginationData {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+export const SLAServiceComponent = () => {
+  const [slas, setSLAs] = useState<ServiceSLA[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [selectedSLAs, setSelectedSLAs] = useState<number[]>([]);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingSLA, setEditingSLA] = useState<ServiceSLA | null>(null);
+  const [pagination, setPagination] = useState<PaginationData>({
+    page: 1,
+    limit: 25,
+    total: 0,
+    pages: 0
+  });
+
+  const [newSLA, setNewSLA] = useState({
+    name: '',
+    description: '',
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'critical',
+    responseTime: 2,
+    resolutionTime: 24,
+    operationalHours: true,
+    autoEscalate: false,
+    escalationTime: 48,
+    status: 'active',
+  });
+
+  // Mock data for now
+  useEffect(() => {
+    const mockSLAs: ServiceSLA[] = [
+      {
+        id: 1,
+        name: 'Critical Service Request',
+        description: 'High priority service requests requiring immediate attention',
+        priority: 'critical',
+        responseTime: 1,
+        resolutionTime: 4,
+        operationalHours: false,
+        autoEscalate: true,
+        escalationTime: 2,
+        status: 'active',
+        createdAt: '2024-01-15T10:30:00Z'
+      },
+      {
+        id: 2,
+        name: 'Standard Service Request',
+        description: 'Regular service requests with standard priority',
+        priority: 'medium',
+        responseTime: 4,
+        resolutionTime: 24,
+        operationalHours: true,
+        autoEscalate: true,
+        escalationTime: 48,
+        status: 'active',
+        createdAt: '2024-01-10T14:20:00Z'
+      }
+    ];
+    
+    setSLAs(mockSLAs);
+    setLoading(false);
+  }, []);
+
+  const filteredSLAs = slas.filter(sla =>
+    sla.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    sla.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    sla.priority.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const openCreateModal = () => {
+    setEditingSLA(null);
+    setFormData({
+      name: '',
+      description: '',
+      priority: 'medium',
+      responseTime: 2,
+      resolutionTime: 24,
+      operationalHours: true,
+      autoEscalate: false,
+      escalationTime: 48,
+      status: 'active',
+    });
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (sla: ServiceSLA) => {
+    setEditingSLA(sla);
+    setFormData({
+      name: sla.name,
+      description: sla.description,
+      priority: sla.priority,
+      responseTime: sla.responseTime,
+      resolutionTime: sla.resolutionTime,
+      operationalHours: sla.operationalHours,
+      autoEscalate: sla.autoEscalate,
+      escalationTime: sla.escalationTime,
+      status: sla.status,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleSave = () => {
+    // Here you would typically make an API call to save the SLA
+    console.log('Saving SLA:', formData);
+    setIsModalOpen(false);
+    // Refresh data or update local state
+  };
+
+  const handleDelete = (id: number) => {
+    if (confirm('Are you sure you want to delete this SLA? This action cannot be undone.')) {
+      setSLAs(slas.filter(sla => sla.id !== id));
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'critical':
+        return 'bg-red-100 text-red-800 border-red-200';
+      case 'high':
+        return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'medium':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'low':
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    return status === 'active' 
+      ? 'bg-green-100 text-green-800 border-green-200'
+      : 'bg-red-100 text-red-800 border-red-200';
+  };
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-slate-600">Loading service SLAs...</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-0">
+      {/* Header Section */}
+      <div className="p-6 border-b border-slate-200">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">Service SLA Management</h2>
+            <p className="text-slate-600 mt-1">Configure service level agreements for service requests</p>
+          </div>
+        </div>
+        
+        {/* Search and Actions */}
+        <div className="mt-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Input
+                placeholder="Search SLAs..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-64"
+              />
+            </div>
+            <Button onClick={openCreateModal} className="bg-blue-600 hover:bg-blue-700">
+              <Plus className="w-4 h-4 mr-2" />
+              New Service SLA
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* SLA Cards */}
+      <div className="p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredSLAs.map((sla) => (
+            <Card key={sla.id} className="hover:shadow-lg transition-shadow">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <CardTitle className="text-lg">{sla.name}</CardTitle>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => openEditModal(sla)}>
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => handleDelete(sla.id)}>
+                      <Trash2 className="w-4 h-4 text-red-600" />
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-600">{sla.description}</p>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {/* Priority and Status */}
+                  <div className="flex gap-2">
+                    <Badge className={getPriorityColor(sla.priority)}>
+                      {sla.priority.toUpperCase()}
+                    </Badge>
+                    <Badge className={getStatusColor(sla.status)}>
+                      {sla.status.toUpperCase()}
+                    </Badge>
+                  </div>
+
+                  {/* Timing Information */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Clock className="w-4 h-4 text-blue-600" />
+                      <span className="text-slate-600">Response:</span>
+                      <span className="font-medium">{sla.responseTime}h</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Target className="w-4 h-4 text-green-600" />
+                      <span className="text-slate-600">Resolution:</span>
+                      <span className="font-medium">{sla.resolutionTime}h</span>
+                    </div>
+                    {sla.autoEscalate && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <AlertCircle className="w-4 h-4 text-orange-600" />
+                        <span className="text-slate-600">Escalation:</span>
+                        <span className="font-medium">{sla.escalationTime}h</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Additional Info */}
+                  <div className="pt-2 border-t">
+                    <div className="flex gap-4 text-xs text-slate-500">
+                      <span>
+                        {sla.operationalHours ? 'Business Hours' : '24/7'}
+                      </span>
+                      <span>
+                        Created: {new Date(sla.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {filteredSLAs.length === 0 && (
+          <div className="text-center py-12">
+            <div className="text-slate-400 mb-4">
+              <Target className="w-12 h-12 mx-auto" />
+            </div>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">No Service SLAs Found</h3>
+            <p className="text-slate-600 mb-4">
+              {searchTerm ? 'No SLAs match your search criteria.' : 'Get started by creating your first service SLA.'}
+            </p>
+            {!searchTerm && (
+              <Button onClick={openCreateModal} className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="w-4 h-4 mr-2" />
+                Create Service SLA
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Create/Edit Modal */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingSLA ? 'Edit Service SLA' : 'Create New Service SLA'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            {/* Basic Information */}
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="name">SLA Name *</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., Critical Service Request"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Describe when this SLA applies..."
+                  className="mt-1"
+                  rows={3}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="priority">Priority Level</Label>
+                  <Select value={formData.priority} onValueChange={(value: any) => setFormData(prev => ({ ...prev, priority: value }))}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="critical">Critical</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="status">Status</Label>
+                  <Select value={formData.status} onValueChange={(value: any) => setFormData(prev => ({ ...prev, status: value }))}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            {/* SLA Timings */}
+            <div className="space-y-4">
+              <h4 className="font-medium text-slate-800">SLA Timings (in hours)</h4>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="responseTime">Response Time *</Label>
+                  <Input
+                    id="responseTime"
+                    type="number"
+                    value={formData.responseTime}
+                    onChange={(e) => setFormData(prev => ({ ...prev, responseTime: parseInt(e.target.value) || 0 }))}
+                    className="mt-1"
+                    min="0"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Time to first response</p>
+                </div>
+
+                <div>
+                  <Label htmlFor="resolutionTime">Resolution Time *</Label>
+                  <Input
+                    id="resolutionTime"
+                    type="number"
+                    value={formData.resolutionTime}
+                    onChange={(e) => setFormData(prev => ({ ...prev, resolutionTime: parseInt(e.target.value) || 0 }))}
+                    className="mt-1"
+                    min="0"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Time to resolution</p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="operationalHours"
+                  checked={formData.operationalHours}
+                  onChange={(e) => setFormData(prev => ({ ...prev, operationalHours: e.target.checked }))}
+                  className="rounded"
+                />
+                <Label htmlFor="operationalHours" className="text-sm">
+                  Calculate SLA based on operational hours only
+                </Label>
+              </div>
+            </div>
+
+            {/* Escalation Settings */}
+            <div className="space-y-4">
+              <h4 className="font-medium text-slate-800">Escalation Settings</h4>
+              
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="autoEscalate"
+                  checked={formData.autoEscalate}
+                  onChange={(e) => setFormData(prev => ({ ...prev, autoEscalate: e.target.checked }))}
+                  className="rounded"
+                />
+                <Label htmlFor="autoEscalate" className="text-sm">
+                  Enable automatic escalation
+                </Label>
+              </div>
+
+              {formData.autoEscalate && (
+                <div>
+                  <Label htmlFor="escalationTime">Escalation Time (hours)</Label>
+                  <Input
+                    id="escalationTime"
+                    type="number"
+                    value={formData.escalationTime}
+                    onChange={(e) => setFormData(prev => ({ ...prev, escalationTime: parseInt(e.target.value) || 0 }))}
+                    className="mt-1"
+                    min="0"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Time before automatic escalation</p>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex justify-end space-x-2 pt-4 border-t">
+            <Button variant="outline" onClick={() => setIsModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
+              {editingSLA ? 'Update SLA' : 'Create SLA'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};

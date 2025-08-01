@@ -1,0 +1,30 @@
+// Prisma schema for attachments database - stores file binary data
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/attachments-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("ATTACHMENTS_DATABASE_URL")
+}
+
+model Attachment {
+  id          String   @id @default(cuid())
+  fileName    String   // Generated unique filename
+  originalName String  // Original filename from user
+  mimeType    String   // MIME type
+  size        Int      // File size in bytes
+  fileContent Bytes    // Binary file content
+  requestId   String?  // Request ID from main database (as string reference)
+  userId      String   // User ID from main database (as string reference)
+  uploadedAt  DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([requestId])
+  @@index([userId])
+  @@index([fileName])
+  @@map("attachments")
+}
