@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
                 isActive: true,
                 user: {
                   select: {
+                    id: true,
                     emp_code: true,
                     emp_fname: true,
                     emp_lname: true,
@@ -66,8 +67,10 @@ export async function GET(request: NextRequest) {
       id: group.id.toString(),
       groupName: group.name,
       description: group.description || '',
-      technicians: group.technicianMemberships.map(membership => membership.technician.displayName),
-      technicianIds: group.technicianMemberships.map(membership => membership.technician.id),
+      technicians: group.technicianMemberships.map(membership => 
+        `${membership.technician.user.emp_fname} ${membership.technician.user.emp_lname}`
+      ),
+      technicianIds: group.technicianMemberships.map(membership => membership.technician.user.id),
       isActive: group.isActive,
       technicianCount: group._count.technicianMemberships,
       createdAt: group.createdAt,
@@ -127,21 +130,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate technician IDs if provided
+    // Validate technician IDs if provided - convert user IDs to technician IDs
+    let validTechnicianIds: number[] = [];
     if (technicianIds.length > 0) {
       const validTechnicians = await prisma.technician.findMany({
         where: {
-          id: { in: technicianIds },
+          userId: { in: technicianIds }, // technicianIds are actually user IDs from frontend
           isActive: true
+        },
+        select: {
+          id: true,
+          userId: true
         }
       });
 
       if (validTechnicians.length !== technicianIds.length) {
         return NextResponse.json(
-          { success: false, error: 'Some technician IDs are invalid or inactive' },
+          { success: false, error: 'Some user IDs do not have corresponding active technician records' },
           { status: 400 }
         );
       }
+
+      validTechnicianIds = validTechnicians.map(tech => tech.id);
     }
 
     // Create support group with technician memberships in a transaction
@@ -156,9 +166,9 @@ export async function POST(request: NextRequest) {
       });
 
       // Create technician memberships if any
-      if (technicianIds.length > 0) {
+      if (validTechnicianIds.length > 0) {
         await tx.technicianSupportGroup.createMany({
-          data: technicianIds.map((technicianId: number) => ({
+          data: validTechnicianIds.map((technicianId: number) => ({
             technicianId,
             supportGroupId: newGroup.id,
             isLead: false,

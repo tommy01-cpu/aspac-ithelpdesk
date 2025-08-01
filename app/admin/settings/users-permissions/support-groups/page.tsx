@@ -32,21 +32,17 @@ interface SupportGroup {
   senderEmail: string;
 }
 
-interface Technician {
+interface User {
   id: number;
-  displayName: string;
-  employeeId: string;
-  firstName: string;
-  lastName: string;
-  primaryEmail: string;
-  isActive: boolean;
-  department?: {
-    id: number;
-    name: string;
-  };
+  emp_fname: string;
+  emp_lname: string;
+  emp_email: string;
+  emp_code: string;
+  post_des: string;
+  department: string;
 }
 
-const availableTechnicians: Technician[] = [];
+const availableUsers: User[] = [];
 
 export default function SupportGroupsPage() {
   const { toast } = useToast();
@@ -58,7 +54,7 @@ export default function SupportGroupsPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<SupportGroup | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTechnicians, setActiveTechnicians] = useState<Technician[]>([]);
+  const [activeUsers, setActiveUsers] = useState<User[]>([]);
   
   const [supportGroups, setSupportGroups] = useState<SupportGroup[]>([]);
 
@@ -105,14 +101,14 @@ export default function SupportGroupsPage() {
     }
   };
 
-  // Fetch active technicians from API
+  // Fetch active technician users from API
   const fetchActiveTechnicians = async () => {
     try {
-      const response = await fetch('/api/technicians/active');
+      const response = await fetch('/api/users/technicians');
       const data = await response.json();
       
       if (data.success) {
-        setActiveTechnicians(data.data);
+        setActiveUsers(data.data);
       } else {
         toast({
           title: "Error",
@@ -363,27 +359,40 @@ export default function SupportGroupsPage() {
     setIsEditModalOpen(true);
   };
 
-  const handleTechnicianMove = (direction: 'add' | 'remove', technician: Technician | number, isEdit = false) => {
-    const technicianId = typeof technician === 'number' ? technician : technician.id;
-    const technicianName = typeof technician === 'number' 
-      ? activeTechnicians.find(t => t.id === technician)?.displayName || '' 
-      : technician.displayName;
+  const handleTechnicianMove = (direction: 'add' | 'remove', user: User | number, isEdit = false) => {
+    const userId = typeof user === 'number' ? user : user.id;
+    const userName = typeof user === 'number' 
+      ? (() => {
+          const foundUser = activeUsers.find(u => u.id === user);
+          return foundUser ? `${foundUser.emp_fname} ${foundUser.emp_lname}` : '';
+        })()
+      : `${user.emp_fname} ${user.emp_lname}`;
+
+    console.log('Moving technician:', { direction, userId, userName, isEdit });
 
     if (isEdit && editingGroup) {
       const currentTechnicianIds = editingGroup.technicianIds || [];
       const currentTechnicians = editingGroup.technicians || [];
       
       if (direction === 'add') {
+        const newIds = [...currentTechnicianIds, userId];
+        const newNames = [...currentTechnicians, userName];
+        console.log('Edit mode - adding:', { newIds, newNames });
+        
         setEditingGroup(prev => prev ? {
           ...prev,
-          technicianIds: [...currentTechnicianIds, technicianId],
-          technicians: [...currentTechnicians, technicianName]
+          technicianIds: newIds,
+          technicians: newNames
         } : null);
       } else {
+        const newIds = currentTechnicianIds.filter(id => id !== userId);
+        const newNames = currentTechnicians.filter(name => name !== userName);
+        console.log('Edit mode - removing:', { newIds, newNames });
+        
         setEditingGroup(prev => prev ? {
           ...prev,
-          technicianIds: currentTechnicianIds.filter(id => id !== technicianId),
-          technicians: currentTechnicians.filter(name => name !== technicianName)
+          technicianIds: newIds,
+          technicians: newNames
         } : null);
       }
     } else {
@@ -391,16 +400,24 @@ export default function SupportGroupsPage() {
       const currentTechnicians = newGroup.technicians || [];
       
       if (direction === 'add') {
+        const newIds = [...currentTechnicianIds, userId];
+        const newNames = [...currentTechnicians, userName];
+        console.log('New group - adding:', { newIds, newNames });
+        
         setNewGroup(prev => ({
           ...prev,
-          technicianIds: [...currentTechnicianIds, technicianId],
-          technicians: [...currentTechnicians, technicianName]
+          technicianIds: newIds,
+          technicians: newNames
         }));
       } else {
+        const newIds = currentTechnicianIds.filter(id => id !== userId);
+        const newNames = currentTechnicians.filter(name => name !== userName);
+        console.log('New group - removing:', { newIds, newNames });
+        
         setNewGroup(prev => ({
           ...prev,
-          technicianIds: currentTechnicianIds.filter(id => id !== technicianId),
-          technicians: currentTechnicians.filter(name => name !== technicianName)
+          technicianIds: newIds,
+          technicians: newNames
         }));
       }
     }
@@ -411,7 +428,53 @@ export default function SupportGroupsPage() {
       ? (editingGroup?.technicianIds || [])
       : (newGroup.technicianIds || []);
     
-    return activeTechnicians.filter(tech => !selectedIds.includes(tech.id));
+    return activeUsers.filter(user => !selectedIds.includes(user.id));
+  };
+
+  const handleSelectAllTechnicians = (isEdit = false) => {
+    const availableUsers = getAvailableForSelection(isEdit);
+    const userIds = availableUsers.map(user => user.id);
+    const userNames = availableUsers.map(user => `${user.emp_fname} ${user.emp_lname}`);
+
+    console.log('Select all technicians:', { isEdit, availableUsers: availableUsers.length, userIds, userNames });
+
+    if (isEdit && editingGroup) {
+      const currentTechnicianIds = editingGroup.technicianIds || [];
+      const currentTechnicians = editingGroup.technicians || [];
+      
+      const newIds = [...currentTechnicianIds, ...userIds];
+      const newNames = [...currentTechnicians, ...userNames];
+      
+      console.log('Edit mode - select all result:', { newIds, newNames });
+      
+      setEditingGroup(prev => prev ? {
+        ...prev,
+        technicianIds: newIds,
+        technicians: newNames
+      } : null);
+    } else {
+      const currentTechnicianIds = newGroup.technicianIds || [];
+      const currentTechnicians = newGroup.technicians || [];
+      
+      const newIds = [...currentTechnicianIds, ...userIds];
+      const newNames = [...currentTechnicians, ...userNames];
+      
+      console.log('New group - select all result:', { newIds, newNames });
+      
+      setNewGroup(prev => ({
+        ...prev,
+        technicianIds: newIds,
+        technicians: newNames
+      }));
+    }
+  };
+
+  const handleDeselectAllTechnicians = (isEdit = false) => {
+    if (isEdit) {
+      setEditingGroup(prev => prev ? ({ ...prev, technicians: [], technicianIds: [] }) : null);
+    } else {
+      setNewGroup(prev => ({ ...prev, technicians: [], technicianIds: [] }));
+    }
   };
 
   const getSelectedTechnicians = (isEdit = false) => {
@@ -419,7 +482,7 @@ export default function SupportGroupsPage() {
       ? (editingGroup?.technicianIds || [])
       : (newGroup.technicianIds || []);
     
-    return activeTechnicians.filter(tech => selectedIds.includes(tech.id));
+    return activeUsers.filter(user => selectedIds.includes(user.id));
   };
 
   return (
@@ -497,18 +560,18 @@ export default function SupportGroupsPage() {
                         <Label className="text-sm font-medium">Available Technicians</Label>
                         <div className="border rounded-md h-60 overflow-y-auto p-3 bg-gray-50">
                           {getAvailableForSelection().length > 0 ? (
-                            getAvailableForSelection().map((tech) => (
+                            getAvailableForSelection().map((user) => (
                               <div
-                                key={tech.id}
+                                key={user.id}
                                 className="flex items-center justify-between p-2 hover:bg-gray-100 rounded text-sm"
                               >
-                                <span title={`${tech.employeeId} - ${tech.department?.name || 'No Department'}`}>
-                                  {tech.displayName}
+                                <span title={`${user.emp_code} - ${user.department || 'No Department'}`}>
+                                  {`${user.emp_fname} ${user.emp_lname}`}
                                 </span>
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  onClick={() => handleTechnicianMove('add', tech)}
+                                  onClick={() => handleTechnicianMove('add', user)}
                                   className="h-6 w-6 p-0"
                                 >
                                   →
@@ -526,20 +589,14 @@ export default function SupportGroupsPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => {
-                            getAvailableForSelection().forEach(tech => {
-                              handleTechnicianMove('add', tech);
-                            });
-                          }}
+                          onClick={() => handleSelectAllTechnicians()}
                         >
                           &gt;&gt;
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => {
-                            setNewGroup(prev => ({ ...prev, technicians: [], technicianIds: [] }));
-                          }}
+                          onClick={() => handleDeselectAllTechnicians()}
                         >
                           &lt;&lt;
                         </Button>
@@ -550,21 +607,21 @@ export default function SupportGroupsPage() {
                         <Label className="text-sm font-medium">Selected Technicians</Label>
                         <div className="border rounded-md h-60 overflow-y-auto p-3 bg-gray-50">
                           {getSelectedTechnicians().length > 0 ? (
-                            getSelectedTechnicians().map((tech) => (
+                            getSelectedTechnicians().map((user) => (
                               <div
-                                key={tech.id}
+                                key={user.id}
                                 className="flex items-center justify-between p-2 hover:bg-gray-100 rounded text-sm"
                               >
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  onClick={() => handleTechnicianMove('remove', tech)}
+                                  onClick={() => handleTechnicianMove('remove', user)}
                                   className="h-6 w-6 p-0"
                                 >
                                   ←
                                 </Button>
-                                <span title={`${tech.employeeId} - ${tech.department?.name || 'No Department'}`}>
-                                  {tech.displayName}
+                                <span title={`${user.emp_code} - ${user.department || 'No Department'}`}>
+                                  {`${user.emp_fname} ${user.emp_lname}`}
                                 </span>
                               </div>
                             ))
@@ -645,18 +702,18 @@ export default function SupportGroupsPage() {
                           <Label className="text-sm font-medium">Available Technicians</Label>
                           <div className="border rounded-md h-60 overflow-y-auto p-3 bg-gray-50">
                             {getAvailableForSelection(true).length > 0 ? (
-                              getAvailableForSelection(true).map((tech) => (
+                              getAvailableForSelection(true).map((user) => (
                                 <div
-                                  key={tech.id}
+                                  key={user.id}
                                   className="flex items-center justify-between p-2 hover:bg-gray-100 rounded text-sm"
                                 >
-                                  <span title={`${tech.employeeId} - ${tech.department?.name || 'No Department'}`}>
-                                    {tech.displayName}
+                                  <span title={`${user.emp_code} - ${user.department || 'No Department'}`}>
+                                    {`${user.emp_fname} ${user.emp_lname}`}
                                   </span>
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    onClick={() => handleTechnicianMove('add', tech, true)}
+                                    onClick={() => handleTechnicianMove('add', user, true)}
                                     className="h-6 w-6 p-0"
                                   >
                                     →
@@ -674,20 +731,14 @@ export default function SupportGroupsPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => {
-                              getAvailableForSelection(true).forEach(tech => {
-                                handleTechnicianMove('add', tech, true);
-                              });
-                            }}
+                            onClick={() => handleSelectAllTechnicians(true)}
                           >
                             &gt;&gt;
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => {
-                              setEditingGroup(prev => prev ? ({ ...prev, technicians: [], technicianIds: [] }) : null);
-                            }}
+                            onClick={() => handleDeselectAllTechnicians(true)}
                           >
                             &lt;&lt;
                           </Button>
@@ -698,21 +749,21 @@ export default function SupportGroupsPage() {
                           <Label className="text-sm font-medium">Selected Technicians</Label>
                           <div className="border rounded-md h-60 overflow-y-auto p-3 bg-gray-50">
                             {getSelectedTechnicians(true).length > 0 ? (
-                              getSelectedTechnicians(true).map((tech) => (
+                              getSelectedTechnicians(true).map((user) => (
                                 <div
-                                  key={tech.id}
+                                  key={user.id}
                                   className="flex items-center justify-between p-2 hover:bg-gray-100 rounded text-sm"
                                 >
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    onClick={() => handleTechnicianMove('remove', tech, true)}
+                                    onClick={() => handleTechnicianMove('remove', user, true)}
                                     className="h-6 w-6 p-0"
                                   >
                                     ←
                                   </Button>
-                                  <span title={`${tech.employeeId} - ${tech.department?.name || 'No Department'}`}>
-                                    {tech.displayName}
+                                  <span title={`${user.emp_code} - ${user.department || 'No Department'}`}>
+                                    {`${user.emp_fname} ${user.emp_lname}`}
                                   </span>
                                 </div>
                               ))

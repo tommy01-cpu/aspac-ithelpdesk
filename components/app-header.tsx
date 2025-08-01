@@ -37,6 +37,17 @@ export default function AppHeader() {
   const [error, setError] = useState('');
   const pathname = usePathname();
 
+  // Password validation helper
+  const validatePassword = (password: string) => {
+    const checks = {
+      length: password.length >= 8,
+      uppercase: /[A-Z]/.test(password),
+      lowercase: /[a-z]/.test(password),
+      special: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password)
+    };
+    return checks;
+  };
+
   const handleSignOut = () => {
     signOut({ callbackUrl: "/login" });
   };
@@ -55,8 +66,27 @@ export default function AppHeader() {
       return;
     }
 
-    if (passwordData.newPassword.length < 6) {
-      setError('New password must be at least 6 characters long');
+    // Enhanced password validation
+    if (passwordData.newPassword.length < 8) {
+      setError('New password must be at least 8 characters long');
+      return;
+    }
+
+    // Check for uppercase letter
+    if (!/[A-Z]/.test(passwordData.newPassword)) {
+      setError('New password must contain at least one uppercase letter');
+      return;
+    }
+
+    // Check for lowercase letter
+    if (!/[a-z]/.test(passwordData.newPassword)) {
+      setError('New password must contain at least one lowercase letter');
+      return;
+    }
+
+    // Check for special characters or symbols
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(passwordData.newPassword)) {
+      setError('New password must contain at least one special character or symbol');
       return;
     }
 
@@ -221,7 +251,7 @@ export default function AppHeader() {
 
       {/* Change Password Modal */}
       <Dialog open={isChangePasswordOpen} onOpenChange={setIsChangePasswordOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <KeyRound className="h-5 w-5" />
@@ -258,6 +288,36 @@ export default function AppHeader() {
                 placeholder="Enter new password"
                 disabled={loading}
               />
+              <div className="text-xs space-y-1">
+                <p className="font-medium text-gray-700">Password requirements:</p>
+                {passwordData.newPassword && (
+                  <ul className="space-y-0.5">
+                    <li className={`flex items-center gap-1 ${validatePassword(passwordData.newPassword).length ? 'text-green-600' : 'text-red-500'}`}>
+                      <span className="text-xs">{validatePassword(passwordData.newPassword).length ? '✓' : '✗'}</span>
+                      Minimum 8 characters long
+                    </li>
+                    <li className={`flex items-center gap-1 ${validatePassword(passwordData.newPassword).uppercase ? 'text-green-600' : 'text-red-500'}`}>
+                      <span className="text-xs">{validatePassword(passwordData.newPassword).uppercase ? '✓' : '✗'}</span>
+                      Must contain uppercase letters
+                    </li>
+                    <li className={`flex items-center gap-1 ${validatePassword(passwordData.newPassword).lowercase ? 'text-green-600' : 'text-red-500'}`}>
+                      <span className="text-xs">{validatePassword(passwordData.newPassword).lowercase ? '✓' : '✗'}</span>
+                      Must contain lowercase letters
+                    </li>
+                    <li className={`flex items-center gap-1 ${validatePassword(passwordData.newPassword).special ? 'text-green-600' : 'text-red-500'}`}>
+                      <span className="text-xs">{validatePassword(passwordData.newPassword).special ? '✓' : '✗'}</span>
+                      Must contain special characters or symbols
+                    </li>
+                  </ul>
+                )}
+                {!passwordData.newPassword && (
+                  <ul className="list-disc list-inside space-y-0.5 text-gray-500">
+                    <li>Minimum 8 characters long</li>
+                    <li>Must contain uppercase and lowercase letters</li>
+                    <li>Must contain special characters or symbols</li>
+                  </ul>
+                )}
+              </div>
             </div>
             
             <div className="space-y-2">

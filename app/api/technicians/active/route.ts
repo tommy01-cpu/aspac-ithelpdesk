@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
             emp_lname: true,
             emp_email: true,
             emp_code: true,
+            post_des: true,
             department: true
           }
         }
@@ -53,7 +54,21 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: technicians,
+      data: technicians.map(tech => ({
+        id: tech.id,
+        displayName: tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`,
+        loginName: tech.loginName,
+        employeeId: tech.user.emp_code || '',
+        jobTitle: tech.user.post_des || '',
+        primaryEmail: tech.user.emp_email || '',
+        department: tech.user.department ? {
+          id: tech.user.department,
+          name: tech.user.department
+        } : null,
+        isActive: tech.isActive,
+        value: tech.id.toString(),
+        name: tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`
+      })),
       total: technicians.length
     });
     

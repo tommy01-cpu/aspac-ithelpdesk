@@ -111,25 +111,28 @@ const TechnicianInput = ({
         params.set('search', search.trim());
       }
       
-      const response = await fetch(`/api/technicians?${params}`);
+      const response = await fetch(`/api/technicians/active?${params}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const result = await response.json();
       
-      if (result && result.technicians && Array.isArray(result.technicians)) {
-        const transformedTechnicians = result.technicians
-          .filter((tech: any) => tech && tech.id && tech.displayName)
+      if (result && result.success && result.data && Array.isArray(result.data)) {
+        const transformedTechnicians = result.data
+          .filter((tech: any) => tech && tech.id)
           .map((tech: any) => ({
             id: String(tech.id),
-            displayName: String(tech.displayName),
-            employeeId: String(tech.employeeId || ''),
-            jobTitle: String(tech.jobTitle || ''),
-            primaryEmail: String(tech.primaryEmail || ''),
-            department: tech.department || null,
+            displayName: tech.displayName || `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim() || 'Unknown Technician',
+            employeeId: String(tech.employeeId || tech.user?.emp_code || ''),
+            jobTitle: String(tech.jobTitle || tech.user?.post_des || ''),
+            primaryEmail: String(tech.primaryEmail || tech.user?.emp_email || ''),
+            department: tech.department || (tech.user?.department ? {
+              id: tech.user.department,
+              name: tech.user.department
+            } : null),
             value: String(tech.id),
-            name: String(tech.displayName)
+            name: tech.displayName || `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim() || 'Unknown Technician'
           }));
         
         setTechnicians(transformedTechnicians);
@@ -214,9 +217,15 @@ const TechnicianInput = ({
     if (safeSelectedTechnicians.length === 0) {
       return placeholder;
     } else if (safeSelectedTechnicians.length === 1) {
+      const techId = safeSelectedTechnicians[0];
+      
+      // Handle special options
+      if (techId === 'DH') return 'Department Head';
+      if (techId === 'AS') return 'Assigned Technician';
+      
       // Look in allTechnicians first, then fall back to current technicians
-      const tech = allTechnicians.find(t => String(t.id) === String(safeSelectedTechnicians[0])) ||
-                   technicians.find(t => String(t.id) === String(safeSelectedTechnicians[0]));
+      const tech = allTechnicians.find(t => String(t.id) === String(techId)) ||
+                   technicians.find(t => String(t.id) === String(techId));
       return tech?.displayName || `Unknown Technician`;
     } else {
       return `${safeSelectedTechnicians.length} technicians selected`;
@@ -255,6 +264,37 @@ const TechnicianInput = ({
       {safeSelectedTechnicians.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
           {safeSelectedTechnicians.map(techId => {
+            // Handle special options
+            if (techId === 'DH') {
+              return (
+                <div key={techId} className="inline-flex items-center bg-green-100 text-green-800 px-2 py-1 rounded-md text-sm">
+                  <span>Department Head</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTechnician(techId)}
+                    className="ml-1 hover:bg-green-200 rounded-full p-0.5"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              );
+            }
+            
+            if (techId === 'AS') {
+              return (
+                <div key={techId} className="inline-flex items-center bg-purple-100 text-purple-800 px-2 py-1 rounded-md text-sm">
+                  <span>Assigned Technician</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTechnician(techId)}
+                    className="ml-1 hover:bg-purple-200 rounded-full p-0.5"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              );
+            }
+            
             // Look in allTechnicians first, then fall back to current technicians
             const tech = allTechnicians.find(t => String(t.id) === String(techId)) ||
                         technicians.find(t => String(t.id) === String(techId));
@@ -293,35 +333,75 @@ const TechnicianInput = ({
           <div className="max-h-48 overflow-y-auto">
             {loading ? (
               <div className="p-4 text-center text-gray-500">Loading technicians...</div>
-            ) : filteredTechnicians.length > 0 ? (
-              filteredTechnicians.map((technician) => {
-                const isSelected = safeSelectedTechnicians.includes(String(technician.id));
-                return (
-                  <div
-                    key={technician.id}
-                    className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-b-0"
-                    onClick={() => handleSelect(String(technician.id))}
-                  >
-                    <div className="flex items-center mr-3">
-                      {isSelected ? (
-                        <Check className="h-4 w-4 text-blue-600" />
-                      ) : (
-                        <div className="h-4 w-4" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-900">{technician.displayName}</div>
-                      <div className="text-sm text-gray-500">
-                        {technician.employeeId || 'No ID'} • {technician.department?.name || 'No Department'}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
             ) : (
-              <div className="p-4 text-center text-gray-500">
-                {searchTerm ? 'No technicians found matching your search.' : 'No technicians available.'}
-              </div>
+              <>
+                {/* Special Options - Always show these */}
+                <div
+                  className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100"
+                  onClick={() => handleSelect('DH')}
+                >
+                  <div className="flex items-center mr-3">
+                    {safeSelectedTechnicians.includes('DH') ? (
+                      <Check className="h-4 w-4 text-blue-600" />
+                    ) : (
+                      <div className="h-4 w-4" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-900">Department Head</div>
+                    <div className="text-sm text-gray-500">Escalate to the department head of the requester</div>
+                  </div>
+                </div>
+                
+                <div
+                  className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100"
+                  onClick={() => handleSelect('AS')}
+                >
+                  <div className="flex items-center mr-3">
+                    {safeSelectedTechnicians.includes('AS') ? (
+                      <Check className="h-4 w-4 text-blue-600" />
+                    ) : (
+                      <div className="h-4 w-4" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-900">Assigned Technician</div>
+                    <div className="text-sm text-gray-500">Escalate to the currently assigned technician</div>
+                  </div>
+                </div>
+
+                {/* Technicians List */}
+                {filteredTechnicians.length > 0 ? (
+                  filteredTechnicians.map((technician) => {
+                    const isSelected = safeSelectedTechnicians.includes(String(technician.id));
+                    return (
+                      <div
+                        key={technician.id}
+                        className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-b-0"
+                        onClick={() => handleSelect(String(technician.id))}
+                      >
+                        <div className="flex items-center mr-3">
+                          {isSelected ? (
+                            <Check className="h-4 w-4 text-blue-600" />
+                          ) : (
+                            <div className="h-4 w-4" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">{technician.displayName}</div>
+                          <div className="text-sm text-gray-500">
+                            {technician.employeeId || 'No ID'} • {technician.department?.name || 'No Department'}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : searchTerm ? (
+                  <div className="p-4 text-center text-gray-500">
+                    No technicians found matching your search.
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
         </div>
@@ -1185,7 +1265,7 @@ export default function IncidentSLAPage() {
                           }
                         }))}
                       />
-                      <Label htmlFor="resolutionEscalation" className="text-sm">Enable Resolution Escalation</Label>
+                      <Label htmlFor="resolutionEscalation" className="text-sm">Enable Level 1 Escalation</Label>
                     </div>
 
                     {slaForm?.resolutionEscalation?.enabled && (
