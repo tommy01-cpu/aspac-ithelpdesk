@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { signIn, getSession } from 'next-auth/react';
-import { Eye, EyeOff, Mail, Lock, ArrowRight, Shield, Users, Zap, KeyRound } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, ArrowRight, Shield, Users, Zap, KeyRound, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,13 +35,14 @@ export default function LoginPage() {
       length: password.length >= 8,
       uppercase: /[A-Z]/.test(password),
       lowercase: /[a-z]/.test(password),
+      numbers: /[0-9]/.test(password),
       special: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password),
     };
   };
 
   const isPasswordValid = (password: string) => {
     const validation = validatePassword(password);
-    return validation.length && validation.uppercase && validation.lowercase && validation.special;
+    return validation.length && validation.uppercase && validation.lowercase && validation.numbers && validation.special;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -180,6 +181,15 @@ export default function LoginPage() {
     }
   };
 
+  const handleCloseForceChangePassword = () => {
+    setShowForceChangePassword(false);
+    setNewPassword('');
+    setConfirmPassword('');
+    setEmployeeId('');
+    setPassword('');
+    setError('');
+  };
+
   const features = [
     {
       icon: Shield,
@@ -201,12 +211,22 @@ export default function LoginPage() {
   return (
     <>
       {/* Force Password Change Modal */}
-      <Dialog open={showForceChangePassword} onOpenChange={() => {}}>
-        <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
+      <Dialog open={showForceChangePassword} onOpenChange={handleCloseForceChangePassword}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <KeyRound className="h-5 w-5 text-amber-500" />
-              Password Change Required
+            <DialogTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <KeyRound className="h-5 w-5 text-amber-500" />
+                Password Change Required
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCloseForceChangePassword}
+                className="h-6 w-6 p-0 hover:bg-gray-100"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </DialogTitle>
           </DialogHeader>
           
@@ -286,6 +306,7 @@ export default function LoginPage() {
                         {key === 'length' && 'At least 8 characters'}
                         {key === 'uppercase' && 'Contains uppercase letter'}
                         {key === 'lowercase' && 'Contains lowercase letter'}
+                        {key === 'numbers' && 'Contains numbers'}
                         {key === 'special' && 'Contains special character'}
                       </span>
                     </div>
@@ -304,6 +325,14 @@ export default function LoginPage() {
 
             {/* Action Buttons */}
             <div className="flex gap-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={handleCloseForceChangePassword}
+                disabled={isChangingPassword}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
               <Button
                 onClick={handlePasswordChange}
                 disabled={isChangingPassword || !isPasswordValid(newPassword) || newPassword !== confirmPassword}

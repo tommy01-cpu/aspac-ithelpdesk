@@ -238,7 +238,7 @@ export async function DELETE(req: NextRequest) {
         where: {
           templateId: existingItem.templateId.toString(),
           status: {
-            in: ['open', 'in_progress', 'pending_approval', 'waiting_for_approval']
+            in: ['open', 'for_approval', 'on_hold']
           }
         }
       });
@@ -246,8 +246,8 @@ export async function DELETE(req: NextRequest) {
       if (activeRequests > 0) {
         return NextResponse.json(
           { 
-            error: `Cannot delete service catalog item. There are ${activeRequests} active request(s) using this template.`,
-            activeRequests: activeRequests
+            error: `Deletion of this template is not allowed because there are requests using it.`
+           
           },
           { status: 409 }
         );

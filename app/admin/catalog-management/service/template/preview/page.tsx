@@ -14,6 +14,40 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { SessionWrapper } from '@/components/session-wrapper';
 
+// Predefined options for special field types
+const PRIORITY_OPTIONS = [
+  'Low',
+  'Medium', 
+  'High',
+  'Top'
+];
+
+// Priority help text mapping
+const PRIORITY_HELP_TEXT: Record<string, string> = {
+  'Low': 'Affects only you as an individual',
+  'Medium': 'Affects the delivery of your services',
+  'High': 'Affects the company\'s business',
+  'Top': 'Utmost action needed as classified by Management'
+};
+
+const REQUEST_STATUS_OPTIONS = [
+  'For Approval',
+  'Cancelled',
+  'Open',
+  'On-Hold',
+  'Closed'
+];
+
+// Mode options (predefined values for request submission mode)
+const MODE_OPTIONS = [
+  'Self-Service Portal',
+  'Phone Call',
+  'Chat',
+  'Email'
+];
+
+const REQUEST_TYPE_OPTIONS = ['Service', 'Incident'];
+
 // Dynamically import ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import('react-quill'), { 
   ssr: false,
@@ -280,27 +314,47 @@ export default function IncidentTemplatePreviewPage() {
       case 'priority':
       case 'status':
       case 'request_type':
+      case 'mode':
       case 'group':
       case 'technician':
-        return (
-          <Select value={value} onValueChange={(val) => handleFieldChange(field.id, val)} disabled={disabled}>
-            <SelectTrigger className={`w-full ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}>
-              <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
-            </SelectTrigger>
-            <SelectContent>
-              {field.options?.map((option: string) => (
-                <SelectItem key={option} value={option.toLowerCase().replace(/\s+/g, '-')}>
-                  {field.type === 'priority' && (
-                    <div className="flex items-center gap-2">
-                      <Star className={`w-3 h-3 ${
-                        option === 'Critical' ? 'text-red-500' :
-                        option === 'High' ? 'text-orange-500' :
-                        option === 'Medium' ? 'text-yellow-500' : 'text-green-500'
-                      }`} />
-                      {option}
-                    </div>
-                  )}
-                  {field.type === 'status' && (
+        if (field.type === 'priority') {
+          return (
+            <div className="space-y-2">
+              <Select value={value} onValueChange={(val) => handleFieldChange(field.id, val)} disabled={disabled}>
+                <SelectTrigger className={`w-full ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}>
+                  <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(field.options || PRIORITY_OPTIONS)?.map((option: string) => (
+                    <SelectItem key={option} value={option} title={PRIORITY_HELP_TEXT[option] || ''}>
+                      <div className="flex items-center gap-2">
+                        <Star className={`w-3 h-3 ${
+                          option === 'Top' ? 'text-red-500' :
+                          option === 'High' ? 'text-orange-500' :
+                          option === 'Medium' ? 'text-yellow-500' : 'text-green-500'
+                        }`} />
+                        {option}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {value && typeof value === 'string' && PRIORITY_HELP_TEXT[value] && (
+                <p className={`text-xs ${disabled ? 'text-gray-400' : 'text-blue-600'} italic`}>
+                  💡 {PRIORITY_HELP_TEXT[value]}
+                </p>
+              )}
+            </div>
+          );
+        } else if (field.type === 'status') {
+          return (
+            <Select value={value} onValueChange={(val) => handleFieldChange(field.id, val)} disabled={disabled}>
+              <SelectTrigger className={`w-full ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}>
+                <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
+              </SelectTrigger>
+              <SelectContent>
+                {(field.options || REQUEST_STATUS_OPTIONS)?.map((option: string) => (
+                  <SelectItem key={option} value={option}>
                     <div className="flex items-center gap-2">
                       <CheckSquare className={`w-3 h-3 ${
                         option === 'Closed' ? 'text-green-500' :
@@ -310,13 +364,52 @@ export default function IncidentTemplatePreviewPage() {
                       }`} />
                       {option}
                     </div>
-                  )}
-                  {['priority', 'status'].indexOf(field.type) === -1 && option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          );
+        } else if (field.type === 'mode') {
+          return (
+            <Select value={value} onValueChange={(val) => handleFieldChange(field.id, val)} disabled={disabled}>
+              <SelectTrigger className={`w-full ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}>
+                <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
+              </SelectTrigger>
+              <SelectContent>
+                {(field.options || MODE_OPTIONS)?.map((option: string) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          );
+        } else if (field.type === 'request_type') {
+          return (
+            <Input
+              value={value || field.defaultValue || 'Service'}
+              disabled={true}
+              readOnly={true}
+              placeholder="Service (locked for service templates)"
+              className={`w-full bg-gray-100 text-gray-600 ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+            />
+          );
+        } else {
+          return (
+            <Select value={value} onValueChange={(val) => handleFieldChange(field.id, val)} disabled={disabled}>
+              <SelectTrigger className={`w-full ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}>
+                <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
+              </SelectTrigger>
+              <SelectContent>
+                {field.options?.map((option: string) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          );
+        }
 
       case 'category':
         return (

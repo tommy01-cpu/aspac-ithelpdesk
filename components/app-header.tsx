@@ -43,6 +43,7 @@ export default function AppHeader() {
       length: password.length >= 8,
       uppercase: /[A-Z]/.test(password),
       lowercase: /[a-z]/.test(password),
+      numbers: /[0-9]/.test(password),
       special: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password)
     };
     return checks;
@@ -81,6 +82,12 @@ export default function AppHeader() {
     // Check for lowercase letter
     if (!/[a-z]/.test(passwordData.newPassword)) {
       setError('New password must contain at least one lowercase letter');
+      return;
+    }
+
+    // Check for numbers
+    if (!/[0-9]/.test(passwordData.newPassword)) {
+      setError('New password must contain at least one number');
       return;
     }
 
@@ -304,6 +311,10 @@ export default function AppHeader() {
                       <span className="text-xs">{validatePassword(passwordData.newPassword).lowercase ? '✓' : '✗'}</span>
                       Must contain lowercase letters
                     </li>
+                    <li className={`flex items-center gap-1 ${validatePassword(passwordData.newPassword).numbers ? 'text-green-600' : 'text-red-500'}`}>
+                      <span className="text-xs">{validatePassword(passwordData.newPassword).numbers ? '✓' : '✗'}</span>
+                      Must contain numbers
+                    </li>
                     <li className={`flex items-center gap-1 ${validatePassword(passwordData.newPassword).special ? 'text-green-600' : 'text-red-500'}`}>
                       <span className="text-xs">{validatePassword(passwordData.newPassword).special ? '✓' : '✗'}</span>
                       Must contain special characters or symbols
@@ -314,6 +325,7 @@ export default function AppHeader() {
                   <ul className="list-disc list-inside space-y-0.5 text-gray-500">
                     <li>Minimum 8 characters long</li>
                     <li>Must contain uppercase and lowercase letters</li>
+                    <li>Must contain numbers</li>
                     <li>Must contain special characters or symbols</li>
                   </ul>
                 )}

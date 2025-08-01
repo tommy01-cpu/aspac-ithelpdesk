@@ -139,9 +139,12 @@ export default function ServiceCatalogTab() {
     router.push(`/admin/catalog-management/service/template/builder?type=service&categoryId=${categoryId}`);
   };
 
-  const handleEditTemplate = (templateId?: number) => {
+  const handleEditTemplate = (templateId?: number, categoryId?: number) => {
     if (templateId) {
-      router.push(`/admin/catalog-management/service/template/builder?id=${templateId}&type=service`);
+      const url = categoryId 
+        ? `/admin/catalog-management/service/template/builder?id=${templateId}&type=service&categoryId=${categoryId}`
+        : `/admin/catalog-management/service/template/builder?id=${templateId}&type=service`;
+      router.push(url);
     }
   };
 
@@ -176,8 +179,8 @@ export default function ServiceCatalogTab() {
       } else if (response.status === 409) {
         // Handle conflict due to active requests
         showErrorDialog(
-          'Cannot Delete Service', 
-          responseData.error + (responseData.activeRequests ? '\n\nPlease complete or cancel these requests before deleting the service.' : '')
+          'Template Deletion Not Allowed', 
+          responseData.error
         );
       } else {
         showErrorDialog('Delete Failed', responseData.error || 'Failed to delete service. Please try again.');
@@ -482,7 +485,7 @@ export default function ServiceCatalogTab() {
                                         {service.templateName && (
                                           <>
                                             <button
-                                              onClick={() => handleEditTemplate(service.templateId)}
+                                              onClick={() => handleEditTemplate(service.templateId, category.id)}
                                               className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
                                             >
                                               edit

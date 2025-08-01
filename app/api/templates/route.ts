@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * limit;
 
     // Build where clause
-    const where: any = { isActive: true };
+    const where: any = {}; // Remove isActive filter to show all templates
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -113,6 +113,7 @@ export async function POST(req: NextRequest) {
       icon,
       type, 
       categoryId,
+      isActive,
       fields, 
       approvalWorkflow,
       slaServiceId,
@@ -152,6 +153,7 @@ export async function POST(req: NextRequest) {
           icon,
           type,
           categoryId: categoryId || null,
+          isActive: isActive !== undefined ? isActive : false, // Default to inactive
           fields,
           approvalWorkflow,
           slaServiceId: slaServiceId || null,
@@ -181,7 +183,7 @@ export async function POST(req: NextRequest) {
             description: description || `Service template: ${name}`,
             categoryId: categoryId,
             templateId: template.id,
-            isActive: true,
+            isActive: isActive !== undefined ? isActive : false, // Use same status as template
             createdBy: parseInt(session.user.id),
             updatedBy: parseInt(session.user.id),
           },
@@ -215,6 +217,7 @@ export async function PUT(req: NextRequest) {
       description, 
       icon,
       type, 
+      isActive,
       fields, 
       approvalWorkflow,
       slaServiceId,
@@ -253,6 +256,7 @@ export async function PUT(req: NextRequest) {
           description,
           icon,
           type,
+          isActive: isActive !== undefined ? isActive : false, // Default to inactive
           fields,
           approvalWorkflow,
           slaServiceId: slaServiceId || null,
@@ -290,6 +294,7 @@ export async function PUT(req: NextRequest) {
             data: {
               name: name,
               description: description || `Service template: ${name}`,
+              isActive: isActive !== undefined ? isActive : false, // Sync status with template
               updatedBy: parseInt(session.user.id),
             },
           });

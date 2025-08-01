@@ -6,13 +6,14 @@ import {
   ArrowLeft, Save, Eye, Settings, Plus, Trash2, Edit3, Edit,
   Type, Hash, Calendar, Clock, FileText, CheckSquare, 
   List, Upload, Users, Mail, Phone, MapPin, Star,
-  ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, X, User
+  ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, X, User, Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -74,9 +75,9 @@ const fieldTypes = [
   // Default/System Fields (ordered as they appear in default fields - 13 total)
   { id: 'name_text', name: 'Name/Text Input', icon: Type, description: 'Single line text input', color: 'bg-blue-100 text-blue-600', actualType: 'text' },
   { id: 'priority', name: 'Priority', icon: Star, description: 'Priority selector', color: 'bg-amber-100 text-amber-600', actualType: 'priority' },
-  { id: 'mode_select', name: 'Mode/Dropdown', icon: List, description: 'Single selection dropdown', color: 'bg-purple-100 text-purple-600', actualType: 'select' },
+  { id: 'mode_select', name: 'Mode/Dropdown', icon: List, description: 'Single selection dropdown', color: 'bg-purple-100 text-purple-600', actualType: 'mode' },
   { id: 'request_type', name: 'Request Type', icon: List, description: 'Request type (Service/Incident)', color: 'bg-purple-100 text-purple-600', actualType: 'request_type' },
-  { id: 'status', name: 'Status', icon: CheckSquare, description: 'Request status selector', color: 'bg-yellow-100 text-yellow-600', actualType: 'status' },
+  { id: 'status', name: 'Request Status', icon: CheckSquare, description: 'Request status selector', color: 'bg-yellow-100 text-yellow-600', actualType: 'status' },
   { id: 'category', name: 'Category', icon: List, description: 'Service category selector', color: 'bg-indigo-100 text-indigo-600', actualType: 'category' },
   { id: 'group', name: 'Support Group', icon: Users, description: 'Support group selector', color: 'bg-blue-100 text-blue-600', actualType: 'group' },
   { id: 'technician', name: 'Technician', icon: Users, description: 'Technician selector', color: 'bg-green-100 text-green-600', actualType: 'technician' },
@@ -107,12 +108,29 @@ const PRIORITY_OPTIONS = [
   'Top'
 ];
 
+// Priority help text mapping
+const PRIORITY_HELP_TEXT: Record<string, string> = {
+  'Low': 'Affects only you as an individual',
+  'Medium': 'Affects the delivery of your services',
+  'High': 'Affects the company\'s business',
+  'Top': 'Utmost action needed as classified by Management'
+};
+
 const REQUEST_STATUS_OPTIONS = [
   'For Approval',
   'Cancelled',
   'Open',
   'On-Hold',
+  'Resolved',
   'Closed'
+];
+
+// Mode options (predefined values for request submission mode)
+const MODE_OPTIONS = [
+  'Self-Service Portal',
+  'Phone Call',
+  'Chat',
+  'Email'
 ];
 
 const REQUEST_TYPE_OPTIONS = ['Service', 'Incident'];
@@ -282,7 +300,7 @@ const TEMPLATE_PRESETS: Record<string, Partial<ServiceTemplate>> = {
       type: 'priority',
       label: 'Priority',
       required: true,
-      options: ['Low', 'Medium', 'High', 'Top'],
+      options: PRIORITY_OPTIONS,
       helpText: 'Select the priority level for this request',
       technicianOnly: false,
       readonly: false,
@@ -291,10 +309,10 @@ const TEMPLATE_PRESETS: Record<string, Partial<ServiceTemplate>> = {
     },
     {
       id: '3',
-      type: 'select',
+      type: 'mode',
       label: 'Mode',
       required: true,
-      options: ['Self-Service Portal', 'Phone Call', 'Chat', 'Email'],
+      options: MODE_OPTIONS,
       helpText: 'How was this request submitted?',
       technicianOnly: true,
       readonly: false,
@@ -306,19 +324,19 @@ const TEMPLATE_PRESETS: Record<string, Partial<ServiceTemplate>> = {
       type: 'request_type',
       label: 'Request Type',
       required: true,
-      options: ['Service', 'Incident'],
+      options: REQUEST_TYPE_OPTIONS,
       helpText: 'Type of request being submitted',
       technicianOnly: true,
-      readonly: false,
-      disabled: false,
+      readonly: true,
+      disabled: true,
       defaultValue: 'Service'
     },
     {
       id: '5',
       type: 'status',
-      label: 'Status',
+      label: 'Request Status',
       required: true,
-      options: ['For Approval', 'Cancelled', 'Open', 'On-Hold', 'Closed'],
+      options: REQUEST_STATUS_OPTIONS,
       helpText: 'Current status of the request',
       technicianOnly: true,
       readonly: false,
@@ -424,6 +442,7 @@ export default function ServiceTemplateBuilderPage() {
   const [templateName, setTemplateName] = useState('New Service Template');
   const [templateDescription, setTemplateDescription] = useState('');
   const [templateIcon, setTemplateIcon] = useState<string>('');
+  const [templateIsActive, setTemplateIsActive] = useState<boolean>(false); // Template active status
   const [currentView, setCurrentView] = useState<'user' | 'technician'>('technician');
   const [selectedField, setSelectedField] = useState<string | null>(null);
   const [isConfigPanelOpen, setIsConfigPanelOpen] = useState(false);
@@ -612,7 +631,7 @@ export default function ServiceTemplateBuilderPage() {
       type: 'priority',
       label: 'Priority',
       required: true,
-      options: ['Low', 'Medium', 'High', 'Top'],
+      options: PRIORITY_OPTIONS,
       helpText: 'Select the priority level for this request',
       technicianOnly: false,
       readonly: false,
@@ -621,10 +640,10 @@ export default function ServiceTemplateBuilderPage() {
     },
     {
       id: '3',
-      type: 'select',
+      type: 'mode',
       label: 'Mode',
       required: true,
-      options: ['Self-Service Portal', 'Phone Call', 'Chat', 'Email'],
+      options: MODE_OPTIONS,
       helpText: 'How was this request submitted?',
       technicianOnly: true,
       readonly: false,
@@ -636,19 +655,19 @@ export default function ServiceTemplateBuilderPage() {
       type: 'request_type',
       label: 'Request Type',
       required: true,
-      options: ['Service', 'Incident'],
+      options: REQUEST_TYPE_OPTIONS,
       helpText: 'Type of request being submitted',
       technicianOnly: true,
-      readonly: false,
-      disabled: false,
+      readonly: true,
+      disabled: true,
       defaultValue: 'Service'
     },
     {
       id: '5',
       type: 'status',
-      label: 'Status',
+      label: 'Request Status',
       required: true,
-      options: ['For Approval', 'Cancelled', 'Open', 'On-Hold', 'Closed'],
+      options: REQUEST_STATUS_OPTIONS,
       helpText: 'Current status of the request',
       technicianOnly: true,
       readonly: false,
@@ -932,7 +951,20 @@ export default function ServiceTemplateBuilderPage() {
           setTemplateName(`${template.name} (Copy)`);
           setTemplateDescription(template.description);
           setTemplateIcon(template.icon || '');
-          setFormFields(template.fields || []);
+          
+          // Load fields and update category field with selected category if available
+          let fieldsToSet = template.fields || [];
+          if (selectedCategoryId && Array.isArray(serviceCategories) && serviceCategories.length > 0) {
+            const selectedCategory = serviceCategories.find(cat => cat.id === selectedCategoryId);
+            if (selectedCategory) {
+              fieldsToSet = fieldsToSet.map((field: FormField) => 
+                field.type === 'category' 
+                  ? { ...field, defaultValue: selectedCategory.name }
+                  : field
+              );
+            }
+          }
+          setFormFields(fieldsToSet);
           
           // Load approval workflow
           if (template.approvalWorkflow) {
@@ -992,6 +1024,7 @@ export default function ServiceTemplateBuilderPage() {
         setTemplateName(template.name);
         setTemplateDescription(template.description);
         setTemplateIcon(template.icon || '');
+        setTemplateIsActive(template.isActive || false); // Load active status
         setFormFields(template.fields || []);
         
         // Load approval workflow
@@ -1036,7 +1069,9 @@ export default function ServiceTemplateBuilderPage() {
         console.error(`Failed to load template. Status: ${response.status}, Error: ${errorData}`);
         
         if (response.status === 404) {
-          alert(`Template with ID ${templateId} was not found. It may have been deleted or never existed.`);
+          alert(`Template with ID ${templateId} was not found. It may have been deleted. Redirecting to create a new template.`);
+          // Reset to create new template mode
+          createNewTemplate();
         } else if (response.status === 401) {
           alert('You are not authorized to view this template. Please log in again.');
         } else {
@@ -1055,6 +1090,7 @@ export default function ServiceTemplateBuilderPage() {
     setTemplateName('New Service Template');
     setTemplateDescription('');
     setTemplateIcon('');
+    setTemplateIsActive(false); // Reset to inactive for new templates
     setFormFields([]);
     setSelectedField(null);
     setIsConfigPanelOpen(false);
@@ -1071,6 +1107,7 @@ export default function ServiceTemplateBuilderPage() {
         icon: templateIcon,
         type: 'service',
         categoryId: selectedCategoryId,
+        isActive: templateIsActive, // Use the template's active status from state
         fields: formFields,
         approvalWorkflow: isApprovalEnabled ? {
           enabled: true,
@@ -1197,12 +1234,17 @@ export default function ServiceTemplateBuilderPage() {
       defaultOptions = REQUEST_STATUS_OPTIONS;
       defaultPlaceholder = 'Select request status';
       defaultValue = 'For Approval';
-      fieldLabel = 'Status';
+      fieldLabel = 'Request Status';
     } else if (actualFieldType === 'request_type') {
       defaultOptions = REQUEST_TYPE_OPTIONS;
       defaultPlaceholder = 'Select request type';
       defaultValue = 'Service'; // Service template defaults to Service
       fieldLabel = 'Request Type';
+    } else if (actualFieldType === 'mode') {
+      defaultOptions = MODE_OPTIONS;
+      defaultPlaceholder = 'Select submission mode';
+      defaultValue = 'Self-Service Portal';
+      fieldLabel = 'Mode';
     } else if (actualFieldType === 'group') {
       defaultOptions = Array.isArray(supportGroups) ? supportGroups.map(group => group.name) : [];
       defaultPlaceholder = 'Select support group';
@@ -1282,10 +1324,12 @@ export default function ServiceTemplateBuilderPage() {
       label: fieldLabel,
       required: false,
       placeholder: defaultPlaceholder,
-      helpText: actualFieldType === 'category' ? 'Service category (auto-selected based on your selection)' : '',
-      technicianOnly: false,
-      readonly: actualFieldType === 'category', // Make category fields readonly by default
-      disabled: false,
+      helpText: actualFieldType === 'category' ? 'Service category (auto-selected based on your selection)' : 
+                actualFieldType === 'request_type' ? 'Type of request being submitted' : 
+                actualFieldType === 'mode' ? 'How was this request submitted?' : '',
+      technicianOnly: actualFieldType === 'request_type' || actualFieldType === 'mode', // Request type and mode are technician only
+      readonly: actualFieldType === 'request_type' || actualFieldType === 'category', // Request type and category fields are readonly
+      disabled: actualFieldType === 'request_type', // Make request_type fields disabled by default
       defaultValue: defaultValue,
       ...(defaultOptions.length > 0 ? { options: defaultOptions } : {})
     };
@@ -1431,12 +1475,13 @@ export default function ServiceTemplateBuilderPage() {
           />
         )}
         
-        {(field.type === 'select' || field.type === 'priority' || field.type === 'status' || field.type === 'request_type' || field.type === 'group' || field.type === 'technician') && (
+        {(field.type === 'select' || field.type === 'priority' || field.type === 'status' || field.type === 'request_type' || field.type === 'mode' || field.type === 'group' || field.type === 'technician' || field.type === 'category') && (
           <div className={`p-3 border rounded-md text-sm relative ${isFieldDisabled ? 'bg-gray-100 border-gray-300 text-gray-400 opacity-60' : isFieldReadonly ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
             {(() => {
-              // For other select fields, show the default value or first option if available
+              // For all select fields, show the default value or first option if available
               if (fieldValue && typeof fieldValue === 'string' && field.options && field.options.includes(fieldValue)) {
-                return fieldValue;
+                const displayValue = fieldValue;
+                return <span>{displayValue}</span>;
               }
               
               // Show default value if it exists and is valid
@@ -1446,7 +1491,8 @@ export default function ServiceTemplateBuilderPage() {
               
               // Show first option as default if available
               if (field.options && field.options.length > 0) {
-                return field.options[0];
+                const firstOption = field.options[0];
+                return <span>{firstOption}</span>;
               }
               
               return `Select ${field.label.toLowerCase()}`;
@@ -1457,43 +1503,6 @@ export default function ServiceTemplateBuilderPage() {
           </div>
         )}
         
-        {field.type === 'category' && (
-          <Input
-            value={(() => {
-              console.log('Category field debug:', {
-                fieldValue,
-                fieldOptions: field.options,
-                selectedCategoryId,
-                serviceCategories: Array.isArray(serviceCategories) ? serviceCategories.map(cat => ({ id: cat.id, name: cat.name })) : []
-              });
-              
-              // Priority 1: Check if we have a default value that matches a category name
-              if (fieldValue && typeof fieldValue === 'string' && fieldValue.trim() !== '') {
-                return fieldValue;
-              }
-              
-              // Priority 2: Check if we have a selected category ID and can find the name
-              if (selectedCategoryId && Array.isArray(serviceCategories) && serviceCategories.length > 0) {
-                const selectedCategory = serviceCategories.find(cat => cat.id === selectedCategoryId);
-                if (selectedCategory) {
-                  console.log('Found selected category:', selectedCategory.name);
-                  return selectedCategory.name;
-                }
-              }
-              
-              // Priority 3: Show first option if available
-              if (field.options && field.options.length > 0) {
-                return field.options[0];
-              }
-              
-              return 'No category selected';
-            })()}
-            placeholder="No category selected"
-            disabled={true}
-            readOnly={true}
-            className={`${isFieldDisabled ? 'bg-gray-100 opacity-60' : 'bg-blue-50 border-blue-200 text-blue-700'}`}
-          />
-        )}
         
         {field.type === 'multiselect' && (
           <div className={`min-h-[40px] p-3 border rounded-md text-sm relative ${isFieldDisabled ? 'bg-gray-100 border-gray-300 text-gray-400 opacity-60' : isFieldReadonly ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
@@ -2398,22 +2407,55 @@ export default function ServiceTemplateBuilderPage() {
 
                     <div>
                       <label className="text-sm font-medium text-slate-700 mb-2 block">Default Value</label>
-                      <Input
-                        value={selectedFieldData.defaultValue || ''}
-                        onChange={(e) => updateField(selectedFieldData.id, { defaultValue: e.target.value })}
-                        placeholder="Enter default value"
-                      />
+                      {selectedFieldData.type === 'request_type' ? (
+                        <Input
+                          value={selectedFieldData.defaultValue || 'Service'}
+                          disabled={true}
+                          placeholder="Service (locked for service templates)"
+                          className="bg-gray-100 text-gray-600"
+                        />
+                      ) : selectedFieldData.type === 'category' ? (
+                        <Input
+                          value={selectedFieldData.defaultValue || ''}
+                          disabled={true}
+                          placeholder="Category (auto-selected based on your selection)"
+                          className="bg-gray-100 text-gray-600"
+                        />
+                      ) : (selectedFieldData.type === 'select' || selectedFieldData.type === 'priority' || 
+                        selectedFieldData.type === 'status' || selectedFieldData.type === 'mode') && selectedFieldData.options && selectedFieldData.options.length > 0 ? (
+                        <select
+                          value={selectedFieldData.defaultValue || ''}
+                          onChange={(e) => updateField(selectedFieldData.id, { defaultValue: e.target.value })}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select default value</option>
+                          {selectedFieldData.options.map((option, index) => (
+                            <option 
+                              key={index} 
+                              value={option}
+                            >
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Input
+                          value={selectedFieldData.defaultValue || ''}
+                          onChange={(e) => updateField(selectedFieldData.id, { defaultValue: e.target.value })}
+                          placeholder="Enter default value"
+                        />
+                      )}
                     </div>
 
                     {(selectedFieldData.type === 'select' || selectedFieldData.type === 'multiselect' || 
                       selectedFieldData.type === 'priority' || selectedFieldData.type === 'status' || 
-                      selectedFieldData.type === 'request_type' || selectedFieldData.type === 'group' || 
-                      selectedFieldData.type === 'technician' || selectedFieldData.type === 'category') && (
+                      selectedFieldData.type === 'request_type' || selectedFieldData.type === 'mode' || selectedFieldData.type === 'group' || 
+                      selectedFieldData.type === 'technician') && (
                       <div>
                         <label className="text-sm font-medium text-slate-700 mb-2 block">Options</label>
                         {(selectedFieldData.type === 'priority' || selectedFieldData.type === 'status' || 
-                          selectedFieldData.type === 'request_type' || selectedFieldData.type === 'group' || 
-                          selectedFieldData.type === 'technician' || selectedFieldData.type === 'category') ? (
+                          selectedFieldData.type === 'request_type' || selectedFieldData.type === 'mode' || selectedFieldData.type === 'group' || 
+                          selectedFieldData.type === 'technician') ? (
                           <div className="p-3 bg-slate-50 rounded-md text-sm text-slate-600">
                             <p className="font-medium mb-2">Predefined Options:</p>
                             <div className="space-y-1 max-h-32 overflow-y-auto">
@@ -2561,6 +2603,28 @@ export default function ServiceTemplateBuilderPage() {
                             Remove icon
                           </Button>
                         )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Template Active/Inactive Toggle - Show for all templates */}
+                  <div className="mt-4 p-3 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <label className="text-sm font-medium text-slate-700 mb-1 block">Template Status</label>
+                        <p className="text-xs text-slate-500">
+                          {templateIsActive ? 'Template will be active and visible to users when saved' : 'Template will be inactive and hidden from users when saved'}
+                        </p>
+                      </div>
+                      <div className="flex-shrink-0 flex items-center gap-3">
+                        <span className={`text-sm font-medium ${templateIsActive ? 'text-green-600' : 'text-slate-500'}`}>
+                          {templateIsActive ? 'Active' : 'Inactive'}
+                        </span>
+                        <Switch
+                          checked={templateIsActive}
+                          onCheckedChange={setTemplateIsActive}
+                          className="data-[state=checked]:bg-green-600"
+                        />
                       </div>
                     </div>
                   </div>
@@ -3112,16 +3176,49 @@ const ApprovalLevelModal: React.FC<ApprovalLevelModalProps> = ({ level, onSave, 
   const [searchTerm, setSearchTerm] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  // Filter users based on search term and exclude already selected approvers
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = searchTerm === '' || 
-                         user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase()));
-    const notAlreadySelected = !approvers.some(approver => approver.id === user.id);
-    return matchesSearch && notAlreadySelected;
-  });
+  // Special approvers for dynamic selection
+  const specialApprovers = [
+    {
+      id: -1, // Use negative ID to distinguish from real users
+      name: 'Reported to',
+      email: 'rt',
+      isSpecial: true,
+      description: 'The direct supervisor/manager of the user who submitted the request'
+    },
+    {
+      id: -2, // Use negative ID to distinguish from real users
+      name: 'Department Head',
+      email: 'dh',
+      isSpecial: true,
+      description: 'The department head of the user who submitted the request'
+    }
+  ];
 
-  const handleAddApprover = (user: { id: number; name: string; email?: string }) => {
+  // Filter users to only include Service Request Approvers and special approvers
+  const filteredUsers = [
+    // Add special approvers first if they match search and aren't already selected
+    ...specialApprovers.filter(special => {
+      const matchesSearch = searchTerm === '' || 
+                           special.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           special.description.toLowerCase().includes(searchTerm.toLowerCase());
+      const notAlreadySelected = !approvers.some(approver => approver.id === special.id);
+      return matchesSearch && notAlreadySelected;
+    }),
+    // Then add regular users who are Service Request Approvers
+    ...users.filter(user => {
+      const matchesSearch = searchTerm === '' || 
+                           user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase()));
+      const notAlreadySelected = !approvers.some(approver => approver.id === user.id);
+      // Only include users marked as Service Request Approvers
+      // TODO: Replace this with actual field check based on your user data structure
+      // Example: user.isServiceRequestApprover === true || user.roles?.includes('service_request_approver')
+      const isServiceRequestApprover = true; // Temporary - replace with actual field check
+      return matchesSearch && notAlreadySelected && isServiceRequestApprover;
+    })
+  ];
+
+  const handleAddApprover = (user: { id: number; name: string; email?: string; isSpecial?: boolean; description?: string }) => {
     const newApprover = {
       id: user.id,
       name: user.name,
@@ -3167,67 +3264,91 @@ const ApprovalLevelModal: React.FC<ApprovalLevelModalProps> = ({ level, onSave, 
         
         {/* Search Users */}
         <div className="relative mb-3">
-          <Input
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setIsDropdownOpen(true);
-            }}
-            onFocus={() => setIsDropdownOpen(true)}
-            placeholder="Search by name, email, or department"
-            className="flex-1"
-          />
           <Button
             type="button"
+            variant="outline"
+            className="w-full justify-between text-left font-normal"
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            size="sm"
-            variant="ghost"
-            className="absolute right-1 top-1 h-8 w-8 p-0"
           >
-            <Plus className="w-4 h-4" />
+            <span className="text-muted-foreground">
+              Add approvers...
+            </span>
+            <ChevronDown 
+              className={`h-4 w-4 text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`}
+            />
           </Button>
           
           {/* Dropdown with user list */}
           {isDropdownOpen && (
-            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-              {filteredUsers.length > 0 ? (
-                <div className="py-1">
-                  {filteredUsers.slice(0, 10).map((user) => (
-                    <button
-                      key={user.id}
-                      type="button"
-                      onClick={() => handleAddApprover(user)}
-                      className="w-full px-3 py-2 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                          <User className="h-4 w-4 text-gray-600" />
+            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-64 overflow-hidden">
+              {/* Search Input inside dropdown */}
+              <div className="p-2 border-b border-gray-100">
+                <Input
+                  type="text"
+                  placeholder="Select Approvers"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="h-8"
+                  autoFocus
+                />
+              </div>
+              
+              {/* Scrollable list */}
+              <div className="max-h-48 overflow-y-auto">
+                {filteredUsers.length > 0 ? (
+                  <>
+                    {filteredUsers.slice(0, 15).map((user) => {
+                      const isSelected = approvers.some(approver => approver.id === user.id);
+                      return (
+                        <div
+                          key={user.id}
+                          className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-b-0"
+                          onClick={() => handleAddApprover(user)}
+                        >
+                          <div className="flex items-center mr-3">
+                            {isSelected ? (
+                              <Check className="h-4 w-4 text-blue-600" />
+                            ) : (
+                              <div className="h-4 w-4" />
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <div className={`font-medium flex items-center gap-2 ${
+                              user.isSpecial ? 'text-blue-900' : 'text-gray-900'
+                            }`}>
+                              {user.name}
+                              {user.isSpecial && (
+                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                                  Dynamic
+                                </span>
+                              )}
+                            </div>
+                            {user.isSpecial ? (
+                              <div className="text-sm text-blue-600">
+                                {user.description}
+                              </div>
+                            ) : user.email ? (
+                              <div className="text-sm text-gray-500">
+                                {user.email}
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">
-                            {user.name}
-                          </p>
-                          {user.email && (
-                            <p className="text-sm text-gray-500 truncate">
-                              {user.email}
-                            </p>
-                          )}
-                        </div>
+                      );
+                    })}
+                    {filteredUsers.length > 15 && (
+                      <div className="px-3 py-2 text-sm text-gray-500 border-t">
+                        Showing first 15 results. Refine your search for more.
                       </div>
-                    </button>
-                  ))}
-                  {filteredUsers.length > 10 && (
-                    <div className="px-3 py-2 text-sm text-gray-500 border-t">
-                      Showing first 10 results. Refine your search for more.
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="px-3 py-2 text-sm text-gray-500">
-                  {users.length === 0 ? 'No users available in the system.' : 
-                   searchTerm ? 'No users found matching your search.' : 'Start typing to search for users...'}
-                </div>
-              )}
+                    )}
+                  </>
+                ) : (
+                  <div className="p-4 text-center text-gray-500">
+                    {users.length === 0 ? 'No Service Request Approvers available in the system.' : 
+                     searchTerm ? 'No Service Request Approvers found matching your search.' : 'Start typing to search for approvers...'}
+                  </div>
+                )}
+              </div>
             </div>
           )}
           
@@ -3242,34 +3363,55 @@ const ApprovalLevelModal: React.FC<ApprovalLevelModalProps> = ({ level, onSave, 
 
         {/* Selected Approvers List */}
         {approvers.length > 0 && (
-          <div className="space-y-2 max-h-32 overflow-y-auto">
-            {approvers.map((approver) => (
-              <div
-                key={approver.id}
-                className="flex items-center justify-between p-3 bg-slate-50 rounded border"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                    <User className="h-4 w-4 text-gray-600" />
+          <div className="mt-2 flex flex-wrap gap-2">
+            {approvers.map((approver) => {
+              const isSpecial = approver.id < 0; // Special approvers have negative IDs
+              
+              // Handle special approvers
+              if (approver.email === 'rt') {
+                return (
+                  <div key={approver.id} className="inline-flex items-center bg-green-100 text-green-800 px-2 py-1 rounded-md text-sm">
+                    <span>Reported to</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveApprover(approver.id)}
+                      className="ml-1 hover:bg-green-200 rounded-full p-0.5"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">{approver.name}</p>
-                    {approver.email && (
-                      <p className="text-xs text-slate-500">{approver.email}</p>
-                    )}
+                );
+              }
+              
+              if (approver.email === 'dh') {
+                return (
+                  <div key={approver.id} className="inline-flex items-center bg-purple-100 text-purple-800 px-2 py-1 rounded-md text-sm">
+                    <span>Department Head</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveApprover(approver.id)}
+                      className="ml-1 hover:bg-purple-200 rounded-full p-0.5"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
                   </div>
+                );
+              }
+              
+              // Regular user approvers
+              return (
+                <div key={approver.id} className="inline-flex items-center bg-blue-100 text-blue-800 px-2 py-1 rounded-md text-sm">
+                  <span>{approver.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveApprover(approver.id)}
+                    className="ml-1 hover:bg-blue-200 rounded-full p-0.5"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleRemoveApprover(approver.id)}
-                  className="text-red-600 hover:text-red-700 h-6 w-6 p-0"
-                >
-                  <X className="w-3 h-3" />
-                </Button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

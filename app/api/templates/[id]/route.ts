@@ -25,8 +25,8 @@ export async function GET(
 
     const template = await prisma.template.findUnique({
       where: { 
-        id: templateId,
-        isActive: true 
+        id: templateId
+        // Remove isActive filter to allow loading inactive templates for editing
       },
       include: {
         creator: {

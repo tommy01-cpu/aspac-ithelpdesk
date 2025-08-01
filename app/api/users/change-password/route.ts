@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
       length: newPassword.length >= 8,
       uppercase: /[A-Z]/.test(newPassword),
       lowercase: /[a-z]/.test(newPassword),
+      numbers: /[0-9]/.test(newPassword),
       special: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(newPassword),
     };
 
