@@ -48,6 +48,8 @@ export async function GET(request: NextRequest) {
         }
       },
       orderBy: [
+        { user: { emp_fname: 'asc' } },
+        { user: { emp_lname: 'asc' } },
         { displayName: 'asc' }
       ]
     });
@@ -56,18 +58,19 @@ export async function GET(request: NextRequest) {
       success: true,
       data: technicians.map(tech => ({
         id: tech.id,
-        displayName: tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`,
+        displayName: tech.displayName || `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim(),
         loginName: tech.loginName,
-        employeeId: tech.user.emp_code || '',
-        jobTitle: tech.user.post_des || '',
-        primaryEmail: tech.user.emp_email || '',
-        department: tech.user.department ? {
+        employeeId: tech.user?.emp_code || '',
+        jobTitle: tech.user?.post_des || '',
+        primaryEmail: tech.user?.emp_email || '',
+        department: tech.user?.department ? {
           id: tech.user.department,
           name: tech.user.department
         } : null,
+        user: tech.user, // Include the full user object for frontend compatibility
         isActive: tech.isActive,
         value: tech.id.toString(),
-        name: tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`
+        name: tech.displayName || `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim()
       })),
       total: technicians.length
     });

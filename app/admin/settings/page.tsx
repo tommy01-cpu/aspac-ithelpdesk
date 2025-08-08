@@ -27,6 +27,9 @@ export default function AdminSettingsPage() {
       case 'Service Level Agreements':
         router.push('/admin/settings/sla-management?tab=sla-service');
         break;
+      case 'Technician Auto Assign':
+        router.push('/admin/settings/automation');
+        break;
       // Service Desk Configuration items
       case 'Departments':
         router.push('/admin/settings/service-desk?tab=departments');

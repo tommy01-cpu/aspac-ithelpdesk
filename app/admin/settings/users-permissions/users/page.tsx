@@ -463,8 +463,8 @@ export default function UsersPage() {
         
         if (failed > 0) {
           const failedReasons = results
-            .filter(result => result.status === 'rejected')
-            .map(result => result.reason.message)
+            .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+            .map(result => result.reason?.message || 'Unknown error')
             .join('\n');
           
           alert(`${successful} user(s) deleted successfully.\n${failed} failed:\n${failedReasons}`);

@@ -174,8 +174,24 @@ model SupportGroup {
   // Relationships
   technicianMemberships TechnicianSupportGroup[]
   templateAssignments   TemplateSupportGroup[]
+  globalLoadBalanceConfig GlobalLoadBalanceConfig?
 
   @@map("support_groups")
+}
+
+// Global Load Balance Configuration - replaces per-template load balancing
+model GlobalLoadBalanceConfig {
+  id                    Int           @id @default(autoincrement())
+  supportGroupId        Int           @unique
+  isActive              Boolean       @default(true)
+  priority              Int           @default(1)
+  createdAt             DateTime      @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime      @updatedAt
+
+  // Relationships
+  supportGroup          SupportGroup  @relation(fields: [supportGroupId], references: [id], onDelete: Cascade)
+
+  @@map("global_load_balance_config")
 }
 
 // Technician Management
@@ -463,7 +479,6 @@ model TemplateSupportGroup {
   templateId            Int
   supportGroupId        Int
   isActive              Boolean       @default(true)
-  loadBalanceType       String        @default("round_robin") @db.VarChar(20) // 'round_robin', 'least_load', 'random'
   priority              Int           @default(1) // Priority order for assignment
   createdAt             DateTime      @default(now()) @db.Timestamp(6)
   

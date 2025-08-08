@@ -27,7 +27,6 @@ interface SupportGroupAssignment {
   supportGroupId: number;
   supportGroup?: SupportGroup;
   isActive: boolean;
-  loadBalanceType: 'round_robin' | 'least_load' | 'random';
   priority: number;
 }
 
@@ -47,7 +46,6 @@ export default function TemplateSupportGroupAssignment({
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
-  const [loadBalanceType, setLoadBalanceType] = useState<'round_robin' | 'least_load' | 'random'>('round_robin');
 
   useEffect(() => {
     fetchSupportGroups();
@@ -87,14 +85,12 @@ export default function TemplateSupportGroupAssignment({
       supportGroupId: parseInt(selectedGroupId),
       supportGroup: supportGroup,
       isActive: true,
-      loadBalanceType: loadBalanceType,
       priority: assignments.length + 1
     };
 
     onAssignmentsChange([...assignments, newAssignment]);
     setIsAddModalOpen(false);
     setSelectedGroupId('');
-    setLoadBalanceType('round_robin');
   };
 
   const handleRemoveAssignment = (index: number) => {
@@ -110,12 +106,6 @@ export default function TemplateSupportGroupAssignment({
   const handleToggleActive = (index: number) => {
     const newAssignments = [...assignments];
     newAssignments[index].isActive = !newAssignments[index].isActive;
-    onAssignmentsChange(newAssignments);
-  };
-
-  const handleLoadBalanceChange = (index: number, newType: 'round_robin' | 'least_load' | 'random') => {
-    const newAssignments = [...assignments];
-    newAssignments[index].loadBalanceType = newType;
     onAssignmentsChange(newAssignments);
   };
 
@@ -140,24 +130,6 @@ export default function TemplateSupportGroupAssignment({
     });
 
     onAssignmentsChange(newAssignments);
-  };
-
-  const getLoadBalanceTypeLabel = (type: string) => {
-    switch (type) {
-      case 'round_robin': return 'Round Robin';
-      case 'least_load': return 'Least Load';
-      case 'random': return 'Random';
-      default: return type;
-    }
-  };
-
-  const getLoadBalanceTypeColor = (type: string) => {
-    switch (type) {
-      case 'round_robin': return 'bg-blue-100 text-blue-700';
-      case 'least_load': return 'bg-green-100 text-green-700';
-      case 'random': return 'bg-purple-100 text-purple-700';
-      default: return 'bg-gray-100 text-gray-700';
-    }
   };
 
   const availableGroups = supportGroups.filter(sg => 
@@ -248,10 +220,6 @@ export default function TemplateSupportGroupAssignment({
                       )}
                       
                       <div className="flex items-center gap-2 mt-2">
-                        <Badge className={`text-xs ${getLoadBalanceTypeColor(assignment.loadBalanceType)}`}>
-                          {getLoadBalanceTypeLabel(assignment.loadBalanceType)}
-                        </Badge>
-                        
                         <div className="flex items-center gap-1">
                           {assignment.isActive ? (
                             <>
@@ -270,22 +238,6 @@ export default function TemplateSupportGroupAssignment({
                   </div>
                   
                   <div className="flex items-center gap-1">
-                    <Select
-                      value={assignment.loadBalanceType}
-                      onValueChange={(value: 'round_robin' | 'least_load' | 'random') => 
-                        handleLoadBalanceChange(index, value)
-                      }
-                    >
-                      <SelectTrigger className="w-32 h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="round_robin">Round Robin</SelectItem>
-                        <SelectItem value="least_load">Least Load</SelectItem>
-                        <SelectItem value="random">Random</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    
                     <Button
                       variant="ghost"
                       size="sm"
@@ -320,18 +272,7 @@ export default function TemplateSupportGroupAssignment({
           </div>
         )}
 
-        {/* Assignment Info */}
-        {assignments.length > 0 && (
-          <div className="mt-4 p-3 bg-slate-50 rounded-lg">
-            <h4 className="text-xs font-medium text-slate-700 mb-2">Assignment Logic</h4>
-            <div className="text-xs text-slate-600 space-y-1">
-              <p>• Assignments are tried in priority order (1, 2, 3...)</p>
-              <p>• Only active groups participate in auto-assignment</p>
-              <p>• Load balancing distributes tickets among group technicians</p>
-              <p>• If a group assignment fails, the next group is tried</p>
-            </div>
-          </div>
-        )}
+
       </CardContent>
 
       {/* Add Support Group Modal */}
@@ -389,40 +330,6 @@ export default function TemplateSupportGroupAssignment({
               </Select>
             </div>
 
-            {/* Load Balance Type */}
-            <div>
-              <Label className="text-sm font-medium text-slate-700 mb-2 block">
-                Load Balance Type
-              </Label>
-              <Select 
-                value={loadBalanceType} 
-                onValueChange={(value: 'round_robin' | 'least_load' | 'random') => setLoadBalanceType(value)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="round_robin">
-                    <div className="space-y-1">
-                      <div className="font-medium">Round Robin</div>
-                      <div className="text-xs text-slate-500">Distribute tickets evenly in sequence</div>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="least_load">
-                    <div className="space-y-1">
-                      <div className="font-medium">Least Load</div>
-                      <div className="text-xs text-slate-500">Assign to technician with fewest active tickets</div>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="random">
-                    <div className="space-y-1">
-                      <div className="font-medium">Random</div>
-                      <div className="text-xs text-slate-500">Randomly distribute among available technicians</div>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
 
           <DialogFooter>

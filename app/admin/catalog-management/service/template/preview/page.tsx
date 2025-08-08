@@ -339,11 +339,6 @@ export default function IncidentTemplatePreviewPage() {
                   ))}
                 </SelectContent>
               </Select>
-              {value && typeof value === 'string' && PRIORITY_HELP_TEXT[value] && (
-                <p className={`text-xs ${disabled ? 'text-gray-400' : 'text-blue-600'} italic`}>
-                  💡 {PRIORITY_HELP_TEXT[value]}
-                </p>
-              )}
             </div>
           );
         } else if (field.type === 'status') {
@@ -825,7 +820,20 @@ export default function IncidentTemplatePreviewPage() {
                         {renderField(field, isDisabled)}
                         
                         {field.helpText && (
-                          <p className={`text-xs ${isDisabled ? 'text-gray-400' : 'text-slate-500'}`}>{field.helpText}</p>
+                          <div className={`text-xs ${isDisabled ? 'text-gray-400' : 'text-slate-500'}`}>
+                            {field.type === 'priority' ? (
+                              <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed">
+                                {field.helpText}
+                              </pre>
+                            ) : (
+                              <p>
+                                {field.type === 'priority' ? 
+                                  `Select from: Low - Affects only you as an individual, Medium - Affects the delivery of your services, High - Affects the company's business, Top - Utmost action needed as classified by Management` 
+                                  : field.helpText
+                                }
+                              </p>
+                            )}
+                          </div>
                         )}
                       </div>
                     );

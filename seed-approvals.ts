@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, ApprovalStatus } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -27,7 +27,7 @@ async function seedApprovalsAndHistory() {
           requestId: request.id,
           level: 1,
           name: 'Level One',
-          status: 'approved',
+          status: 'approved' as ApprovalStatus,
           approverId: null, // System approval
           approverName: 'System',
           approverEmail: null,
@@ -40,7 +40,7 @@ async function seedApprovalsAndHistory() {
           requestId: request.id,
           level: 2,
           name: 'Level Two',
-          status: 'pending',
+          status: 'pending' as ApprovalStatus,
           approverId: request.user.reportingToId,
           approverName: request.user.reportingTo ? 
             `${request.user.reportingTo.emp_fname} ${request.user.reportingTo.emp_lname}` : 
@@ -55,7 +55,7 @@ async function seedApprovalsAndHistory() {
           requestId: request.id,
           level: 3,
           name: 'Level Three',
-          status: 'not_sent',
+          status: 'not_sent' as ApprovalStatus,
           approverId: request.user.departmentHeadId,
           approverName: request.user.departmentHead ? 
             `${request.user.departmentHead.emp_fname} ${request.user.departmentHead.emp_lname}` : 

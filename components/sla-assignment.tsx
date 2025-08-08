@@ -140,7 +140,9 @@ export default function SLAAssignment({ templateType, selectedSLAId, onSLAChange
             onValueChange={handleSLASelect}
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Choose an SLA service..." />
+              <SelectValue placeholder="Choose an SLA service...">
+                {selectedSLA ? selectedSLA.name : "Choose an SLA service..."}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent className="max-h-60">
               <SelectItem value="none">
@@ -153,11 +155,11 @@ export default function SLAAssignment({ templateType, selectedSLAId, onSLAChange
               ) : (
                 filteredSLAs.map((sla) => (
                   <SelectItem key={sla.id} value={sla.id.toString()}>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col gap-1 py-1">
                       <span className="font-medium">{sla.name}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {sla.priority}
-                      </Badge>
+                      <span className="text-xs text-blue-600">
+                        SLA: Typically delivered within {Math.ceil(sla.resolutionTime / 24)} {Math.ceil(sla.resolutionTime / 24) === 1 ? 'day' : 'days'} from full approval
+                      </span>
                     </div>
                   </SelectItem>
                 ))
@@ -168,55 +170,19 @@ export default function SLAAssignment({ templateType, selectedSLAId, onSLAChange
 
         {/* Selected SLA Details */}
         {selectedSLA && (
-          <div className="p-3 bg-slate-50 rounded-lg space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="font-medium text-slate-700">{selectedSLA.name}</h4>
-              <Badge variant="outline">{selectedSLA.priority}</Badge>
-            </div>
-            
-            {selectedSLA.description && (
-              <p className="text-sm text-slate-600">{selectedSLA.description}</p>
-            )}
-            
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="space-y-1">
-                <Label className="text-xs font-medium text-slate-500">Response Time</Label>
-                <p className="text-slate-700">{formatTime(selectedSLA.responseTime)}</p>
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-start gap-3">
+              <div className="bg-blue-100 rounded-full p-2">
+                <Clock className="w-5 h-5 text-blue-600" />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-medium text-slate-500">Resolution Time</Label>
-                <p className="text-slate-700">{formatTime(selectedSLA.resolutionTime)}</p>
+              <div className="flex-1 space-y-2">
+                <h4 className="font-medium text-blue-900 mb-1">{selectedSLA.name}</h4>
+                <p className="text-blue-700 text-sm">
+                  SLA: Typically delivered within {Math.ceil(selectedSLA.resolutionTime / 24)} {Math.ceil(selectedSLA.resolutionTime / 24) === 1 ? 'day' : 'days'} from full approval
+                </p>
+       
               </div>
             </div>
-            
-            <div className="flex items-center gap-4 text-sm">
-              <div className="flex items-center gap-2">
-                {selectedSLA.operationalHours ? (
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-slate-400" />
-                )}
-                <span className="text-slate-600">
-                  {selectedSLA.operationalHours ? 'Operational Hours' : '24/7 Coverage'}
-                </span>
-              </div>
-              
-              {selectedSLA.autoEscalate && (
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-blue-500" />
-                  <span className="text-slate-600">
-                    Auto-escalate ({formatTime(selectedSLA.escalationTime)})
-                  </span>
-                </div>
-              )}
-            </div>
-            
-            {selectedSLA.category && (
-              <div className="pt-2 border-t border-slate-200">
-                <Label className="text-xs font-medium text-slate-500">Category</Label>
-                <p className="text-sm text-slate-700">{selectedSLA.category}</p>
-              </div>
-            )}
           </div>
         )}
 

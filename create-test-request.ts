@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, ApprovalStatus } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -27,7 +27,7 @@ async function createTestRequestWithApprovals() {
         templateId: '1',
         templateName: 'Request a Special IT Project - Place TUV NORD ISO Logos in Aspac Website',
         type: 'service',
-        status: 'pending_approval',
+        status: 'for_approval',
         priority: 'high',
         userId: user.id,
         formData: {
@@ -47,7 +47,7 @@ async function createTestRequestWithApprovals() {
         requestId: request.id,
         level: 1,
         name: 'Level One',
-        status: 'approved',
+        status: 'approved' as ApprovalStatus,
         approverId: null,
         approverName: 'System',
         approverEmail: null,
@@ -60,7 +60,7 @@ async function createTestRequestWithApprovals() {
         requestId: request.id,
         level: 2,
         name: 'Level Two',
-        status: 'pending',
+        status: 'pending_approval' as ApprovalStatus,
         approverId: user.reportingToId,
         approverName: user.reportingTo ? 
           `${user.reportingTo.emp_fname} ${user.reportingTo.emp_lname}` : 
@@ -75,7 +75,7 @@ async function createTestRequestWithApprovals() {
         requestId: request.id,
         level: 3,
         name: 'Level Three',
-        status: 'not_sent',
+        status: 'pending_approval' as ApprovalStatus,
         approverId: user.departmentHeadId,
         approverName: user.departmentHead ? 
           `${user.departmentHead.emp_fname} ${user.departmentHead.emp_lname}` : 

@@ -246,8 +246,8 @@ export async function DELETE(req: NextRequest) {
       if (activeRequests > 0) {
         return NextResponse.json(
           { 
-            error: `Deletion of this template is not allowed because there are requests using it.`
-           
+            error: `Deletion of this template is not allowed because there are requests using it.`,
+            activeRequests: ''
           },
           { status: 409 }
         );

@@ -149,7 +149,6 @@ interface SupportGroupAssignment {
     technicianCount?: number;
   };
   isActive: boolean;
-  loadBalanceType: 'round_robin' | 'least_load' | 'random';
   priority: number;
 }
 

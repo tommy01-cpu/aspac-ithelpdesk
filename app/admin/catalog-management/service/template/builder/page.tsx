@@ -243,7 +243,6 @@ interface SupportGroupAssignment {
     isActive: boolean;
   };
   isActive: boolean;
-  loadBalanceType: 'round_robin' | 'least_load' | 'random';
   priority: number;
 }
 
@@ -260,7 +259,6 @@ interface SupportGroupAssignment {
   supportGroupId: number;
   supportGroup?: SupportGroup;
   isActive: boolean;
-  loadBalanceType: 'round_robin' | 'least_load' | 'random';
   priority: number;
 }
 
@@ -301,7 +299,11 @@ const TEMPLATE_PRESETS: Record<string, Partial<ServiceTemplate>> = {
       label: 'Priority',
       required: true,
       options: PRIORITY_OPTIONS,
-      helpText: 'Select the priority level for this request',
+      helpText: `Select from: 
+Low - affects only you as an individual 
+Medium - affects the delivery of your services 
+High - affects the company's business 
+Top - utmost action needed as classified by Management`,
       technicianOnly: false,
       readonly: false,
       disabled: false,
@@ -464,7 +466,7 @@ export default function ServiceTemplateBuilderPage() {
   const [supportGroups, setSupportGroups] = useState<{ id: number; name: string }[]>([]);
   const [technicians, setTechnicians] = useState<{ id: number; name: string }[]>([]);
   const [serviceCategories, setServiceCategories] = useState<{ id: number; name: string }[]>([]);
-  const [users, setUsers] = useState<{ id: number; name: string; email?: string }[]>([]);
+  const [users, setUsers] = useState<{ id: number; name: string; email?: string; isSpecial?: boolean }[]>([]);
   
   // Approval Workflow State
   const [isApprovalEnabled, setIsApprovalEnabled] = useState(false);
@@ -480,6 +482,8 @@ export default function ServiceTemplateBuilderPage() {
   // Template Type and SLA State
   const [templateType, setTemplateType] = useState<'service' | 'incident'>('service');
   const [selectedSLAId, setSelectedSLAId] = useState<number | null>(null);
+  const [slaData, setSlaData] = useState<{ id: number; name: string; deliveryTime: number; }[]>([]);
+  const [selectedSlaInfo, setSelectedSlaInfo] = useState<{ name: string; deliveryTime: number; } | null>(null);
   
   // Support Group Assignment State
   const [supportGroupAssignments, setSupportGroupAssignments] = useState<SupportGroupAssignment[]>([]);
@@ -569,11 +573,19 @@ export default function ServiceTemplateBuilderPage() {
           
           // Check if response has success property and users array
           const usersArray = responseData.success ? responseData.users : responseData;
+          console.log('Raw users from API:', usersArray.map((u: any) => ({ 
+            name: `${u.emp_fname} ${u.emp_lname}`, 
+            isServiceApprover: u.isServiceApprover 
+          })));
+          
           const formattedUsers = usersArray.map((user: any) => ({
             id: user.id,
             name: `${user.emp_fname} ${user.emp_lname}`.trim(),
-            email: user.emp_email || ''
+            email: user.emp_email || '',
+            isSpecial: user.isSpecial || false,
+            isServiceApprover: user.isServiceApprover || false
           }));
+          console.log('Formatted users with isServiceApprover:', formattedUsers.filter((u: any) => u.isServiceApprover));
           setUsers(formattedUsers);
         }
       } catch (error) {
@@ -581,10 +593,32 @@ export default function ServiceTemplateBuilderPage() {
       }
     };
 
+    const fetchSLAData = async () => {
+      try {
+        const response = await fetch('/api/sla-service');
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          if (data.success && Array.isArray(data.data)) {
+            const formattedSLAData = data.data.map((sla: any) => ({
+              id: sla.id,
+              name: sla.name,
+              deliveryTime: sla.resolutionTime || sla.deliveryTime || 0
+            }));
+            setSlaData(formattedSLAData);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching SLA data:', error);
+      }
+    };
+
     fetchSupportGroups();
     fetchTechnicians();
     fetchServiceCategories();
     fetchUsers();
+    fetchSLAData();
   }, []);
 
   // Update form fields when support groups, technicians, service categories, and users are loaded
@@ -594,7 +628,7 @@ export default function ServiceTemplateBuilderPage() {
         (Array.isArray(serviceCategories) && serviceCategories.length > 0) || 
         (Array.isArray(users) && users.length > 0)) {
       setFormFields(prevFields => 
-        prevFields.map(field => {
+        Array.isArray(prevFields) ? prevFields.map(field => {
           if (field.type === 'group' && Array.isArray(supportGroups) && supportGroups.length > 0) {
             return { ...field, options: supportGroups.map(group => group.name) };
           }
@@ -608,10 +642,20 @@ export default function ServiceTemplateBuilderPage() {
             return { ...field, options: users.map(user => user.name) };
           }
           return field;
-        })
+        }) : prevFields
       );
     }
   }, [supportGroups, technicians, serviceCategories, users]);
+  
+  // Update selected SLA info when selectedSLAId or slaData changes
+  useEffect(() => {
+    if (selectedSLAId && Array.isArray(slaData) && slaData.length > 0) {
+      const selectedSLA = slaData.find(sla => sla.id === selectedSLAId);
+      setSelectedSlaInfo(selectedSLA || null);
+    } else {
+      setSelectedSlaInfo(null);
+    }
+  }, [selectedSLAId, slaData]);
   
   const [formFields, setFormFields] = useState<FormField[]>([
     {
@@ -632,7 +676,11 @@ export default function ServiceTemplateBuilderPage() {
       label: 'Priority',
       required: true,
       options: PRIORITY_OPTIONS,
-      helpText: 'Select the priority level for this request',
+      helpText: `Select from: 
+Low - affects only you as an individual 
+Medium - affects the delivery of your services 
+High - affects the company's business 
+Top - utmost action needed as classified by Management`,
       technicianOnly: false,
       readonly: false,
       disabled: false,
@@ -761,6 +809,15 @@ export default function ServiceTemplateBuilderPage() {
     }
   ]);
 
+  // Debug: Monitor formFields state changes
+  useEffect(() => {
+    if (!Array.isArray(formFields)) {
+      console.error('formFields is not an array:', formFields, typeof formFields);
+    } else {
+      console.log('formFields updated:', formFields.length, 'fields');
+    }
+  }, [formFields]);
+
   // Load template data from localStorage when coming from preview edit
   useEffect(() => {
     const editTemplateData = localStorage.getItem('editTemplate');
@@ -771,6 +828,7 @@ export default function ServiceTemplateBuilderPage() {
         setTemplateDescription(parsedTemplate.description || '');
         setTemplateIcon(parsedTemplate.icon || '');
         setFormFields(parsedTemplate.fields || []);
+        console.log('Loading edit template, fields count:', (parsedTemplate.fields || []).length);
         // Clear the editTemplate data after loading
         localStorage.removeItem('editTemplate');
       } catch (error) {
@@ -840,25 +898,25 @@ export default function ServiceTemplateBuilderPage() {
       selectedCategoryId,
       serviceCategoriesCount: Array.isArray(serviceCategories) ? serviceCategories.length : 0,
       serviceCategories: Array.isArray(serviceCategories) ? serviceCategories.map(cat => ({ id: cat.id, name: cat.name })) : [],
-      formFieldsCount: formFields.length
+      formFieldsCount: Array.isArray(formFields) ? formFields.length : 0
     });
     
-    if (selectedCategoryId && Array.isArray(serviceCategories) && serviceCategories.length > 0 && formFields.length > 0) {
+    if (selectedCategoryId && Array.isArray(serviceCategories) && serviceCategories.length > 0 && Array.isArray(formFields) && formFields.length > 0) {
       // Find the category name from the selected category ID
       const selectedCategory = serviceCategories.find(cat => cat.id === selectedCategoryId);
       console.log('Found selected category:', selectedCategory);
       
       if (selectedCategory) {
         // Find the category field and update its default value with the category name
-        setFormFields(prev => prev.map(field => 
+        setFormFields(prev => Array.isArray(prev) ? prev.map(field => 
           field.type === 'category' 
             ? { ...field, defaultValue: selectedCategory.name }
             : field
-        ));
+        ) : prev);
         console.log('Updated category field with value:', selectedCategory.name);
       }
     }
-  }, [selectedCategoryId, serviceCategories, formFields.length]);
+  }, [selectedCategoryId, serviceCategories, Array.isArray(formFields) ? formFields.length : 0]);
 
   // Load template data when currentTemplateId is set (for edit mode)
   useEffect(() => {
@@ -989,7 +1047,6 @@ export default function ServiceTemplateBuilderPage() {
             supportGroupId: sg.supportGroupId,
             supportGroup: sg.supportGroup,
             isActive: sg.isActive,
-            loadBalanceType: sg.loadBalanceType,
             priority: sg.priority
           })) || []);
           
@@ -1025,7 +1082,31 @@ export default function ServiceTemplateBuilderPage() {
         setTemplateDescription(template.description);
         setTemplateIcon(template.icon || '');
         setTemplateIsActive(template.isActive || false); // Load active status
-        setFormFields(template.fields || []);
+        
+        // Parse fields if they are stored as JSON string
+        let parsedFields = [];
+        try {
+          if (typeof template.fields === 'string') {
+            parsedFields = JSON.parse(template.fields);
+            console.log('✅ Parsed template fields from JSON string');
+          } else if (Array.isArray(template.fields)) {
+            parsedFields = template.fields;
+            console.log('✅ Template fields already an array');
+          } else {
+            console.log('⚠️ Template fields in unexpected format, using empty array');
+            parsedFields = [];
+          }
+        } catch (error) {
+          console.error('❌ Failed to parse template fields:', error);
+          parsedFields = [];
+        }
+        
+        setFormFields(parsedFields);
+        console.log('Loading template for editing, fields count:', parsedFields.length);
+        console.log('Template fields data:', template.fields);
+        console.log('Template fields type:', typeof template.fields);
+        console.log('Template fields isArray:', Array.isArray(template.fields));
+        console.log('Parsed fields:', parsedFields);
         
         // Load approval workflow
         if (template.approvalWorkflow) {
@@ -1054,7 +1135,6 @@ export default function ServiceTemplateBuilderPage() {
           supportGroupId: sg.supportGroupId,
           supportGroup: sg.supportGroup,
           isActive: sg.isActive,
-          loadBalanceType: sg.loadBalanceType,
           priority: sg.priority
         })) || []);
         
@@ -1326,7 +1406,12 @@ export default function ServiceTemplateBuilderPage() {
       placeholder: defaultPlaceholder,
       helpText: actualFieldType === 'category' ? 'Service category (auto-selected based on your selection)' : 
                 actualFieldType === 'request_type' ? 'Type of request being submitted' : 
-                actualFieldType === 'mode' ? 'How was this request submitted?' : '',
+                actualFieldType === 'mode' ? 'How was this request submitted?' : 
+                actualFieldType === 'priority' ? `Select from: 
+Low - affects only you as an individual 
+Medium - affects the delivery of your services 
+High - affects the company's business 
+Top - utmost action needed as classified by Management` : '',
       technicianOnly: actualFieldType === 'request_type' || actualFieldType === 'mode', // Request type and mode are technician only
       readonly: actualFieldType === 'request_type' || actualFieldType === 'category', // Request type and category fields are readonly
       disabled: actualFieldType === 'request_type', // Make request_type fields disabled by default
@@ -1334,18 +1419,20 @@ export default function ServiceTemplateBuilderPage() {
       ...(defaultOptions.length > 0 ? { options: defaultOptions } : {})
     };
     
-    setFormFields([...formFields, newField]);
+    setFormFields(Array.isArray(formFields) ? [...formFields, newField] : [newField]);
     setSelectedField(newField.id);
     setIsConfigPanelOpen(true);
   };
 
   const updateField = (fieldId: string, updates: Partial<FormField>) => {
+    if (!Array.isArray(formFields)) return;
     setFormFields(formFields.map(field => 
       field.id === fieldId ? { ...field, ...updates } : field
     ));
   };
 
   const deleteField = (fieldId: string) => {
+    if (!Array.isArray(formFields)) return;
     setFormFields(formFields.filter(field => field.id !== fieldId));
     if (selectedField === fieldId) {
       setSelectedField(null);
@@ -1354,6 +1441,7 @@ export default function ServiceTemplateBuilderPage() {
   };
 
   const moveField = (fieldId: string, direction: 'up' | 'down') => {
+    if (!Array.isArray(formFields)) return;
     const index = formFields.findIndex(field => field.id === fieldId);
     if (
       (direction === 'up' && index === 0) ||
@@ -1370,10 +1458,25 @@ export default function ServiceTemplateBuilderPage() {
 
   const getVisibleFields = () => {
     // Always return all fields - we'll handle display logic in the render
-    return formFields;
+    console.log('getVisibleFields debug:', {
+      formFields,
+      isArray: Array.isArray(formFields),
+      type: typeof formFields,
+      length: formFields?.length,
+      constructor: formFields?.constructor?.name
+    });
+    
+    // Ensure we always return an array
+    if (Array.isArray(formFields)) {
+      return formFields;
+    }
+    
+    // If formFields is not an array, return empty array
+    console.warn('formFields is not an array, returning empty array');
+    return [];
   };
 
-  const selectedFieldData = formFields.find(field => field.id === selectedField);
+  const selectedFieldData = Array.isArray(formFields) ? formFields.find(field => field.id === selectedField) : undefined;
 
   // Component to render the actual form field preview
   const renderFormField = (field: FormField) => {
@@ -1409,7 +1512,13 @@ export default function ServiceTemplateBuilderPage() {
         </Label>
         
         {field.helpText && (
-          <p className={`text-xs ${isFieldDisabled ? 'text-gray-400' : 'text-slate-500'}`}>{field.helpText}</p>
+          <div className={`text-xs ${isFieldDisabled ? 'text-gray-400' : 'text-slate-500'}`}>
+            {field.type === 'priority' ? (
+              <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed">{field.helpText}</pre>
+            ) : (
+              <p>{field.helpText}</p>
+            )}
+          </div>
         )}
         
         {field.type === 'text' && (
@@ -2358,11 +2467,21 @@ export default function ServiceTemplateBuilderPage() {
 
                     <div>
                       <label className="text-sm font-medium text-slate-700 mb-2 block">Help Text</label>
-                      <Input
-                        value={selectedFieldData.helpText || ''}
-                        onChange={(e) => updateField(selectedFieldData.id, { helpText: e.target.value })}
-                        placeholder="Enter help text"
-                      />
+                      {selectedFieldData.type === 'priority' ? (
+                        <Textarea
+                          value={selectedFieldData.helpText || ''}
+                          onChange={(e) => updateField(selectedFieldData.id, { helpText: e.target.value })}
+                          placeholder="Enter help text for priority selection"
+                          rows={4}
+                          className="min-h-[100px]"
+                        />
+                      ) : (
+                        <Input
+                          value={selectedFieldData.helpText || ''}
+                          onChange={(e) => updateField(selectedFieldData.id, { helpText: e.target.value })}
+                          placeholder="Enter help text"
+                        />
+                      )}
                     </div>
 
                     <div className="flex items-center justify-between">
@@ -2832,10 +2951,7 @@ export default function ServiceTemplateBuilderPage() {
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-base font-semibold text-slate-700">Approval Levels</h4>
                               <Button
-                                onClick={() => {
-                                  setEditingApprovalLevel(null);
-                                  setIsApprovalModalOpen(true);
-                                }}
+                                onClick={() => openApprovalLevelModal()}
                                 size="sm"
                                 className="bg-blue-600 hover:bg-blue-700"
                               >
@@ -2851,49 +2967,76 @@ export default function ServiceTemplateBuilderPage() {
                                   .map((level, index) => (
                                     <div
                                       key={level.id}
-                                      className="flex items-center justify-between p-4 border border-slate-200 rounded-lg bg-white"
+                                      className="flex flex-col border border-slate-200 rounded-lg bg-white"
                                     >
-                                      <div className="flex items-center gap-3">
-                                        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full font-medium text-sm">
-                                          {index + 1}
-                                        </div>
-                                        <div>
-                                          <div className="font-medium text-slate-700">{level.displayName}</div>
-                                          <div className="text-sm text-gray-600">
-                                            {level.approvers.length} approver{level.approvers.length !== 1 ? 's' : ''}
+                                      <div className="flex items-center justify-between p-4">
+                                        <div className="flex items-center gap-3">
+                                          <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full font-medium text-sm">
+                                            {index + 1}
+                                          </div>
+                                          <div>
+                                            <div className="font-medium text-slate-700">{level.displayName}</div>
+                                            <div className="text-sm text-gray-600">
+                                              {level.approvers.length} approver{level.approvers.length !== 1 ? 's' : ''}
+                                            </div>
                                           </div>
                                         </div>
+                                        <div className="flex items-center gap-2">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => openApprovalLevelModal(level)}
+                                          >
+                                            <Edit className="w-4 h-4" />
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                              setApprovalLevels(prev => prev.filter(l => l.id !== level.id));
+                                            }}
+                                            className="text-red-600 hover:text-red-700"
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </Button>
+                                        </div>
                                       </div>
-                                      <div className="flex items-center gap-2">
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => {
-                                            setEditingApprovalLevel(level);
-                                            setIsApprovalModalOpen(true);
-                                          }}
-                                        >
-                                          <Edit className="w-4 h-4" />
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => {
-                                            setApprovalLevels(prev => prev.filter(l => l.id !== level.id));
-                                          }}
-                                          className="text-red-600 hover:text-red-700"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </Button>
-                                      </div>
+
+                                      {/* Inline Approval Level Form for this specific level */}
+                                      {isApprovalModalOpen && editingApprovalLevel?.id === level.id && (
+                                        <div className="border-t border-slate-200 p-4 bg-blue-50">
+                                          <ApprovalLevelModal
+                                            level={editingApprovalLevel}
+                                            onSave={handleApprovalLevelSave}
+                                            onClose={closeApprovalLevelModal}
+                                            users={users}
+                                          />
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
                               </div>
                             ) : (
-                              <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
-                                <Settings className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                                <p className="font-medium mb-1">No approval levels configured</p>
-                                <p className="text-sm">Add approval levels to require approval before processing requests</p>
+                              // Only show empty state if modal is not open
+                              !isApprovalModalOpen && (
+                                <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
+                                  <Settings className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                                  <p className="font-medium mb-1">No approval levels configured</p>
+                                  <p className="text-sm">Add approval levels to require approval before processing requests</p>
+                                </div>
+                              )
+                            )}
+
+                            {/* Inline Approval Level Form for adding new level - Show regardless of existing levels */}
+                            {isApprovalModalOpen && !editingApprovalLevel && (
+                              <div className="mt-4 p-4 border border-blue-200 rounded-lg bg-blue-50">
+                                <h5 className="font-medium text-blue-900 mb-3">Add New Approval Level</h5>
+                                <ApprovalLevelModal
+                                  level={editingApprovalLevel}
+                                  onSave={handleApprovalLevelSave}
+                                  onClose={closeApprovalLevelModal}
+                                  users={users}
+                                />
                               </div>
                             )}
                           </div>
@@ -2939,9 +3082,14 @@ export default function ServiceTemplateBuilderPage() {
                         onAssignmentsChange={setSupportGroupAssignments}
                       />
                     </div>
+                      
+               
                   </CardContent>
                 </Card>
               </div>
+
+              
+              
             </div>
 
             {/* Live Preview - Fixed Position */}
@@ -2982,6 +3130,21 @@ export default function ServiceTemplateBuilderPage() {
                       {templateDescription && (
                         <p className="text-base text-slate-600 mt-2">{templateDescription}</p>
                       )}
+                      
+                      {/* SLA Information Display */}
+                      {selectedSlaInfo && (
+                        <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-blue-600" />
+                            <p className="text-sm text-blue-800 font-medium">
+                              SLA: {templateType === 'service' 
+                                ? `Typically delivered within ${Math.ceil(selectedSlaInfo.deliveryTime / 24)} ${Math.ceil(selectedSlaInfo.deliveryTime / 24) === 1 ? 'day' : 'days'} from full approval`
+                                : `Typically resolved within ${Math.ceil(selectedSlaInfo.deliveryTime / 24)} ${Math.ceil(selectedSlaInfo.deliveryTime / 24) === 1 ? 'day' : 'days'}`
+                              }
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     
                     {/* Form Fields Preview */}
@@ -3009,34 +3172,6 @@ export default function ServiceTemplateBuilderPage() {
             </div>
             </div>
           </div>
-
-      {/* Approval Level Modal */}
-      {isApprovalModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-700">
-                {editingApprovalLevel ? 'Edit Approval Level' : 'Add Approval Level'}
-              </h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleApprovalModalClose}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-
-            <ApprovalLevelModal
-              level={editingApprovalLevel}
-              onSave={handleApprovalLevelSave}
-              onClose={handleApprovalModalClose}
-              users={users}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Save Confirmation Dialog */}
       {showSaveDialog && (
@@ -3163,7 +3298,7 @@ interface ApprovalLevelModalProps {
     }> 
   }) => void;
   onClose: () => void;
-  users: Array<{ id: number; name: string; email?: string }>; // Add users prop
+  users: Array<{ id: number; name: string; email?: string; isServiceApprover?: boolean }>; // Add users prop
 }
 
 const ApprovalLevelModal: React.FC<ApprovalLevelModalProps> = ({ level, onSave, onClose, users }) => {
@@ -3211,12 +3346,29 @@ const ApprovalLevelModal: React.FC<ApprovalLevelModalProps> = ({ level, onSave, 
                            (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase()));
       const notAlreadySelected = !approvers.some(approver => approver.id === user.id);
       // Only include users marked as Service Request Approvers
-      // TODO: Replace this with actual field check based on your user data structure
-      // Example: user.isServiceRequestApprover === true || user.roles?.includes('service_request_approver')
-      const isServiceRequestApprover = true; // Temporary - replace with actual field check
+      const isServiceRequestApprover = user.isServiceApprover === true;
+      
+      // Debug logging
+      if (searchTerm === '') {
+        console.log('User filtering debug:', {
+          userName: user.name,
+          isServiceApprover: user.isServiceApprover,
+          matchesSearch,
+          notAlreadySelected,
+          isServiceRequestApprover
+        });
+      }
+      
       return matchesSearch && notAlreadySelected && isServiceRequestApprover;
-    })
+    }).map(user => ({ ...user, isSpecial: false, description: undefined })) // Ensure regular users have isSpecial and description properties
   ];
+
+  // Debug logging for final filtered users
+  if (searchTerm === '') {
+    console.log('Total users passed to modal:', users.length);
+    console.log('Filtered users count:', filteredUsers.length);
+    console.log('Users with isServiceApprover=true:', users.filter(u => u.isServiceApprover === true).length);
+  }
 
   const handleAddApprover = (user: { id: number; name: string; email?: string; isSpecial?: boolean; description?: string }) => {
     const newApprover = {
@@ -3297,7 +3449,7 @@ const ApprovalLevelModal: React.FC<ApprovalLevelModalProps> = ({ level, onSave, 
               <div className="max-h-48 overflow-y-auto">
                 {filteredUsers.length > 0 ? (
                   <>
-                    {filteredUsers.slice(0, 15).map((user) => {
+                    {filteredUsers.map((user) => {
                       const isSelected = approvers.some(approver => approver.id === user.id);
                       return (
                         <div
@@ -3336,11 +3488,6 @@ const ApprovalLevelModal: React.FC<ApprovalLevelModalProps> = ({ level, onSave, 
                         </div>
                       );
                     })}
-                    {filteredUsers.length > 15 && (
-                      <div className="px-3 py-2 text-sm text-gray-500 border-t">
-                        Showing first 15 results. Refine your search for more.
-                      </div>
-                    )}
                   </>
                 ) : (
                   <div className="p-4 text-center text-gray-500">
@@ -3371,7 +3518,7 @@ const ApprovalLevelModal: React.FC<ApprovalLevelModalProps> = ({ level, onSave, 
               if (approver.email === 'rt') {
                 return (
                   <div key={approver.id} className="inline-flex items-center bg-green-100 text-green-800 px-2 py-1 rounded-md text-sm">
-                    <span>Reported to</span>
+                    <span>Reporting to</span>
                     <button
                       type="button"
                       onClick={() => handleRemoveApprover(approver.id)}
@@ -3424,22 +3571,22 @@ const ApprovalLevelModal: React.FC<ApprovalLevelModalProps> = ({ level, onSave, 
         )}
       </div>
 
-      {/* Modal Actions */}
-      <div className="flex justify-end gap-3 pt-4 border-t">
-        <Button
-          variant="outline"
-          onClick={onClose}
-        >
-          Cancel
-        </Button>
-        <Button
-          onClick={handleSave}
-          disabled={!displayName.trim()}
-          className="bg-blue-600 hover:bg-blue-700"
-        >
-          {level ? 'Update Level' : 'Add Level'}
-        </Button>
-      </div>
+        {/* Modal Actions */}
+        <div className="flex justify-end gap-3 pt-4 border-t">
+          <Button
+            variant="outline"
+            onClick={onClose}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={!displayName.trim()}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {level ? 'Update Level' : 'Add Level'}
+          </Button>
+        </div>
     </div>
   );
 };

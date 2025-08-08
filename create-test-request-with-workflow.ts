@@ -1,4 +1,5 @@
 import { prisma } from './lib/prisma';
+import { ApprovalStatus } from '@prisma/client';
 
 async function createTestRequest() {
   try {
@@ -71,7 +72,7 @@ async function createTestRequest() {
         templateId: String(templateId),
         templateName: template.name,
         type: 'service',
-        status: 'for approval',
+        status: 'for_approval',
         priority: 'medium',
         userId: userId,
         formData: {
@@ -126,12 +127,12 @@ async function createTestRequest() {
           }
           
           // Determine status based on level and approval mode
-          let status = 'not_sent';
+          let status: ApprovalStatus = 'pending_approval';
           if (levelNumber === 1) {
             if (isAutoApproval) {
               status = 'approved';
             } else {
-              status = 'pending';
+              status = 'pending_approval';
             }
           }
           
@@ -146,7 +147,7 @@ async function createTestRequest() {
               approverName: approverName,
               approverEmail: approverEmail,
               isAutoApproval: isAutoApproval,
-              sentOn: status === 'pending' ? new Date() : null,
+              sentOn: status === 'pending_approval' ? new Date() : null,
               actedOn: status === 'approved' ? new Date() : null,
               comments: isAutoApproval ? 'Auto-approved by system' : null,
             }

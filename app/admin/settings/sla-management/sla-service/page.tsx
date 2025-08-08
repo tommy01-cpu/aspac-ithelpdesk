@@ -57,6 +57,14 @@ interface Technician {
     id: string;
     name: string;
   };
+  user?: {                    // user data from database
+    emp_fname?: string;
+    emp_lname?: string;
+    emp_code?: string;
+    emp_email?: string;
+    post_des?: string;
+    department?: string;
+  };
   value: string;             // for component compatibility
   name: string;              // for component compatibility
 }
@@ -103,7 +111,7 @@ const TechnicianInput = ({
           .filter((tech: any) => tech && tech.id)
           .map((tech: any) => ({
             id: String(tech.id),
-            displayName: tech.displayName || `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim() || 'Unknown Technician',
+            displayName: `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim() || 'Unknown Technician',
             employeeId: String(tech.employeeId || tech.user?.emp_code || ''),
             jobTitle: String(tech.jobTitle || tech.user?.post_des || ''),
             primaryEmail: String(tech.primaryEmail || tech.user?.emp_email || ''),
@@ -111,8 +119,9 @@ const TechnicianInput = ({
               id: tech.user.department,
               name: tech.user.department
             } : null),
+            user: tech.user,  // Include the raw user data
             value: String(tech.id),
-            name: tech.displayName || `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim() || 'Unknown Technician'
+            name: `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim() || 'Unknown Technician'
           }));
         
         setTechnicians(transformedTechnicians);
@@ -206,7 +215,7 @@ const TechnicianInput = ({
       // Look in allTechnicians first, then fall back to current technicians
       const tech = allTechnicians.find(t => String(t.id) === String(techId)) ||
                    technicians.find(t => String(t.id) === String(techId));
-      return tech?.displayName || `Unknown Technician`;
+      return (`${tech?.user?.emp_fname || ''} ${tech?.user?.emp_lname || ''}`.trim() || 'Unknown Technician');
     } else {
       return `${safeSelectedTechnicians.length} technicians selected`;
     }
@@ -214,11 +223,12 @@ const TechnicianInput = ({
 
   // Filter technicians based on search term, but show all when no search
   const filteredTechnicians = searchTerm.trim() 
-    ? technicians.filter(tech => 
-        tech.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        tech.employeeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        tech.department?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-      )
+    ? technicians.filter(tech => {
+        const fullName = `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim();
+        return fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+               tech.employeeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+               tech.department?.name?.toLowerCase().includes(searchTerm.toLowerCase());
+      })
     : technicians; // Show all technicians when no search term
 
   return (
@@ -278,9 +288,10 @@ const TechnicianInput = ({
             // Look in allTechnicians first, then fall back to current technicians
             const tech = allTechnicians.find(t => String(t.id) === String(techId)) ||
                         technicians.find(t => String(t.id) === String(techId));
+            const displayName = `${tech?.user?.emp_fname || ''} ${tech?.user?.emp_lname || ''}`.trim() || 'Unknown Technician';
             return (
               <div key={techId} className="inline-flex items-center bg-blue-100 text-blue-800 px-2 py-1 rounded-md text-sm">
-                <span>{tech?.displayName || `Unknown Technician`}</span>
+                <span>{displayName}</span>
                 <button
                   type="button"
                   onClick={() => handleRemoveTechnician(techId)}
@@ -368,7 +379,9 @@ const TechnicianInput = ({
                           )}
                         </div>
                         <div className="flex-1">
-                          <div className="font-medium text-gray-900">{technician.displayName}</div>
+                          <div className="font-medium text-gray-900">
+                            {`${technician.user?.emp_fname || ''} ${technician.user?.emp_lname || ''}`.trim() || 'Unknown Technician'}
+                          </div>
                           <div className="text-sm text-gray-500">
                             {technician.employeeId || 'No ID'} • {technician.department?.name || 'No Department'}
                           </div>
@@ -896,14 +909,14 @@ export default function ServiceSLAPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button
+                          {/* <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => handleView(sla.id)}
                             className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
                           >
                             <Eye className="w-4 h-4" />
-                          </Button>
+                          </Button> */}
                           <Button
                             variant="ghost"
                             size="sm"

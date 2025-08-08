@@ -10,7 +10,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
     const user = await prisma.users.update({
       where: { id: userId },
-      data: { status }, // Use mapped field name
+      data: { emp_status: status }, // Use actual field name from schema
     });
     return NextResponse.json({ user });
   } catch (error) {

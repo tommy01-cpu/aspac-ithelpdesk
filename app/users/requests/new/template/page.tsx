@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import 'react-quill/dist/quill.snow.css';
 
@@ -101,6 +101,7 @@ export default function RequestForm() {
   const [emailError, setEmailError] = useState('');
 
   const searchParams = useSearchParams();
+  const router = useRouter();
   const templateId = searchParams?.get('template');
 
   // Load template configuration
@@ -340,6 +341,11 @@ export default function RequestForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!template) {
+      alert('Template not found');
+      return;
+    }
+    
     try {
       setLoading(true);
       
@@ -349,7 +355,7 @@ export default function RequestForm() {
         templateName: template.name,
         type: template.type.toLowerCase(),
         formData: formData,
-        attachments: uploadedFiles.map(file => file.id), // Include attachment IDs
+        attachments: uploadedFiles.map(file => file.name), // Include attachment file names for now
       };
       
       console.log('Submitting request:', requestData);
@@ -370,21 +376,14 @@ export default function RequestForm() {
       console.log('Request submitted successfully:', result);
       
       // Show success message
-      toast({
-        title: "Success",
-        description: `${template.type === 'SERVICE' ? 'Request' : 'Incident'} submitted successfully!`,
-      });
+      alert(`${template.type === 'SERVICE' ? 'Request' : 'Incident'} submitted successfully!`);
       
       // Redirect to the requests tab
       router.push('/users?tab=requests');
       
     } catch (error) {
       console.error('Error submitting request:', error);
-      toast({
-        title: "Error",
-        description: "Failed to submit request. Please try again.",
-        variant: "destructive"
-      });
+      alert("Failed to submit request. Please try again.");
     } finally {
       setLoading(false);
     }
