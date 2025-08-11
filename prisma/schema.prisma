@@ -74,16 +74,19 @@ model users {
   
   // Basic fields
   department            String?
+  departmentId          Int?
   reportingToId         Int?
   departmentHeadId      Int?
   isServiceApprover     Boolean @default(false)
   isTechnician          Boolean @default(false)
+  requiresPasswordChange Boolean @default(false)
   
   // Relationships
   user_roles            user_roles[]
   requests              Request[]     // Relation to requests
   attachments           Attachment[]  // Relation to user attachments
   technician            Technician?   // One-to-one relationship with technician
+  userDepartment        Department?   @relation("DepartmentMembers", fields: [departmentId], references: [id])
   departmentsManaged    Department[]  @relation("DepartmentHeadUser") // Departments where user is head
   
   // Approval and History relationships
@@ -127,6 +130,7 @@ model Department {
   updatedAt             DateTime  @updatedAt
 
   // Relationships
+  members               users[]   @relation("DepartmentMembers")
   departmentHead        users?    @relation("DepartmentHeadUser", fields: [departmentHeadId], references: [id])
 
   @@map("departments")
@@ -179,12 +183,13 @@ model SupportGroup {
   @@map("support_groups")
 }
 
-// Global Load Balance Configuration - replaces per-template load balancing
+// Global Load Balance Configuration
 model GlobalLoadBalanceConfig {
   id                    Int           @id @default(autoincrement())
   supportGroupId        Int           @unique
   isActive              Boolean       @default(true)
   priority              Int           @default(1)
+  loadBalanceType       String        @default("load_balancing") @db.VarChar(20)
   createdAt             DateTime      @default(now()) @db.Timestamp(6)
   updatedAt             DateTime      @updatedAt
 
@@ -479,6 +484,7 @@ model TemplateSupportGroup {
   templateId            Int
   supportGroupId        Int
   isActive              Boolean       @default(true)
+  loadBalanceType       String        @default("round_robin") @db.VarChar(20) // 'round_robin', 'least_load', 'random'
   priority              Int           @default(1) // Priority order for assignment
   createdAt             DateTime      @default(now()) @db.Timestamp(6)
   

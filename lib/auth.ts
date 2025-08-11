@@ -29,7 +29,8 @@ export const authOptions: NextAuthOptions = {
                 include: {
                   roles: true
                 }
-              }
+              },
+              technician: true // Include technician data
             }
           });
 
@@ -60,13 +61,29 @@ export const authOptions: NextAuthOptions = {
           }
 
           console.log('✅ Authentication successful');
+          
+          // Check if password equals employee ID (first time login or admin reset)
+          const passwordEqualsEmployeeId = await bcrypt.compare(credentials.employee_id, user.password);
+          
+          console.log('🔍 User technician data:', {
+            hasTechnicianRecord: !!user.technician,
+            technicianIsAdmin: user.technician?.isAdmin,
+            finalIsTechnician: !!user.technician,
+            finalIsAdmin: user.technician?.isAdmin ?? false,
+            requiresPasswordChange: user.requiresPasswordChange || passwordEqualsEmployeeId
+          });
+          
           return {
             id: user.id.toString(),
             name: `${user.emp_fname} ${user.emp_lname} ${user.emp_suffix ?? ''}`.trim(),
             email: user.emp_email ?? undefined,
             employee_id: user.emp_code ?? undefined,
             job_title: user.post_des ?? undefined,
-            roles: user.user_roles.map(ur => ur.roles.name)
+            roles: user.user_roles.map(ur => ur.roles.name),
+            isTechnician: !!user.technician, // Simply check if technician record exists
+            isServiceApprover: user.isServiceApprover,
+            isAdmin: user.technician?.isAdmin ?? false, // Get admin status from technician record
+            requiresPasswordChange: user.requiresPasswordChange || passwordEqualsEmployeeId
           };
         } catch (error) {
           console.error('🚨 Authentication error:', error);
@@ -84,6 +101,10 @@ export const authOptions: NextAuthOptions = {
         token.employee_id = user.employee_id;
         token.job_title = user.job_title;
         token.roles = user.roles;
+        token.isTechnician = user.isTechnician;
+        token.isServiceApprover = user.isServiceApprover;
+        token.isAdmin = user.isAdmin;
+        token.requiresPasswordChange = user.requiresPasswordChange;
       }
       return token;
     },
@@ -93,6 +114,10 @@ export const authOptions: NextAuthOptions = {
         session.user.employee_id = token.employee_id as string | undefined;
         session.user.job_title = token.job_title as string | undefined;
         session.user.roles = token.roles as string[] | undefined;
+        session.user.isTechnician = token.isTechnician as boolean | undefined;
+        session.user.isServiceApprover = token.isServiceApprover as boolean | undefined;
+        session.user.isAdmin = token.isAdmin as boolean | undefined;
+        session.user.requiresPasswordChange = token.requiresPasswordChange as boolean | undefined;
       }
       return session;
     }

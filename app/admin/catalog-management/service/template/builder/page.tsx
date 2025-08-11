@@ -2888,7 +2888,7 @@ Top - utmost action needed as classified by Management` : '',
                     </div>
                   </CardHeader>
                   
-                  <CardContent className="max-h-[400px] overflow-y-auto">
+                  <CardContent>
                       {isApprovalEnabled ? (
                         <div className="space-y-6">
                           {/* Approval Configuration */}
@@ -3315,7 +3315,7 @@ const ApprovalLevelModal: React.FC<ApprovalLevelModalProps> = ({ level, onSave, 
   const specialApprovers = [
     {
       id: -1, // Use negative ID to distinguish from real users
-      name: 'Reported to',
+      name: 'Reporting to',
       email: 'rt',
       isSpecial: true,
       description: 'The direct supervisor/manager of the user who submitted the request'

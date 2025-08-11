@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check if user has any approval assignments (instead of checking isServiceApprover flag)
-    const pendingApprovals = await prisma.requestApproval.findMany({
+    const potentialApprovals = await prisma.requestApproval.findMany({
       where: {
         approverId: user.id,
         status: {
@@ -64,13 +64,34 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // If user has no approval assignments, return empty array
-    if (pendingApprovals.length === 0) {
+    // Filter approvals to ensure sequential workflow - only show approvals where all previous levels are approved
+    const validApprovals = [];
+    
+    for (const approval of potentialApprovals) {
+      // Check if all previous levels are approved
+      const previousLevelApprovals = await prisma.requestApproval.findMany({
+        where: {
+          requestId: approval.requestId,
+          level: { lt: approval.level } // levels less than current level
+        }
+      });
+
+      // If there are no previous levels, or all previous levels are approved, include this approval
+      const allPreviousApproved = previousLevelApprovals.length === 0 || 
+        previousLevelApprovals.every(prevApproval => prevApproval.status === APPROVAL_STATUS.APPROVED);
+
+      if (allPreviousApproved) {
+        validApprovals.push(approval);
+      }
+    }
+
+    // If user has no valid approval assignments, return empty array
+    if (validApprovals.length === 0) {
       return NextResponse.json({ approvals: [] });
     }
 
     // Format the approvals for the frontend
-    const formattedApprovals = pendingApprovals.map(approval => ({
+    const formattedApprovals = validApprovals.map(approval => ({
       id: approval.id,
       requestId: approval.request.id,
       requestTitle: approval.request.templateName || `Request #${approval.request.id}`,

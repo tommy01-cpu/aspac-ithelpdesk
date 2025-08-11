@@ -177,17 +177,23 @@ export default function AppHeader() {
                   Requests
                 </Button>
               </Link>
-              <Link href="/">
-                <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium">
-                  Technician View
-                </Button>
-              </Link>
+              {/* Only show Technician View if user is a technician */}
+              {session?.user?.isTechnician && (
+                <Link href="/technician">
+                  <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium">
+                    Technician View
+                  </Button>
+                </Link>
+              )}
               
-              <Link href="/admin/settings">
-                <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium">
-                  Admin View
-                </Button>
-              </Link>
+              {/* Only show Admin View if user is an admin */}
+              {session?.user?.isAdmin && (
+                <Link href="/admin/settings">
+                  <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium">
+                    Admin View
+                  </Button>
+                </Link>
+              )}
             
             </div>
           </nav>
@@ -198,11 +204,14 @@ export default function AppHeader() {
             <Button variant="ghost" size="icon" className="text-gray-600 hover:text-blue-700 hover:bg-blue-50">
               <Bell className="h-5 w-5" />
             </Button>
-            <Link href="/admin/settings">
-              <Button variant="ghost" size="icon" className="text-gray-600 hover:text-blue-700 hover:bg-blue-50">
-                <Settings className="h-5 w-5" />
-              </Button>
-            </Link>
+            {/* Only show Settings icon if user is an admin */}
+            {session?.user?.isAdmin && (
+              <Link href="/admin/settings">
+                <Button variant="ghost" size="icon" className="text-gray-600 hover:text-blue-700 hover:bg-blue-50">
+                  <Settings className="h-5 w-5" />
+                </Button>
+              </Link>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center space-x-2 text-gray-700 hover:text-blue-700 hover:bg-blue-50">

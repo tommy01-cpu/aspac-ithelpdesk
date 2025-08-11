@@ -5,6 +5,10 @@ declare module 'next-auth' {
     employee_id?: string;
     job_title?: string;
     roles?: string[];
+    isTechnician?: boolean;
+    isServiceApprover?: boolean;
+    isAdmin?: boolean;
+    requiresPasswordChange?: boolean;
   }
 
   interface Session {
@@ -17,6 +21,10 @@ declare module 'next-auth' {
       employee_id?: string;
       job_title?: string;
       roles?: string[];
+      isTechnician?: boolean;
+      isServiceApprover?: boolean;
+      isAdmin?: boolean;
+      requiresPasswordChange?: boolean;
     };
   }
 
@@ -24,5 +32,9 @@ declare module 'next-auth' {
     employee_id?: string;
     job_title?: string;
     roles?: string[];
+    isTechnician?: boolean;
+    isServiceApprover?: boolean;
+    isAdmin?: boolean;
+    requiresPasswordChange?: boolean;
   }
 }

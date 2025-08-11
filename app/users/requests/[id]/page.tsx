@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import dynamic from 'next/dynamic';
+import 'react-quill/dist/quill.snow.css';
 import { 
   ArrowLeft, 
   Clock, 
@@ -27,7 +29,12 @@ import {
   UserCheck,
   Edit,
   Reply,
-  X
+  X,
+  ChevronDown,
+  ChevronUp,
+  Upload,
+  Plus,
+  Info
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,8 +44,85 @@ import { SessionWrapper } from '@/components/session-wrapper';
 import { toast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { getStatusColor, getApprovalStatusColor, getPriorityColor, normalizeApprovalStatus } from '@/lib/status-colors';
-import { formatPhilippineTime, getApiTimestamp, formatPhilippineTimeRelative, formatPhilippineTimeDisplay } from '@/lib/time-utils';
+import { formatPhilippineTime, formatPhilippineTimeDisplay, formatPhilippineTimeRelative, getApiTimestamp } from '@/lib/time-utils';
+
+// Dynamically import ReactQuill to avoid SSR issues
+const ReactQuill = dynamic(() => import('react-quill'), { 
+  ssr: false,
+  loading: () => <div className="h-32 bg-slate-50 rounded border animate-pulse" />
+});
+
+// Rich Text Editor Component
+interface RichTextEditorProps {
+  value?: string;
+  onChange?: (value: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}
+
+const RichTextEditor: React.FC<RichTextEditorProps> = ({ 
+  value = '', 
+  onChange, 
+  placeholder = 'Enter text...', 
+  disabled = false,
+  className = ''
+}) => {
+  const [editorKey, setEditorKey] = useState(0);
+
+  // Force re-render when placeholder changes
+  useEffect(() => {
+    setEditorKey(prev => prev + 1);
+  }, [placeholder]);
+
+  // Enhanced modules with more formatting options
+  const modules = {
+    toolbar: [
+      [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+      [{ 'font': [] }],
+      [{ 'size': ['small', false, 'large', 'huge'] }],
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ 'color': [] }, { 'background': [] }],
+      [{ 'script': 'sub'}, { 'script': 'super' }],
+      [{ 'align': [] }],
+      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+      [{ 'indent': '-1'}, { 'indent': '+1' }],
+      ['blockquote', 'code-block'],
+      ['link', 'image', 'video'],
+      [{ 'direction': 'rtl' }],
+      ['clean']
+    ],
+    clipboard: {
+      matchVisual: false,
+    }
+  };
+
+  const formats = [
+    'header', 'font', 'size', 'bold', 'italic', 'underline', 'strike',
+    'color', 'background', 'script', 'align', 'list', 'bullet', 'indent',
+    'blockquote', 'code-block', 'link', 'image', 'video', 'direction'
+  ];
+
+  return (
+    <div className={`rich-text-editor ${disabled ? 'disabled' : ''} ${className}`}>
+      <ReactQuill
+        key={`quill-${editorKey}-${placeholder}`}
+        theme="snow"
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        readOnly={disabled}
+        modules={disabled ? { toolbar: false } : modules}
+        formats={formats}
+        style={{
+          backgroundColor: disabled ? '#f8fafc' : 'white',
+        }}
+      />
+    </div>
+  );
+};
 
 interface RequestData {
   id: number;
@@ -132,6 +216,12 @@ interface ConversationEntry {
   message: string;
   author: string;
   timestamp: string;
+  attachments?: Array<string | {
+    id: string;
+    originalName: string;
+    size: number;
+    mimeType?: string;
+  }>;
 }
 
 interface ApprovalLevel {
@@ -172,7 +262,20 @@ export default function RequestViewPage() {
   const [approvalConversations, setApprovalConversations] = useState<{[approvalId: string]: ConversationEntry[]}>({});
   const [newConversationMessage, setNewConversationMessage] = useState<{[approvalId: string]: string}>({});
   const [unreadCounts, setUnreadCounts] = useState<{[approvalId: string]: number}>({});
+  const [collapsedLevels, setCollapsedLevels] = useState<{[level: string]: boolean}>({});
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [newNote, setNewNote] = useState('');
+  const [noteAttachments, setNoteAttachments] = useState<File[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+  const noteFileInputRef = useRef<HTMLInputElement>(null);
   const conversationRefs = useRef<{[approvalId: string]: HTMLDivElement | null}>({});
+  
+  // Add approval modal states
+  const [showAddApprovalModal, setShowAddApprovalModal] = useState(false);
+  const [selectedUsers, setSelectedUsers] = useState<any[]>([]);
+  const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [loadingUsers, setLoadingUsers] = useState(false);
 
   const requestId = params?.id as string;
 
@@ -182,6 +285,27 @@ export default function RequestViewPage() {
       fetchUnreadCounts(); // Fetch unread conversation counts
     }
   }, [requestId, session]);
+
+  // Load conversation counts for all approvals after approvals are loaded
+  useEffect(() => {
+    if (approvals.length > 0) {
+      loadAllConversationCounts();
+    }
+  }, [approvals]);
+
+  // Debounced user search effect
+  useEffect(() => {
+    if (!userSearchTerm.trim()) {
+      setAvailableUsers([]);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      searchUsers(userSearchTerm);
+    }, 300); // 300ms debounce delay
+
+    return () => clearTimeout(timeoutId);
+  }, [userSearchTerm, approvals, selectedUsers, session]);
 
   const fetchRequestData = async () => {
     try {
@@ -322,6 +446,31 @@ export default function RequestViewPage() {
     if (!approvalConversations[approvalId]) {
       fetchApprovalConversations(approvalId);
     }
+
+    // Mark messages as read when opening conversation
+    markConversationAsRead(approvalId);
+  };
+
+  const markConversationAsRead = async (approvalId: string) => {
+    try {
+      // Mark all unread messages for this approval as read
+      const response = await fetch(`/api/approvals/${approvalId}/conversations/mark-read`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        // Update unread count to 0 for this approval
+        setUnreadCounts(prev => ({
+          ...prev,
+          [approvalId]: 0
+        }));
+      }
+    } catch (error) {
+      console.error('Error marking conversation as read:', error);
+    }
   };
 
   const fetchApprovalConversations = async (approvalId: string) => {
@@ -333,7 +482,8 @@ export default function RequestViewPage() {
           ...prev,
           [approvalId]: data.conversations || []
         }));
-        // Update unread count to 0 since user is viewing the conversation
+        
+        // Mark messages as read (reset unread count for this approval)
         setUnreadCounts(prev => ({
           ...prev,
           [approvalId]: 0
@@ -361,6 +511,40 @@ export default function RequestViewPage() {
       }
     } catch (error) {
       console.error('Error fetching unread counts:', error);
+    }
+  };
+
+  // Load conversation counts for all approvals without opening conversations
+  const loadAllConversationCounts = async () => {
+    try {
+      const conversationPromises = approvals.map(async (approval: any) => {
+        const response = await fetch(`/api/approvals/${approval.id}/conversations`);
+        if (response.ok) {
+          const data = await response.json();
+          return {
+            approvalId: approval.id,
+            conversations: data.conversations || [],
+            count: (data.conversations || []).length
+          };
+        }
+        return { approvalId: approval.id, conversations: [], count: 0 };
+      });
+
+      const results = await Promise.all(conversationPromises);
+      
+      // Update approval conversations counts without auto-opening panels
+      const newApprovalConversations: {[key: string]: ConversationEntry[]} = {};
+      
+      results.forEach(result => {
+        newApprovalConversations[result.approvalId] = result.conversations;
+      });
+      
+      setApprovalConversations(newApprovalConversations);
+
+      // Fetch fresh unread counts from the dedicated API (this will reflect read status)
+      await fetchUnreadCounts();
+    } catch (error) {
+      console.error('Error loading conversation counts:', error);
     }
   };
 
@@ -531,6 +715,315 @@ export default function RequestViewPage() {
     }
   };
 
+  // File upload handlers for notes
+  const handleNoteDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(true);
+  }, []);
+
+  const handleNoteDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+  }, []);
+
+  const handleNoteDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+    const files = Array.from(e.dataTransfer.files);
+    handleNoteFiles(files);
+  }, []);
+
+  const handleNoteFiles = (files: File[]) => {
+    const validFiles = files.filter(file => {
+      if (file.size > 20 * 1024 * 1024) { // 20MB limit
+        toast({
+          title: "File too large",
+          description: `File ${file.name} is too large. Maximum size is 20MB.`,
+          variant: "destructive"
+        });
+        return false;
+      }
+      return true;
+    });
+    
+    setNoteAttachments(prev => [...prev, ...validFiles]);
+  };
+
+  const removeNoteFile = useCallback((index: number) => {
+    setNoteAttachments(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const addNote = async () => {
+    const message = newNote.trim();
+    if (!message) return;
+
+    try {
+      // First, upload files if any
+      let uploadedFileData: any[] = [];
+      if (noteAttachments.length > 0) {
+        const fileFormData = new FormData();
+        noteAttachments.forEach(file => {
+          fileFormData.append('files', file);
+        });
+        
+        const fileUploadResponse = await fetch('/api/attachments', {
+          method: 'POST',
+          body: fileFormData
+        });
+
+        if (fileUploadResponse.ok) {
+          const fileResult = await fileUploadResponse.json();
+          uploadedFileData = fileResult.files || [];
+          console.log('Note files uploaded successfully:', uploadedFileData);
+        } else {
+          throw new Error('Failed to upload note attachments');
+        }
+      }
+
+      const response = await fetch(`/api/requests/${requestId}/conversations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message,
+          attachments: uploadedFileData, // Pass full attachment data with id, originalName, size, etc.
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Add the new note to the existing conversations list
+        setConversations(prev => [...prev, data.conversation]);
+        setNewNote(''); // Clear the input
+        setNoteAttachments([]); // Clear attachments
+        setShowNotesModal(false); // Close the modal
+        
+        toast({
+          title: "Note added",
+          description: "Your note has been added successfully",
+        });
+      } else {
+        throw new Error('Failed to add note');
+      }
+    } catch (error) {
+      console.error('Error adding note:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add note",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const toggleApprovalLevel = (level: string) => {
+    setCollapsedLevels(prev => ({
+      ...prev,
+      [level]: !prev[level]
+    }));
+  };
+
+  // Add approval functions
+  const searchUsers = async (searchTerm: string) => {
+    if (!searchTerm || searchTerm.length < 1) {
+      setAvailableUsers([]);
+      return;
+    }
+
+    setLoadingUsers(true);
+    try {
+      const response = await fetch(`/api/users?search=${encodeURIComponent(searchTerm)}`);
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Get ALL approver IDs from the current request (all levels)
+        const allApproverIds = approvals
+          .map((app: any) => app.approverId)
+          .filter(Boolean);
+        
+        // Get already selected user IDs
+        const selectedUserIds = selectedUsers.map(user => user.id);
+        
+        // Filter out users who are:
+        // 1. Current user
+        // 2. Already in ANY approval level for this request
+        // 3. Already selected in the modal
+        const filteredUsers = (data.users || []).filter((user: any) => {
+          // Exclude current user
+          if (session?.user?.email && user.emp_email === session.user.email) {
+            return false;
+          }
+          
+          // Exclude users already in ANY approval level of this request
+          if (allApproverIds.includes(user.id)) {
+            return false;
+          }
+          
+          // Exclude users already selected in the modal
+          if (selectedUserIds.includes(user.id)) {
+            return false;
+          }
+          
+          return true;
+        });
+        
+        setAvailableUsers(filteredUsers);
+      } else {
+        setAvailableUsers([]);
+      }
+    } catch (error) {
+      console.error('Error searching users:', error);
+      setAvailableUsers([]);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  // Helper function to get current in-progress level
+  const getCurrentInProgressLevel = () => {
+    const levels = Object.keys(approvals.reduce((acc: any, app: any) => {
+      acc[app.level] = true;
+      return acc;
+    }, {}));
+    
+    const currentLevel = levels.find(level => {
+      const levelApprovals = approvals.filter((app: any) => app.level === parseInt(level));
+      const allPreviousLevelsApproved = levels
+        .filter(l => parseInt(l) < parseInt(level))
+        .every(prevLevel => {
+          const prevLevelApprovals = approvals.filter((app: any) => app.level === parseInt(prevLevel));
+          return prevLevelApprovals.every((app: any) => app.status === 'approved');
+        });
+      
+      const hasPending = levelApprovals.some((app: any) => 
+        app.status === 'not_sent' || app.status === 'pending_approval' || app.status === 'for_clarification'
+      );
+      
+      return hasPending && allPreviousLevelsApproved;
+    });
+    
+    return currentLevel;
+  };
+
+  const addUserToSelection = (user: any) => {
+    // Check if user is already selected
+    if (selectedUsers.find(u => u.id === user.id)) {
+      toast({
+        title: "User already selected",
+        description: `${user.emp_fname} ${user.emp_lname} is already in the selected approvers list`,
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Check if user is current user
+    if (session?.user?.email && user.emp_email === session.user.email) {
+      toast({
+        title: "Cannot add yourself",
+        description: "You cannot add yourself as an approver",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Check if user is already an approver in ANY level of this request
+    const allApproverIds = approvals.map((app: any) => app.approverId).filter(Boolean);
+    if (allApproverIds.includes(user.id)) {
+      toast({
+        title: "User already an approver",
+        description: `${user.emp_fname} ${user.emp_lname} is already an approver in this request`,
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setSelectedUsers(prev => [...prev, user]);
+    setUserSearchTerm('');
+    setAvailableUsers([]);
+  };
+
+  const removeUserFromSelection = (userId: number) => {
+    setSelectedUsers(prev => prev.filter(u => u.id !== userId));
+  };
+
+  const handleAddApprovals = async () => {
+    if (selectedUsers.length === 0) {
+      toast({
+        title: "No users selected",
+        description: "Please select at least one user to add as an approver",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      // Find the current level that's in progress
+      const currentLevel = getCurrentInProgressLevel();
+
+      if (!currentLevel) {
+        toast({
+          title: "Cannot add approvals",
+          description: "No level is currently in progress to add approvals to",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const response = await fetch(`/api/requests/${requestId}/approvals`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          users: selectedUsers.map(user => ({
+            userId: user.id,
+            level: parseInt(currentLevel),
+            name: `${user.emp_fname} ${user.emp_lname}`,
+            email: user.emp_email
+          }))
+        }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Approvals added",
+          description: `Successfully added ${selectedUsers.length} approver(s) to Level ${currentLevel}`,
+        });
+        
+        // Refresh the request data to show new approvals
+        fetchRequestData();
+        
+        // Reset modal state
+        setShowAddApprovalModal(false);
+        setSelectedUsers([]);
+        setUserSearchTerm('');
+        setAvailableUsers([]);
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to add approvals');
+      }
+    } catch (error) {
+      console.error('Error adding approvals:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to add approvals",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Debounced user search
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (userSearchTerm) {
+        searchUsers(userSearchTerm);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [userSearchTerm]);
+
   if (loading) {
     return (
       <SessionWrapper>
@@ -566,6 +1059,39 @@ export default function RequestViewPage() {
 
   return (
     <SessionWrapper>
+      <style jsx global>{`
+        .ql-editor {
+          min-height: 150px;
+          font-family: inherit;
+          font-size: 14px;
+          line-height: 1.5;
+          color: #334155;
+        }
+        .ql-toolbar {
+          border-top: none;
+          border-left: none;
+          border-right: none;
+          border-bottom: 1px solid #cbd5e1;
+          background-color: #f8fafc;
+        }
+        .ql-container {
+          border: none;
+        }
+        .ql-toolbar .ql-stroke {
+          fill: none;
+          stroke: #64748b;
+        }
+        .ql-toolbar .ql-fill {
+          fill: #64748b;
+          stroke: none;
+        }
+        .ql-toolbar button:hover .ql-stroke {
+          stroke: #334155;
+        }
+        .ql-toolbar button:hover .ql-fill {
+          fill: #334155;
+        }
+      `}</style>
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
@@ -741,150 +1267,225 @@ export default function RequestViewPage() {
                             </div>
                           ))}
                         </div>
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+                            <Paperclip className="h-4 w-4" />
+                            <span>Browse Files</span>
+                            <span>or Drag files here [ Max size: 20 MB ]</span>
+                          </div>
+                          <div className="flex justify-center gap-2 mt-2">
+                            <Button variant="outline" size="sm">Reply All</Button>
+                            <Button variant="outline" size="sm">Reply</Button>
+                            <Button variant="outline" size="sm">Forward</Button>
+                          </div>
+                        </div>
                       </CardContent>
                     </Card>
                   )}
 
-                  {/* Properties */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg">Properties</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-3">
-                            <Tag className="h-4 w-4 text-red-500" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">Priority</p>
-                              <Badge className={getPriorityColor(requestData.priority)}>
-                                {requestData.priority.charAt(0).toUpperCase() + requestData.priority.slice(1)}
-                              </Badge>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Mail className="h-4 w-4 text-gray-500" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">E-mail Id(s) To Notify</p>
-                              <p className="text-sm text-gray-600">
-                                {(() => {
-                                  const formData = requestData.formData || {};
-                                  // Check for email fields
-                                  const emails = formData['10'] || formData.emails || formData['email-list'] || formData.emailsToNotify;
-                                  if (emails && Array.isArray(emails) && emails.length > 0) {
-                                    return emails.join(', ');
-                                  }
-                                  return '-';
-                                })()}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Tag className="h-4 w-4 text-gray-500" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">Request Type</p>
-                              <p className="text-sm text-gray-600 capitalize">{requestData.type}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Settings className="h-4 w-4 text-gray-500" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">Mode</p>
-                              <p className="text-sm text-gray-600">Self-Service Portal</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Tag className="h-4 w-4 text-gray-500" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">Service Category</p>
-                              <p className="text-sm text-gray-600">{requestData.formData?.category || 'N/A'}</p>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-3">
-                            <UserCheck className="h-4 w-4 text-gray-500" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">Technician</p>
-                              <p className="text-sm text-gray-600">
-                                {(() => {
-                                  const formData = requestData.formData || {};
-                                  // Check for technician fields
-                                  const technician = formData.technician || formData.assignedTechnician || formData.technicianId;
-                                  if (technician) {
-                                    return technician;
-                                  }
-                                  return 'Not Assigned';
-                                })()}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Tag className="h-4 w-4 text-gray-500" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">Category</p>
-                              <p className="text-sm text-gray-600">{requestData.formData?.category || requestData.formData?.['6'] || 'N/A'}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Conversations */}
+                  {/* Notes  */}
                   <Card>
                     <CardHeader>
                       <div className="flex items-center justify-between">
-                        <CardTitle className="text-lg">Conversations</CardTitle>
-                        <Button variant="outline" size="sm">
+                        <CardTitle className="text-lg">Notes</CardTitle>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => setShowNotesModal(true)}
+                        >
                           Add Notes
                         </Button>
                       </div>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-4">
-                        {/* Display conversations from API */}
-                        {conversations.map((conversation) => (
-                          <div key={conversation.id} className="flex gap-3">
-                            <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                              {conversation.type === 'system' ? (
-                                <Settings className="h-4 w-4 text-gray-600" />
-                              ) : conversation.type === 'user' ? (
-                                <User className="h-4 w-4 text-blue-600" />
-                              ) : (
-                                <UserCheck className="h-4 w-4 text-green-600" />
-                              )}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 text-sm">
-                                <span className="font-medium">{conversation.author}</span>
-                                <span className="text-gray-500">
-                                  {formatPhilippineTimeRelative(conversation.timestamp)}
-                                </span>
-                              </div>
-                              <p className="text-sm text-gray-600 mt-1">
-                                {conversation.message}
-                              </p>
-                            </div>
+                        {conversations.length === 0 ? (
+                          <div className="text-center py-8 text-gray-500">
+                            No Notes
                           </div>
-                        ))}
+                        ) : (
+                          <>
+                            {/* Display conversations from API */}
+                            {conversations.map((conversation) => (
+                              <div key={conversation.id} className="flex gap-3">
+                                <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
+                                  {conversation.type === 'system' ? (
+                                    <Settings className="h-4 w-4 text-gray-600" />
+                                  ) : conversation.type === 'user' ? (
+                                    <User className="h-4 w-4 text-blue-600" />
+                                  ) : (
+                                    <UserCheck className="h-4 w-4 text-green-600" />
+                                  )}
+                                </div>
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <span className="font-medium">{conversation.author}</span>
+                                    <span className="text-gray-500">
+                                      {formatPhilippineTimeRelative(conversation.timestamp)}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1">
+                                    {(() => {
+                                      // Check if message contains HTML tags (from rich text editor)
+                                      const isHTML = /<[^>]*>/g.test(conversation.message);
+                                      
+                                      if (isHTML) {
+                                        return (
+                                          <div 
+                                            className="text-sm text-gray-600 prose prose-sm max-w-none"
+                                            dangerouslySetInnerHTML={{ __html: conversation.message }}
+                                          />
+                                        );
+                                      } else {
+                                        return (
+                                          <p className="text-sm text-gray-600 whitespace-pre-wrap">
+                                            {conversation.message}
+                                          </p>
+                                        );
+                                      }
+                                    })()}
+                                    {/* Display attachments if they exist */}
+                                    {conversation.attachments && conversation.attachments.length > 0 && (
+                                      <div className="mt-3 space-y-2">
+                                        <p className="text-xs font-medium text-gray-500 mb-2">Attachments:</p>
+                                        {conversation.attachments.map((attachment, index) => (
+                                          <div key={index} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg border">
+                                            <Paperclip className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-sm font-medium text-gray-900 truncate">
+                                                {typeof attachment === 'string' ? attachment : attachment.originalName}
+                                              </p>
+                                              {typeof attachment === 'object' && attachment.size && (
+                                                <p className="text-xs text-gray-500">
+                                                  {formatFileSize(attachment.size)}
+                                                </p>
+                                              )}
+                                            </div>
+                                            {typeof attachment === 'object' && attachment.id && (
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => handleDownloadAttachment(attachment.id, attachment.originalName)}
+                                                disabled={downloading === attachment.id}
+                                                className="h-8 w-8 p-0"
+                                              >
+                                                {downloading === attachment.id ? (
+                                                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600"></div>
+                                                ) : (
+                                                  <Download className="h-4 w-4" />
+                                                )}
+                                              </Button>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Properties */}
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg">Properties</CardTitle>
+                        <Button variant="ghost" size="sm">
+                          <Edit className="h-4 w-4" />
+                          Edit
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Priority</span>
+                            <Badge className={getPriorityColor(requestData.priority)}>
+                              {requestData.priority.charAt(0).toUpperCase() + requestData.priority.slice(1)}
+                            </Badge>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Mode</span>
+                            <span className="text-sm text-gray-600">Self-Service Portal</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Request Type</span>
+                            <span className="text-sm text-gray-600 capitalize">{requestData.type}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">E-mail Id(s) To Notify</span>
+                            <span className="text-sm text-gray-600">-</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Asset(s)</span>
+                            <span className="text-sm text-gray-600">-</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Department</span>
+                            <span className="text-sm text-gray-600">{requestData.user.department}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Service Category</span>
+                            <span className="text-sm text-gray-600">{requestData.formData?.category || 'Data Management'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Created Date</span>
+                            <span className="text-sm text-gray-600">{formatPhilippineTime(requestData.createdAt, { dateOnly: true })}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Scheduled End Time</span>
+                            <span className="text-sm text-gray-600">-</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Response DueBy Time</span>
+                            <span className="text-sm text-gray-600">-</span>
+                          </div>
+                        </div>
                         
-                        {/* Reply form */}
-                        <div className="border-t pt-4">
-                          <div className="space-y-3">
-                            <Textarea
-                              placeholder="Add a reply..."
-                              value={newComment}
-                              onChange={(e) => setNewComment(e.target.value)}
-                              className="min-h-[100px]"
-                            />
-                            <div className="flex justify-end">
-                              <Button onClick={sendMainConversationReply}>
-                                <Reply className="h-4 w-4 mr-2" />
-                                Reply
-                              </Button>
-                            </div>
+                        <div className="space-y-4">
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Status</span>
+                            <Badge className={getStatusColor(requestData.status)} variant="outline">
+                              {requestData.status.charAt(0).toUpperCase() + requestData.status.slice(1)}
+                            </Badge>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Category</span>
+                            <span className="text-sm text-gray-600">Data Management</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Technician</span>
+                            <span className="text-sm text-gray-600">Not Assigned</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Created By</span>
+                            <span className="text-sm text-gray-600">{requestData.user.emp_fname} {requestData.user.emp_lname}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">SLA</span>
+                            <span className="text-sm text-gray-600">Regular SLA for HRIS+ Services</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Template</span>
+                            <span className="text-sm text-gray-600">{requestData.templateName}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Scheduled Start Time</span>
+                            <span className="text-sm text-gray-600">-</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">DueBy Date</span>
+                            <span className="text-sm text-gray-600">Aug 13, 2025 08:52 AM</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Last Update Time</span>
+                            <span className="text-sm text-gray-600">{formatPhilippineTime(requestData.updatedAt, { dateOnly: true })}</span>
                           </div>
                         </div>
                       </div>
@@ -938,8 +1539,16 @@ export default function RequestViewPage() {
                             
                             // Determine level status based on all approvals in this level
                             const hasApproved = levelApprovals.some((app: any) => app.status === 'approved');
-                            const hasPending = levelApprovals.some((app: any) => app.status === 'not_sent' || app.status === 'pending');
+                            const hasPending = levelApprovals.some((app: any) => app.status === 'not_sent' || app.status === 'pending_approval' || app.status === 'for_clarification');
                             const hasRejected = levelApprovals.some((app: any) => app.status === 'rejected');
+                            
+                            // Check if all previous levels are approved
+                            const currentLevelNumber = parseInt(level);
+                            const previousLevels = levels.filter(l => parseInt(l) < currentLevelNumber);
+                            const allPreviousLevelsApproved = previousLevels.every(prevLevel => {
+                              const prevLevelApprovals = approvalsByLevel[parseInt(prevLevel)];
+                              return prevLevelApprovals.every((app: any) => app.status === 'approved');
+                            });
                             
                             let levelStatus = 'Yet to Progress';
                             let levelIcon = Clock;
@@ -953,243 +1562,284 @@ export default function RequestViewPage() {
                               levelStatus = 'Approved';
                               levelIcon = CheckCircle;
                               levelBgColor = 'bg-green-500';
-                            } else if (hasPending) {
+                            } else if (hasPending && allPreviousLevelsApproved) {
+                              // Only show "In Progress" if previous levels are approved
                               levelStatus = 'In Progress';
                               levelIcon = Clock;
                               levelBgColor = 'bg-orange-500';
+                            } else if (hasPending && !allPreviousLevelsApproved) {
+                              // Keep "Yet to Progress" if previous levels aren't complete
+                              levelStatus = 'Yet to Progress';
+                              levelIcon = Clock;
+                              levelBgColor = 'bg-gray-400';
                             }
                             
                             const IconComponent = levelIcon;
 
                             return (
-                              <div key={level} className="space-y-4">
-                                {/* Level Header */}
-                                <div className="flex items-center gap-4 p-4 border rounded-lg bg-gray-50">
-                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${levelBgColor}`}>
-                                    <IconComponent className="h-5 w-5 text-white" />
-                                  </div>
-                                  <div className="flex-1">
-                                    <div className="flex items-center justify-between">
+                              <Card key={level} className="border-l-4 border-l-blue-500">
+                                <CardHeader className="pb-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-4">
+                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${levelBgColor}`}>
+                                        <IconComponent className="h-5 w-5 text-white" />
+                                      </div>
                                       <div>
-                                        <h3 className="font-medium text-gray-900">
+                                        <h3 className="font-semibold text-gray-900">
                                           Level {level}: {levelName}
                                         </h3>
                                         <p className="text-sm text-gray-600">{levelStatus}</p>
                                       </div>
-                                      <div className="flex items-center gap-2">
-                                        <button className="p-1 hover:bg-gray-200 rounded">
-                                          <Eye className="h-4 w-4 text-gray-400" />
-                                        </button>
-                                        {levelStatus === 'In Progress' && (
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {levelStatus === 'In Progress' && (
+                                        <>
                                           <Button size="sm" variant="outline" className="text-xs">
                                             Send for Approval
                                           </Button>
-                                        )}
-                                        {levelStatus === 'In Progress' && (
-                                          <Button size="sm" variant="outline" className="text-xs">
+                                          <Button 
+                                            size="sm" 
+                                            variant="outline" 
+                                            className="text-xs"
+                                            onClick={() => setShowAddApprovalModal(true)}
+                                          >
                                             + Add Approvals
                                           </Button>
+                                        </>
+                                      )}
+                                      <button 
+                                        className="p-1 hover:bg-gray-200 rounded transition-colors"
+                                        onClick={() => toggleApprovalLevel(level)}
+                                        title={collapsedLevels[level] ? 'Expand level' : 'Collapse level'}
+                                      >
+                                        {collapsedLevels[level] ? (
+                                          <ChevronDown className="h-4 w-4 text-gray-600" />
+                                        ) : (
+                                          <ChevronUp className="h-4 w-4 text-gray-600" />
                                         )}
-                                      </div>
+                                      </button>
                                     </div>
                                   </div>
-                                </div>
+                                </CardHeader>
                                 
-                                {/* Approvals Table for this level */}
-                                <div className="bg-white border rounded-lg overflow-hidden">
-                                  <div className="grid grid-cols-6 gap-3 p-2 bg-gray-100 text-xs font-medium text-gray-700 border-b">
-                                    <div>Status</div>
-                                    <div>Approvers</div>
-                                    <div>Sent On</div>
-                                    <div>Acted On</div>
-                                    <div>Comments</div>
-                                    <div>Conversation</div>
-                                  </div>
-                                  
-                                  {/* Render each approval in this level */}
-                                  {levelApprovals.map((approval: any, index: number) => (
-                                    <div key={approval.id || index}>
-                                      <div className="grid grid-cols-6 gap-3 p-2 text-xs border-b last:border-b-0">
-                                        <div className="flex items-center gap-1.5">
-                                          {approval.status === 'approved' ? (
-                                            <>
-                                              <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-                                              <span className="text-green-700 text-xs">Approved</span>
-                                            </>
-                                          ) : approval.status === 'rejected' ? (
-                                            <>
-                                              <AlertCircle className="h-3.5 w-3.5 text-red-500" />
-                                              <span className="text-red-700 text-xs">Rejected</span>
-                                            </>
-                                          ) : approval.status === 'for-clarification' ? (
-                                              <>
-                                                <Clock className="h-3.5 w-3.5 text-sky-500" />
-                                                <span className="text-sky-700 text-xs">For Clarification</span>
-                                              </>
-
-                                          ) : (
-                                            <>
-                                              <Clock className="h-3.5 w-3.5 text-orange-500" />
-                                              <span className="text-orange-500 text-xs">Pending Approval</span>
-                                            </>
-                                          )}
-                                        </div>
-                                        <div className="text-gray-700 text-xs">
-                                          {approval.approver?.emp_fname && approval.approver?.emp_lname 
-                                            ? `${approval.approver.emp_fname} ${approval.approver.emp_lname}` 
-                                            : approval.approver || approval.approverName || 'Unknown Approver'
-                                          }
-                                          {(approval.approver?.emp_email || approval.approverEmail) && (
-                                            <div className="text-xs text-gray-500">({approval.approver?.emp_email || approval.approverEmail})</div>
-                                          )}
-                                        </div>
-                                        <div className="text-gray-700 text-xs">
-                                          {(() => {
-                                            // Calculate "Sent On" based on level logic
-                                            if (approval.sentOn) {
-                                              // If we have an explicit sentOn date, use it
-                                              return formatPhilippineTime(approval.sentOn);
-                                            } else if (approval.level === 1) {
-                                              // Level 1 uses request creation date
-                                              return requestData?.createdAt ? formatPhilippineTime(requestData.createdAt) : '-';
-                                            } else {
-                                              // For subsequent levels, use previous level's approval date
-                                              const previousLevel = approval.level - 1;
-                                              const previousApproval = approvals.find((app: any) => 
-                                                app.level === previousLevel && app.status === 'approved'
-                                              );
-                                              return previousApproval?.actedOn ? formatPhilippineTime(previousApproval.actedOn) : '-';
-                                            }
-                                          })()}
-                                        </div>
-                                        <div className="text-gray-700 text-xs">
-                                          {approval.actedOn ? formatPhilippineTime(approval.actedOn) : '-'}
-                                        </div>
-                                        <div className="text-gray-700 text-xs">{approval.comments || '-'}</div>
-                                        <div className="text-gray-700">
-                                          <div className="flex items-center gap-1">
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={() => toggleConversation(approval.id)}
-                                              className="h-6 w-6 p-0 hover:bg-blue-50 relative"
-                                            >
-                                              <MessageSquare className="h-3 w-3 text-blue-600" />
-                                              
-                                              {/* Unread Messages Badge - positioned better */}
-                                              {unreadCounts[approval.id] > 0 && (
-                                                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-3.5 w-3.5 flex items-center justify-center font-medium">
-                                                  {unreadCounts[approval.id]}
-                                                </span>
-                                              )}
-                                            </Button>
-                                            
-                                            {/* Total Messages Badge (when no unread) - separate from button */}
-                                            {unreadCounts[approval.id] === 0 && approvalConversations[approval.id] && approvalConversations[approval.id].length > 0 && (
-                                              <span className="text-xs bg-blue-100 text-blue-800 rounded-full px-1.5 py-0.5 ml-1">
-                                                {approvalConversations[approval.id].length}
-                                              </span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </div>
-                                      
-                                      {/* Conversation Panel */}
-                                      {conversationStates[approval.id] && (
-                                        <div className="col-span-6 border-t bg-gray-50">
-                                          <div className="p-4 space-y-3">
-                                            <div className="flex items-center gap-2 mb-3">
-                                              <MessageSquare className="h-4 w-4 text-blue-600" />
-                                              <h4 className="text-sm font-medium text-gray-900">
-                                                Conversation with {approval.approver?.emp_fname || approval.approverName || 'Approver'}
-                                              </h4>
-                                            </div>
-                                            
-                                            {/* Messages Container */}
-                                            <div 
-                                              ref={(el) => {
-                                                conversationRefs.current[approval.id] = el;
-                                              }}
-                                              className="max-h-64 overflow-y-auto space-y-2 mb-3 bg-white border rounded-lg p-3"
-                                            >
-                                              {approvalConversations[approval.id] && approvalConversations[approval.id].length > 0 ? (
-                                                approvalConversations[approval.id].map((conv: ConversationEntry, convIndex: number) => (
-                                                  <div key={convIndex} className={`p-3 rounded-lg max-w-xs ${
-                                                    conv.type === 'user' 
-                                                      ? 'bg-blue-100 ml-auto text-right' 
-                                                      : 'bg-gray-100 mr-auto text-left'
-                                                  }`}>
-                                                    <div className="flex items-center justify-between mb-1">
-                                                      <span className="text-xs font-medium text-gray-900">
-                                                        {conv.author}
-                                                      </span>
-                                                      <span className="text-xs text-gray-500">
-                                                        {formatPhilippineTimeDisplay(conv.timestamp)}
-                                                      </span>
-                                                    </div>
-                                                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                                                      {conv.message}
-                                                    </p>
-                                                  </div>
-                                                ))
-                                              ) : (
-                                                <div className="text-center py-6 text-gray-500 text-sm">
-                                                  No conversation yet. Start the discussion!
+                                {/* Individual Approvers Section */}
+                                {!collapsedLevels[level] && (
+                                  <CardContent className="pt-0">
+                                    <div className="space-y-4">
+                                      {levelApprovals.map((approval: any, index: number) => (
+                                        <Card key={approval.id || index} className="bg-gray-50 border border-gray-200">
+                                          <CardContent className="p-4">
+                                            <div className="flex items-start justify-between mb-3">
+                                              <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                                                  <User className="h-5 w-5 text-blue-600" />
                                                 </div>
-                                              )}
-                                            </div>
-                                            
-                                            {/* Message Input */}
-                                            <div className="flex gap-2">
-                                              <Textarea
-                                                placeholder="Type your message..."
-                                                value={newConversationMessage[approval.id] || ''}
-                                                onChange={(e) => setNewConversationMessage(prev => ({
-                                                  ...prev,
-                                                  [approval.id]: e.target.value
-                                                }))}
-                                                className="flex-1 min-h-[60px] text-sm resize-none"
-                                                onKeyDown={(e) => {
-                                                  if (e.key === 'Enter' && !e.shiftKey) {
-                                                    e.preventDefault();
-                                                    if (newConversationMessage[approval.id]?.trim()) {
-                                                      sendConversationMessage(approval.id);
+                                                <div>
+                                                  <h4 className="font-medium text-gray-900">
+                                                    {approval.approver?.emp_fname && approval.approver?.emp_lname 
+                                                      ? `${approval.approver.emp_fname} ${approval.approver.emp_lname}` 
+                                                      : approval.approver || approval.approverName || 'Unknown Approver'
                                                     }
-                                                  }
-                                                }}
-                                              />
-                                              <div className="flex flex-col gap-2">
+                                                  </h4>
+                                                  <p className="text-sm text-gray-600">
+                                                    {approval.approver?.emp_email || approval.approverEmail || 'No email'}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                              
+                                              <div className="flex items-center gap-2">
+                                                {/* Status Badge */}
+                                                <div className="flex items-center gap-1.5">
+                                                  {approval.status === 'approved' ? (
+                                                    <>
+                                                      <CheckCircle className="h-4 w-4 text-green-500" />
+                                                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                                        Approved
+                                                      </Badge>
+                                                    </>
+                                                  ) : approval.status === 'rejected' ? (
+                                                    <>
+                                                      <AlertCircle className="h-4 w-4 text-red-500" />
+                                                      <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                                                        Rejected
+                                                      </Badge>
+                                                    </>
+                                                  ) : approval.status === 'for_clarification' ? (
+                                                    <>
+                                                      <Clock className="h-4 w-4 text-sky-500" />
+                                                      <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200">
+                                                        For Clarification
+                                                      </Badge>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <Clock className="h-4 w-4 text-orange-500" />
+                                                      <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                                                        Pending Approval
+                                                      </Badge>
+                                                    </>
+                                                  )}
+                                                </div>
+
+                                                {/* Conversation Button */}
                                                 <Button
-                                                  onClick={() => sendConversationMessage(approval.id)}
-                                                  disabled={!newConversationMessage[approval.id]?.trim()}
+                                                  variant="ghost"
                                                   size="sm"
-                                                  className="self-end"
+                                                  onClick={() => toggleConversation(approval.id)}
+                                                  className="h-8 w-8 p-0 hover:bg-blue-50 relative"
                                                 >
-                                                  <Reply className="h-4 w-4" />
+                                                  <MessageSquare className="h-4 w-4 text-blue-600" />
+                                                  
+                                                  {/* Red Unread Messages Badge from Approvers */}
+                                                  {unreadCounts[approval.id] > 0 && (
+                                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center font-medium">
+                                                      {unreadCounts[approval.id]}
+                                                    </span>
+                                                  )}
                                                 </Button>
-                                                {approval.status === 'pending_approval' && (
-                                                  <Button
-                                                    onClick={() => requestClarification(approval.id)}
-                                                    disabled={!newConversationMessage[approval.id]?.trim()}
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="self-end border-orange-300 text-orange-600 hover:bg-orange-50"
-                                                  >
-                                                    <AlertCircle className="h-4 w-4" />
-                                                  </Button>
+
+                                                {/* Message Count Display */}
+                                                {unreadCounts[approval.id] === 0 && approvalConversations[approval.id] && approvalConversations[approval.id].length > 0 && (
+                                                  <span className="text-xs bg-blue-100 text-blue-800 rounded-full px-2 py-1">
+                                                    {approvalConversations[approval.id].length} messages
+                                                  </span>
+                                                )}
+                                                
+                                                {/* No Messages Indicator */}
+                                                {(!approvalConversations[approval.id] || approvalConversations[approval.id].length === 0) && unreadCounts[approval.id] === 0 && (
+                                                  <span className="text-xs text-gray-400">No messages</span>
                                                 )}
                                               </div>
                                             </div>
-                                            <p className="text-xs text-gray-500">
-                                              Press Enter to send, Shift+Enter for new line. Use 🔵 for regular message or ⚠️ to request clarification (changes approval status).
-                                            </p>
-                                          </div>
-                                        </div>
-                                      )}
+
+                                            {/* Approval Details */}
+                                            <div className="grid grid-cols-3 gap-4 text-sm">
+                                              <div>
+                                                <span className="text-gray-500">Sent On:</span>
+                                                <p className="font-medium">
+                                                  {(() => {
+                                                    if (approval.sentOn) {
+                                                      return formatPhilippineTime(approval.sentOn);
+                                                    } else if (approval.level === 1) {
+                                                      return requestData?.createdAt ? formatPhilippineTime(requestData.createdAt) : '-';
+                                                    } else {
+                                                      const previousLevel = approval.level - 1;
+                                                      const previousApproval = approvals.find((app: any) => 
+                                                        app.level === previousLevel && app.status === 'approved'
+                                                      );
+                                                      return previousApproval?.actedOn ? formatPhilippineTime(previousApproval.actedOn) : '-';
+                                                    }
+                                                  })()}
+                                                </p>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Acted On:</span>
+                                                <p className="font-medium">
+                                                  {approval.actedOn ? formatPhilippineTime(approval.actedOn) : '-'}
+                                                </p>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Comments:</span>
+                                                <p className="font-medium">
+                                                  {approval.comments || '-'}
+                                                </p>
+                                              </div>
+                                            </div>
+
+                                            {/* Conversation Panel */}
+                                            {conversationStates[approval.id] && (
+                                              <div className="mt-4 border-t pt-4 bg-white rounded-lg p-4">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                  <MessageSquare className="h-4 w-4 text-blue-600" />
+                                                  <h5 className="text-sm font-medium text-gray-900">
+                                                    Conversation with {approval.approver?.emp_fname || approval.approverName || 'Approver'}
+                                                  </h5>
+                                                </div>
+                                                
+                                                {/* Messages Container */}
+                                                <div 
+                                                  ref={(el) => {
+                                                    conversationRefs.current[approval.id] = el;
+                                                  }}
+                                                  className="max-h-64 overflow-y-auto space-y-2 mb-3 bg-gray-50 border rounded-lg p-3"
+                                                >
+                                                  {approvalConversations[approval.id] && approvalConversations[approval.id].length > 0 ? (
+                                                    approvalConversations[approval.id].map((conv: ConversationEntry, convIndex: number) => (
+                                                      <div key={convIndex} className={`p-3 rounded-lg max-w-xs ${
+                                                        conv.type === 'user' 
+                                                          ? 'bg-blue-100 ml-auto text-right' 
+                                                          : 'bg-gray-100 mr-auto text-left'
+                                                      }`}>
+                                                        <div className="flex items-center justify-between mb-1">
+                                                          <span className="text-xs font-medium text-gray-900">
+                                                            {conv.author}
+                                                          </span>
+                                                          <span className="text-xs text-gray-500">
+                                                            {formatPhilippineTimeDisplay(conv.timestamp)}
+                                                          </span>
+                                                        </div>
+                                                        <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                                                          {conv.message}
+                                                        </p>
+                                                      </div>
+                                                    ))
+                                                  ) : (
+                                                    <div className="text-center py-6 text-gray-500 text-sm">
+                                                      No conversation yet. Start the discussion!
+                                                    </div>
+                                                  )}
+                                                </div>
+                                                
+                                                {/* Message Input */}
+                                                <div className="flex gap-2">
+                                                  <Textarea
+                                                    placeholder="Type your message..."
+                                                    value={newConversationMessage[approval.id] || ''}
+                                                    onChange={(e) => setNewConversationMessage(prev => ({
+                                                      ...prev,
+                                                      [approval.id]: e.target.value
+                                                    }))}
+                                                    className="flex-1 min-h-[60px] text-sm resize-none"
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter' && !e.shiftKey) {
+                                                        e.preventDefault();
+                                                        if (newConversationMessage[approval.id]?.trim()) {
+                                                          sendConversationMessage(approval.id);
+                                                        }
+                                                      }
+                                                    }}
+                                                  />
+                                                  <div className="flex flex-col gap-2">
+                                                    <Button
+                                                      onClick={() => sendConversationMessage(approval.id)}
+                                                      disabled={!newConversationMessage[approval.id]?.trim()}
+                                                      size="sm"
+                                                      className="self-end"
+                                                    >
+                                                      <Reply className="h-4 w-4" />
+                                                    </Button>
+                                                    {approval.status === 'pending_approval' && (
+                                                      <Button
+                                                        onClick={() => requestClarification(approval.id)}
+                                                        disabled={!newConversationMessage[approval.id]?.trim()}
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="self-end border-orange-300 text-orange-600 hover:bg-orange-50"
+                                                      >
+                                                        <AlertCircle className="h-4 w-4" />
+                                                      </Button>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            )}
+                                          </CardContent>
+                                        </Card>
+                                      ))}
                                     </div>
-                                  ))}
-                                </div>
-                              </div>
+                                  </CardContent>
+                                )}
+                              </Card>
                             );
                           });
                         })()}
@@ -1558,6 +2208,254 @@ export default function RequestViewPage() {
             </div>
           </div>
         </div>
+
+        {/* Add Notes Modal */}
+        <Dialog open={showNotesModal} onOpenChange={setShowNotesModal}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle>Add Notes</DialogTitle>
+            </DialogHeader>
+            
+            <div className="space-y-4 overflow-y-auto flex-1 pr-2">
+              {/* Rich Text Editor */}
+              <div className="border rounded-lg">
+                <RichTextEditor
+                  value={newNote}
+                  onChange={setNewNote}
+                  placeholder="Type your note here..."
+                  className="min-h-[200px]"
+                />
+              </div>
+
+              {/* File Upload Section */}
+              <div className="space-y-4">
+                <div 
+                  className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer ${
+                    dragActive 
+                      ? 'border-gray-400 bg-gray-50' 
+                      : 'border-gray-300 bg-white hover:border-gray-400 hover:bg-gray-50'
+                  }`}
+                  onDragOver={handleNoteDragOver}
+                  onDragLeave={handleNoteDragLeave}
+                  onDrop={handleNoteDrop}
+                  onClick={() => noteFileInputRef.current?.click()}
+                >
+                  <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                  <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+                    <Paperclip className="h-4 w-4" />
+                    <span className="text-blue-600 hover:underline cursor-pointer">Browse Files</span>
+                    <span>or Drag files here [ Max size: 20 MB ]</span>
+                  </div>
+                  <input
+                    ref={noteFileInputRef}
+                    type="file"
+                    multiple
+                    onChange={(e) => e.target.files && handleNoteFiles(Array.from(e.target.files))}
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.txt,.zip"
+                  />
+                </div>
+
+                {/* Display uploaded files */}
+                {noteAttachments.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-700">Attached Files:</p>
+                    {noteAttachments.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                        <div className="flex items-center gap-2">
+                          <Paperclip className="h-4 w-4 text-gray-400" />
+                          <span className="text-sm text-gray-700">{file.name}</span>
+                          <span className="text-xs text-gray-500">
+                            ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeNoteFile(index)}
+                          className="text-red-500 hover:text-red-600 p-1"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" className="rounded" />
+                  <span>Show this note to Requester</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" className="rounded" />
+                  <span>Consider notes addition as first response</span>
+                </label>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowNotesModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={addNote}
+                disabled={!newNote.trim()}
+              >
+                Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add Approval Modal */}
+        <Dialog open={showAddApprovalModal} onOpenChange={setShowAddApprovalModal}>
+          <DialogContent className="max-w-2xl max-h-[600px] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Add Approvers</DialogTitle>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              {/* User Search */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Search Users
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search by name, email, or department..."
+                    value={userSearchTerm}
+                    onChange={(e) => setUserSearchTerm(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  {loadingUsers && (
+                    <div className="absolute right-3 top-2">
+                      <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />
+                    </div>
+                  )}
+                  
+                  {/* Search Results Dropdown */}
+                  {userSearchTerm.length >= 1 && !loadingUsers && availableUsers.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-200 max-h-60 overflow-auto">
+                      {availableUsers.map((user) => (
+                        <div
+                          key={user.id}
+                          onClick={() => addUserToSelection(user)}
+                          className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                              <User className="h-4 w-4 text-blue-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-gray-900">
+                                {user.emp_fname} {user.emp_lname}
+                              </p>
+                              <p className="text-xs text-gray-500">{user.emp_email}</p>
+                              {user.department && (
+                                <p className="text-xs text-gray-400">{user.department}</p>
+                              )}
+                              {user.post_des && (
+                                <p className="text-xs text-gray-400">{user.post_des}</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* No Results Message */}
+                  {userSearchTerm.length >= 1 && !loadingUsers && availableUsers.length === 0 && (
+                    <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-200">
+                      <div className="px-4 py-3 text-sm text-gray-500 flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4" />
+                        No available users found matching "{userSearchTerm}"
+                      </div>
+                    </div>
+                  )}
+                  
+                 
+                </div>
+              </div>
+
+              {/* Selected Users */}
+              {selectedUsers.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Selected Approvers ({selectedUsers.length})
+                  </label>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {selectedUsers.map((user) => (
+                      <div
+                        key={user.id}
+                        className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-md"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                            <User className="h-4 w-4 text-blue-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {user.emp_fname} {user.emp_lname}
+                            </p>
+                            <p className="text-xs text-gray-500">{user.emp_email}</p>
+                            {user.department && (
+                              <p className="text-xs text-gray-400">{user.department}</p>
+                            )}
+                            {user.post_des && (
+                              <p className="text-xs text-gray-400">{user.post_des}</p>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeUserFromSelection(user.id)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedUsers.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  <Users className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                  <p className="text-sm">No approvers selected yet</p>
+                  <p className="text-xs text-gray-400">Search and select users to add as approvers</p>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowAddApprovalModal(false);
+                  setSelectedUsers([]);
+                  setUserSearchTerm('');
+                  setAvailableUsers([]);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleAddApprovals}
+                disabled={selectedUsers.length === 0}
+              >
+                Add {selectedUsers.length} Approver{selectedUsers.length !== 1 ? 's' : ''}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </SessionWrapper>
   );

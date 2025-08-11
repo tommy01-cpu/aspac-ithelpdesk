@@ -50,18 +50,6 @@ export default function LoginPage() {
     setIsLoading(true);
     setError('');
     
-    // Check if employee ID and password are the same
-    if (employeeId.toLowerCase() === password.toLowerCase()) {
-      setIsLoading(false);
-      setShowForceChangePassword(true);
-      toast({
-        title: "Password Change Required",
-        description: "Your password cannot be the same as your employee ID. Please create a new password.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
     try {
       const result = await signIn('credentials', {
         employee_id: employeeId,
@@ -77,9 +65,21 @@ export default function LoginPage() {
           variant: "destructive"
         });
       } else {
-        // Get the session to verify login
+        // Get the session to verify login and check password change requirement
         const session = await getSession();
         if (session) {
+          // Check if password change is required
+          if (session.user.requiresPasswordChange) {
+            setIsLoading(false);
+            setShowForceChangePassword(true);
+            toast({
+              title: "Password Change Required",
+              description: "Please create a new secure password to continue.",
+              variant: "destructive"
+            });
+            return;
+          }
+          
           toast({
             title: "Login Successful",
             description: "Welcome back! Redirecting to dashboard...",

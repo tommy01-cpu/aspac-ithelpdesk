@@ -13,7 +13,10 @@ import { SessionWrapper } from '@/components/session-wrapper';
 import MyRequestsTab from './requests/MyRequestsTab';
 import ServiceCatalogTab from './service-catalog';
 import IncidentCatalogTab from './incident-catalog';
-import ApprovalsTab from './approvals/ApprovalsTab';
+// import ApprovalsTab from './approvals/ApprovalsTab';
+// Update the path below if the file exists elsewhere, for example:
+import ApprovalsTab from './approvals/ApprovalsTab.tsx';
+// If the file does not exist, create 'ApprovalsTab.tsx' in the 'approvals' folder with a default export.
 
 interface TabItem {
   id: string;

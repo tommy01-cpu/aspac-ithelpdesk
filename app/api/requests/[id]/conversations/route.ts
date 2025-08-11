@@ -58,7 +58,7 @@ export async function POST(
     }
 
     const requestId = parseInt(params.id);
-    const { message } = await request.json();
+    const { message, attachments } = await request.json();
 
     if (!message?.trim()) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
@@ -93,7 +93,8 @@ export async function POST(
       message: message.trim(),
       author: `${user.emp_fname} ${user.emp_lname}`,
       timestamp: new Date(Date.now() - (8 * 60 * 60 * 1000)).toISOString(), // Subtract 8 hours
-      authorId: user.id
+      authorId: user.id,
+      attachments: attachments || [] // Store attachment information
     };
 
     // Get existing formData and add conversation to it

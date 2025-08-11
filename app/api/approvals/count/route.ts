@@ -31,25 +31,43 @@ export async function GET(request: NextRequest) {
     }
 
     // Check if user has any approval assignments (instead of checking isServiceApprover flag)
-    const pendingApprovals = await prisma.requestApproval.findMany({
+    const potentialApprovals = await prisma.requestApproval.findMany({
       where: {
         approverId: user.id,
         status: {
           in: [APPROVAL_STATUS.PENDING_APPROVAL, APPROVAL_STATUS.FOR_CLARIFICATION]
         }
-      },
-      select: {
-        requestId: true
       }
     });
 
     // If user has no approval assignments, return count 0
-    if (pendingApprovals.length === 0) {
+    if (potentialApprovals.length === 0) {
       return NextResponse.json({ count: 0 });
     }
 
+    // Filter approvals to ensure sequential workflow - only count approvals where all previous levels are approved
+    const validApprovals = [];
+    
+    for (const approval of potentialApprovals) {
+      // Check if all previous levels are approved
+      const previousLevelApprovals = await prisma.requestApproval.findMany({
+        where: {
+          requestId: approval.requestId,
+          level: { lt: approval.level } // levels less than current level
+        }
+      });
+
+      // If there are no previous levels, or all previous levels are approved, include this approval
+      const allPreviousApproved = previousLevelApprovals.length === 0 || 
+        previousLevelApprovals.every(prevApproval => prevApproval.status === APPROVAL_STATUS.APPROVED);
+
+      if (allPreviousApproved) {
+        validApprovals.push(approval);
+      }
+    }
+
     // Get unique request IDs to avoid counting multiple approvals for the same request
-    const uniqueRequestIds = new Set(pendingApprovals.map(approval => approval.requestId));
+    const uniqueRequestIds = new Set(validApprovals.map(approval => approval.requestId));
     const uniqueCount = uniqueRequestIds.size;
 
     return NextResponse.json({ count: uniqueCount });

@@ -122,9 +122,15 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      const allLevelApproved = levelApprovals.every(app => 
-        app.id === parseInt(approvalId) ? true : app.status === ApprovalStatus.approved
-      );
+      // Check if all approvals in the current level are approved (including the one we just updated)
+      const allLevelApproved = levelApprovals.every(app => {
+        // If this is the current approval being processed, consider it approved
+        if (app.id === parseInt(approvalId)) {
+          return true;
+        }
+        // For other approvals in this level, check their actual status
+        return app.status === ApprovalStatus.approved;
+      });
       
       if (allLevelApproved) {
         // Check if there are more levels
@@ -165,15 +171,30 @@ export async function POST(request: NextRequest) {
             where: { requestId: approval.requestId }
           });
 
-          const allApproved = allRequestApprovals.every(app => 
-            app.id === parseInt(approvalId) ? true : app.status === ApprovalStatus.approved
-          );
+          // Check if all approvals are approved (including the current one we just updated)
+          const allApproved = allRequestApprovals.every(app => {
+            // If this is the current approval being processed, consider it approved
+            if (app.id === parseInt(approvalId)) {
+              return true;
+            }
+            // For other approvals, check their actual status
+            return app.status === ApprovalStatus.approved;
+          });
 
           if (allApproved) {
-            // All approvals complete, update request status to OPEN (ready for work)
-            await prisma.request.update({
+            // All approvals complete, update request status to OPEN and formData approval status
+            const updatedRequest = await prisma.request.update({
               where: { id: approval.requestId },
-              data: { status: RequestStatus.open }
+              data: { 
+                status: RequestStatus.open,
+                formData: {
+                  ...(approval.request.formData as any || {}),
+                  '5': 'approved' // Update the approval status field
+                }
+              },
+              include: {
+                user: true
+              }
             });
 
             await prisma.requestHistory.create({
@@ -186,6 +207,59 @@ export async function POST(request: NextRequest) {
                 timestamp: new Date()
               }
             });
+
+            // Trigger SLA calculation and technician assignment
+            try {
+              const templateId = updatedRequest.templateId ? parseInt(updatedRequest.templateId) : undefined;
+              
+              console.log(`Triggering SLA and assignment for request ${approval.requestId}, template ${templateId}`);
+              
+              // Call the SLA and assignment API
+              const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/requests/${approval.requestId}/sla-assignment`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  requestId: approval.requestId,
+                  templateId: templateId
+                })
+              });
+
+              if (response.ok) {
+                const slaResult = await response.json();
+                console.log('✅ SLA and assignment processing completed:', slaResult.results);
+                
+                // Add additional history entry if technician was assigned
+                if (slaResult.results?.assignment?.success && slaResult.results.assignment.technician && !slaResult.results.assignment.technician.alreadyAssigned) {
+                  await prisma.requestHistory.create({
+                    data: {
+                      requestId: approval.requestId,
+                      action: 'Auto-Assignment Completed',
+                      actorName: 'System',
+                      actorType: 'system',
+                      details: `Request automatically assigned to ${slaResult.results.assignment.technician.name} from ${slaResult.results.assignment.technician.supportGroup} via ${slaResult.results.assignment.technician.loadBalanceType} load balancing`,
+                      timestamp: new Date()
+                    }
+                  });
+                }
+              } else {
+                console.error('❌ SLA and assignment processing failed:', await response.text());
+              }
+            } catch (slaError) {
+              console.error('❌ Error triggering SLA and assignment:', slaError);
+              // Don't fail the approval process if SLA/assignment fails
+              await prisma.requestHistory.create({
+                data: {
+                  requestId: approval.requestId,
+                  action: 'SLA/Assignment Error',
+                  actorName: 'System',
+                  actorType: 'system',
+                  details: `Failed to calculate SLA or assign technician: ${slaError instanceof Error ? slaError.message : 'Unknown error'}`,
+                  timestamp: new Date()
+                }
+              });
+            }
           }
         }
       }

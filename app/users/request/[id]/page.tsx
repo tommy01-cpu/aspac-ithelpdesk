@@ -58,7 +58,8 @@ import {
   Tag,
   Users,
   Zap,
-  Paperclip
+  Paperclip,
+  Info
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,6 +70,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { SessionWrapper } from '@/components/session-wrapper';
 import { toast } from '@/hooks/use-toast';
 import { getStatusColor, getPriorityColor } from '@/lib/status-colors';
@@ -216,8 +218,9 @@ const ApproverTagSelect: React.FC<ApproverTagSelectProps> = ({
     inputRef.current?.focus();
   }, [selectedApproverIds, onChange]);
 
-  const removeApprover = (userId: string) => {
-    onChange(selectedApproverIds.filter(id => id !== userId));
+  const removeApprover = (userId: string | number) => {
+    const userIdStr = String(userId); // Convert to string for consistent comparison
+    onChange(selectedApproverIds.filter(id => String(id) !== userIdStr));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -324,7 +327,7 @@ const ApproverTagSelect: React.FC<ApproverTagSelectProps> = ({
                   {!disabled && (
                     <button
                       type="button"
-                      onClick={() => removeApprover(user.id)}
+                      onClick={() => removeApprover(String(user.id))}
                       className="text-red-500 hover:text-red-700 p-1"
                     >
                       <X className="h-4 w-4" />
@@ -538,6 +541,17 @@ export default function RequestPage() {
       const response = await fetch(`/api/templates/${templateId}`);
       if (response.ok) {
         const template = await response.json();
+        
+        // Parse fields if they come as a JSON string
+        if (template.fields && typeof template.fields === 'string') {
+          try {
+            template.fields = JSON.parse(template.fields);
+          } catch (parseError) {
+            console.error('Error parsing template fields:', parseError);
+            template.fields = [];
+          }
+        }
+        
         setTemplateData(template);
         
         // Set SLA data from template
@@ -554,45 +568,50 @@ export default function RequestPage() {
         
         // Initialize form data with default values and current user info
         const initialFormData: Record<string, any> = {};
-        template.fields?.forEach((field: FormField) => {
-          if (field.defaultValue) {
-            // Handle different field types for default values
-            switch (field.type) {
-              case 'priority':
-                initialFormData[field.id] = typeof field.defaultValue === 'string'
-                  ? field.defaultValue.toLowerCase()
-                  : field.defaultValue;
-                break;
-              case 'status':
-                initialFormData[field.id] = typeof field.defaultValue === 'string'
-                  ? field.defaultValue.toLowerCase().replace(/\s+/g, '-')
-                  : Array.isArray(field.defaultValue)
-                    ? field.defaultValue.map(v => typeof v === 'string' ? v.toLowerCase().replace(/\s+/g, '-') : v)
+        if (Array.isArray(template.fields)) {
+          template.fields.forEach((field: FormField) => {
+            if (field.defaultValue) {
+              // Handle different field types for default values
+              switch (field.type) {
+                case 'priority':
+                  initialFormData[field.id] = typeof field.defaultValue === 'string'
+                    ? field.defaultValue.toLowerCase()
                     : field.defaultValue;
-                break;
-              case 'select':
-                initialFormData[field.id] = typeof field.defaultValue === 'string'
-                  ? field.defaultValue.toLowerCase().replace(/\s+/g, '-')
-                  : Array.isArray(field.defaultValue)
-                    ? field.defaultValue.map(v => typeof v === 'string' ? v.toLowerCase().replace(/\s+/g, '-') : v)
-                    : field.defaultValue;
-                break;
-              case 'multiselect':
-                initialFormData[field.id] = Array.isArray(field.defaultValue) ? field.defaultValue : [field.defaultValue];
-                break;
-              default:
-                initialFormData[field.id] = field.defaultValue;
+                  break;
+                case 'status':
+                  initialFormData[field.id] = typeof field.defaultValue === 'string'
+                    ? field.defaultValue.toLowerCase().replace(/\s+/g, '-')
+                    : Array.isArray(field.defaultValue)
+                      ? field.defaultValue.map(v => typeof v === 'string' ? v.toLowerCase().replace(/\s+/g, '-') : v)
+                      : field.defaultValue;
+                  break;
+                case 'select':
+                  initialFormData[field.id] = typeof field.defaultValue === 'string'
+                    ? field.defaultValue.toLowerCase().replace(/\s+/g, '-')
+                    : Array.isArray(field.defaultValue)
+                      ? field.defaultValue.map(v => typeof v === 'string' ? v.toLowerCase().replace(/\s+/g, '-') : v)
+                      : field.defaultValue;
+                  break;
+                case 'multiselect':
+                  initialFormData[field.id] = Array.isArray(field.defaultValue) ? field.defaultValue : [field.defaultValue];
+                  break;
+                default:
+                  initialFormData[field.id] = field.defaultValue;
+              }
+            } else if (field.type === 'priority' && field.options && field.options.length > 0) {
+              // Set default priority to the first option if no default value is specified
+              initialFormData[field.id] = field.options[0];
             }
-          }
-          
-          // Auto-populate name field with current user's name
-          if (field.type === 'text' && (field.label.toLowerCase().includes('name') || field.id.toLowerCase().includes('name')) && session?.user) {
-            const userName = session.user.name || '';
-            if (userName) {
-              initialFormData[field.id] = userName;
+            
+            // Auto-populate name field with current user's name
+            if (field.type === 'text' && (field.label.toLowerCase().includes('name') || field.id.toLowerCase().includes('name')) && session?.user) {
+              const userName = session.user.name || '';
+              if (userName) {
+                initialFormData[field.id] = userName;
+              }
             }
-          }
-        });
+          });
+        }
         setFormData(initialFormData);
       }
     } catch (error) {
@@ -710,7 +729,8 @@ export default function RequestPage() {
 
     try {
       // Validate required fields
-      const requiredFields = templateData?.fields.filter(field => field.required && !field.technicianOnly);
+      const templateFields = Array.isArray(templateData?.fields) ? templateData.fields : [];
+      const requiredFields = templateFields.filter(field => field.required && !field.technicianOnly);
       const missingFields = requiredFields?.filter(field => !formData[field.id] || formData[field.id] === '');
       
       if (missingFields && missingFields.length > 0) {
@@ -764,7 +784,8 @@ export default function RequestPage() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Failed to submit request');
+        console.error('Server error response:', error);
+        throw new Error(error.error || error.details || 'Failed to submit request');
       }
 
       const result = await response.json();
@@ -780,9 +801,10 @@ export default function RequestPage() {
       
     } catch (error) {
       console.error('Error submitting request:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to submit request';
       toast({
         title: "Error",
-        description: "Failed to submit request",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -1197,7 +1219,7 @@ export default function RequestPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6 p-6">
-                {templateData.fields
+                {Array.isArray(templateData.fields) ? templateData.fields
                   .filter((field) => !field.label.toLowerCase().includes('resolution') && field.type !== 'resolution')
                   .map((field) => (
                   <div key={field.id} className="space-y-2">
@@ -1214,15 +1236,28 @@ export default function RequestPage() {
                       
                       {field.label}
                       {field.required && <span className="text-red-500">*</span>}
+                      
+                      {field.helpText && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-md p-3 text-wrap break-words">
+                              <p className="text-sm whitespace-pre-wrap">{field.helpText}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                     </label>
                     
                     {renderField(field)}
-                    
-                    {field.helpText && (
-                      <p className="text-sm text-slate-500">{field.helpText}</p>
-                    )}
                   </div>
-                ))}
+                )) : (
+                  <div className="text-center py-8">
+                    <p className="text-slate-500">No form fields available for this template.</p>
+                  </div>
+                )}
 
                 {/* Attachments Section within main form */}
                 <div className="pt-6 border-t border-slate-200">

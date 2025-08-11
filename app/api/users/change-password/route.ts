@@ -54,25 +54,35 @@ export async function POST(request: NextRequest) {
 
     // If not a force change, verify current password
     if (!isForceChange && currentPassword) {
+      console.log('🔍 Verifying current password for user:', employee_id);
       const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+      console.log('🔐 Current password verification result:', isCurrentPasswordValid);
+      
       if (!isCurrentPasswordValid) {
+        console.log('❌ Current password verification failed');
         return NextResponse.json(
           { error: 'Current password is incorrect' },
           { status: 401 }
         );
       }
+      console.log('✅ Current password verified successfully');
     }
 
     // Hash the new password
+    console.log('🔐 Hashing new password...');
     const hashedNewPassword = await bcrypt.hash(newPassword, 12);
+    console.log('✅ New password hashed successfully');
 
-    // Update the user's password
+    // Update the user's password and clear the requiresPasswordChange flag
+    console.log('💾 Updating user password in database...');
     await prisma.users.update({
       where: { emp_code: employee_id.toString() },
       data: { 
-        password: hashedNewPassword
+        password: hashedNewPassword,
+        requiresPasswordChange: false
       }
     });
+    console.log('✅ Password updated in database successfully');
 
     return NextResponse.json({ message: 'Password updated successfully' });
 
