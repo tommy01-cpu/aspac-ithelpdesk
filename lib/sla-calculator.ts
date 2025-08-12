@@ -1,4 +1,7 @@
 import { prisma } from './prisma';
+import fs from 'fs';
+import path from 'path';
+import { PHILIPPINES_TIMEZONE } from './time-utils';
 
 export interface OperationalHours {
   id: number;
@@ -32,6 +35,101 @@ export interface ExclusionRule {
   excludeOn: string;
   weekSelection?: string | null;
   monthSelection: string;
+}
+
+// Holiday support: read from config/holidays.json if present
+function getHolidaySet(): Set<string> {
+  try {
+    const file = path.resolve(process.cwd(), 'config', 'holidays.json');
+    if (fs.existsSync(file)) {
+      const raw = fs.readFileSync(file, 'utf8');
+      const json = JSON.parse(raw || '{}');
+      const list: string[] = Array.isArray(json?.holidays) ? json.holidays : [];
+      return new Set(list.map(d => String(d).slice(0, 10)));
+    }
+  } catch (e) {
+    console.warn('Failed to read holidays.json; continuing without holidays');
+  }
+  return new Set<string>();
+}
+
+const HOLIDAYS = getHolidaySet();
+
+function toPHT(date: Date): Date {
+  // Convert to Asia/Manila wall-clock date
+  return new Date(date.toLocaleString('en-US', { timeZone: PHILIPPINES_TIMEZONE }));
+}
+
+function isHoliday(date: Date): boolean {
+  const pht = toPHT(date);
+  const y = pht.getFullYear();
+  const m = (pht.getMonth() + 1).toString().padStart(2, '0');
+  const d = pht.getDate().toString().padStart(2, '0');
+  const key = `${y}-${m}-${d}`;
+  return HOLIDAYS.has(key);
+}
+
+/**
+ * Compute the number of working minutes in a typical working day based on the
+ * configured operational hours. If schedules vary by day, this returns the
+ * average across enabled working days. Breaks are subtracted. If round-clock,
+ * returns 24h worth of minutes.
+ */
+export function getDailyWorkingMinutes(operationalHours: OperationalHours): number {
+  if (operationalHours.workingTimeType === 'round-clock') {
+    return 24 * 60;
+  }
+
+  // Helper to compute minutes between two HH:MM strings
+  const spanMinutes = (start: string, end: string): number => {
+    const [sh, sm] = start.split(':').map((n) => parseInt(n, 10));
+    const [eh, em] = end.split(':').map((n) => parseInt(n, 10));
+    return (eh * 60 + em) - (sh * 60 + sm);
+  };
+
+  const enabledDays = (operationalHours.workingDays || []).filter(
+    (d) => d.isEnabled && d.scheduleType !== 'not-set'
+  );
+  if (enabledDays.length === 0) {
+    // Fallback to 8h if nothing configured
+    return 8 * 60;
+  }
+
+  const minutesPerDay: number[] = enabledDays.map((day) => {
+    const start = day.scheduleType === 'custom'
+      ? (day.customStartTime || operationalHours.standardStartTime || '08:00')
+      : (operationalHours.standardStartTime || '08:00');
+    const end = day.scheduleType === 'custom'
+      ? (day.customEndTime || operationalHours.standardEndTime || '18:00')
+      : (operationalHours.standardEndTime || '18:00');
+
+    let minutes = Math.max(0, spanMinutes(start, end));
+    const breaks = day.breakHours || [];
+    for (const b of breaks) {
+      minutes -= Math.max(0, spanMinutes(b.startTime, b.endTime));
+    }
+    return Math.max(0, minutes);
+  });
+
+  // Average across enabled days to represent a typical day
+  const sum = minutesPerDay.reduce((a, b) => a + b, 0);
+  return sum / minutesPerDay.length;
+}
+
+/**
+ * Convert a (days, hours, minutes) SLA specification to total working hours,
+ * using the operational-hours-based working day length. If round-clock, days
+ * are treated as 24h each.
+ */
+export function componentsToWorkingHours(
+  days: number,
+  hours: number,
+  minutes: number,
+  operationalHours: OperationalHours
+): number {
+  const dailyMinutes = getDailyWorkingMinutes(operationalHours);
+  const totalMinutes = Math.max(0, days) * dailyMinutes + Math.max(0, hours) * 60 + Math.max(0, minutes);
+  return totalMinutes / 60;
 }
 
 /**
@@ -68,8 +166,13 @@ export function isWithinWorkingHours(
   date: Date,
   operationalHours: OperationalHours
 ): boolean {
-  const dayOfWeek = date.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
-  const timeString = date.toTimeString().slice(0, 5); // "HH:MM"
+  // Holidays are always non-working days unless round-clock
+  if (operationalHours.workingTimeType !== 'round-clock' && isHoliday(date)) {
+    return false;
+  }
+  const pht = toPHT(date);
+  const dayOfWeek = pht.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+  const timeString = pht.toTimeString().slice(0, 5); // "HH:MM"
 
   // If it's round-the-clock, always return true
   if (operationalHours.workingTimeType === 'round-clock') {
@@ -122,65 +225,16 @@ export function getNextWorkingDateTime(
   operationalHours: OperationalHours
 ): Date {
   let currentDate = new Date(fromDate);
-
-  // If it's round-the-clock, return the same time
   if (operationalHours.workingTimeType === 'round-clock') {
     return currentDate;
   }
-
-  // Find next working time
-  let maxIterations = 14; // Max 2 weeks to prevent infinite loops
-  
-  while (maxIterations > 0 && !isWithinWorkingHours(currentDate, operationalHours)) {
-    const dayOfWeek = currentDate.getDay();
-    const workingDay = operationalHours.workingDays.find(
-      (day) => day.dayOfWeek === dayOfWeek
-    );
-
-    if (workingDay && workingDay.isEnabled && workingDay.scheduleType !== 'not-set') {
-      // Get working hours for the day
-      let startTime: string;
-      if (workingDay.scheduleType === 'custom') {
-        startTime = workingDay.customStartTime || '08:00';
-      } else {
-        startTime = operationalHours.standardStartTime || '08:00';
-      }
-
-      const [startHour, startMinute] = startTime.split(':').map(Number);
-      const dayStart = new Date(currentDate);
-      dayStart.setHours(startHour, startMinute, 0, 0);
-
-      // If we're before the start of working hours today, jump to start time
-      if (currentDate < dayStart) {
-        currentDate = dayStart;
-        continue;
-      }
-    }
-
-    // Move to next day at start of working hours
-    currentDate.setDate(currentDate.getDate() + 1);
-    const nextDayOfWeek = currentDate.getDay();
-    const nextWorkingDay = operationalHours.workingDays.find(
-      (day) => day.dayOfWeek === nextDayOfWeek
-    );
-
-    if (nextWorkingDay && nextWorkingDay.isEnabled && nextWorkingDay.scheduleType !== 'not-set') {
-      let startTime: string;
-      if (nextWorkingDay.scheduleType === 'custom') {
-        startTime = nextWorkingDay.customStartTime || '08:00';
-      } else {
-        startTime = operationalHours.standardStartTime || '08:00';
-      }
-
-      const [startHour, startMinute] = startTime.split(':').map(Number);
-      currentDate.setHours(startHour, startMinute, 0, 0);
-    } else {
-      currentDate.setHours(0, 0, 0, 0);
-    }
-
-    maxIterations--;
+  // Step minute-by-minute until we hit a working minute (respects holidays via isWithinWorkingHours)
+  const maxMinutes = 60 * 24 * 14; // up to 2 weeks
+  let steps = 0;
+  while (!isWithinWorkingHours(currentDate, operationalHours) && steps < maxMinutes) {
+    currentDate.setMinutes(currentDate.getMinutes() + 1);
+    steps++;
   }
-
   return currentDate;
 }
 
@@ -201,7 +255,7 @@ export function calculateWorkingHours(
   let currentDate = new Date(startDate);
 
   while (currentDate < endDate) {
-    if (isWithinWorkingHours(currentDate, operationalHours)) {
+  if (isWithinWorkingHours(currentDate, operationalHours)) {
       totalHours += 1/60; // Add 1 minute
     }
     currentDate.setMinutes(currentDate.getMinutes() + 1);
@@ -215,8 +269,15 @@ export function calculateWorkingHours(
  */
 export async function calculateSLADueDate(
   ticketCreatedDate: Date,
-  slaHours: number
+  slaHours: number,
+  options?: { useOperationalHours?: boolean }
 ): Promise<Date> {
+  // If explicitly told to ignore operational hours, treat as round-the-clock
+  if (options?.useOperationalHours === false) {
+    const due = new Date(ticketCreatedDate);
+    due.setHours(due.getHours() + slaHours);
+    return due;
+  }
   const operationalHours = await getOperationalHours();
   
   if (!operationalHours) {

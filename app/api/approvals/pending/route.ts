@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 // Define the approval status constants
 const APPROVAL_STATUS = {
@@ -126,7 +124,5 @@ export async function GET(request: NextRequest) {
       { error: 'Failed to fetch pending approvals' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

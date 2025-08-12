@@ -75,13 +75,14 @@ export default function SLAAssignment({ templateType, selectedSLAId, onSLAChange
     onSLAChange(sla ? sla.id : null);
   };
 
-  const formatTime = (hours: number) => {
-    if (hours < 24) {
-      return `${hours} hour${hours !== 1 ? 's' : ''}`;
-    }
-    const days = Math.floor(hours / 24);
-    const remainingHours = hours % 24;
-    return `${days} day${days !== 1 ? 's' : ''}${remainingHours > 0 ? ` ${remainingHours} hour${remainingHours !== 1 ? 's' : ''}` : ''}`;
+  const formatDaysAndHours = (totalHours: number) => {
+    if (!totalHours || totalHours <= 0) return '—';
+    const days = Math.floor(totalHours / 24);
+    const hours = Math.round(totalHours % 24);
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
+    if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
+    return parts.length > 0 ? parts.join(' ') : '0 hours';
   };
 
   const filteredSLAs = slaServices.filter(sla =>
@@ -158,7 +159,7 @@ export default function SLAAssignment({ templateType, selectedSLAId, onSLAChange
                     <div className="flex flex-col gap-1 py-1">
                       <span className="font-medium">{sla.name}</span>
                       <span className="text-xs text-blue-600">
-                        SLA: Typically delivered within {Math.ceil(sla.resolutionTime / 24)} {Math.ceil(sla.resolutionTime / 24) === 1 ? 'day' : 'days'} from full approval
+                        SLA: Typically delivered within {formatDaysAndHours(sla.resolutionTime)} from full approval
                       </span>
                     </div>
                   </SelectItem>
@@ -178,7 +179,7 @@ export default function SLAAssignment({ templateType, selectedSLAId, onSLAChange
               <div className="flex-1 space-y-2">
                 <h4 className="font-medium text-blue-900 mb-1">{selectedSLA.name}</h4>
                 <p className="text-blue-700 text-sm">
-                  SLA: Typically delivered within {Math.ceil(selectedSLA.resolutionTime / 24)} {Math.ceil(selectedSLA.resolutionTime / 24) === 1 ? 'day' : 'days'} from full approval
+                  SLA: Typically delivered within {formatDaysAndHours(selectedSLA.resolutionTime)} from full approval
                 </p>
        
               </div>

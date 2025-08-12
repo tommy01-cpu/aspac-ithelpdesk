@@ -3002,6 +3002,29 @@ Top - utmost action needed as classified by Management` : '',
                                         </div>
                                       </div>
 
+                                      {/* Selected approvers list */}
+                                      <div className="px-4 pb-4">
+                                        {Array.isArray(level.approvers) && level.approvers.length > 0 ? (
+                                          <div className="flex flex-wrap gap-2">
+                                            {level.approvers.map((appr) => (
+                                              <div
+                                                key={appr.id}
+                                                className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 text-slate-700"
+                                                title={appr.email}
+                                              >
+                                                <User className="w-4 h-4 text-slate-500" />
+                                                <span className="text-sm font-medium">{appr.name}</span>
+                                                {appr.email && (
+                                                  <span className="text-xs text-slate-500 hidden sm:inline">({appr.email})</span>
+                                                )}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <div className="text-sm text-slate-500 italic">No approvers selected</div>
+                                        )}
+                                      </div>
+
                                       {/* Inline Approval Level Form for this specific level */}
                                       {isApprovalModalOpen && editingApprovalLevel?.id === level.id && (
                                         <div className="border-t border-slate-200 p-4 bg-blue-50">

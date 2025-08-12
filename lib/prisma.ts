@@ -1,9 +1,17 @@
 import { PrismaClient } from '@prisma/client';
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
+type GlobalWithPrisma = typeof globalThis & { prisma?: PrismaClient };
+const g = globalThis as GlobalWithPrisma;
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient();
+if (!g.prisma) {
+  // Create once per process; reuse across hot reloads and route reloads
+  g.prisma = new PrismaClient({
+    // Enable minimal logging to help spot accidental re-instantiation
+    log: [
+      { emit: 'event', level: 'error' },
+      { emit: 'event', level: 'warn' },
+    ],
+  });
+}
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+export const prisma = g.prisma;

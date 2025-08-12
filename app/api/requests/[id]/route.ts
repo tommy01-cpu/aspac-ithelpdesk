@@ -210,12 +210,13 @@ export async function GET(
 
     console.log(`📊 API: Found ${approvals.length} approvals and ${history.length} history entries for request ${requestId}`);
     
-    // Format approvals for frontend
+    // Format approvals for frontend (include approverId for client-side filtering)
     const formattedApprovals = approvals.map(approval => ({
       id: approval.id.toString(),
       level: approval.level,
       name: approval.name,
       status: approval.status,
+      approverId: approval.approverId, // <- important for filtering existing approvers in UI
       approver: approval.approverName || (approval.approver ? 
         `${approval.approver.emp_fname} ${approval.approver.emp_lname}` : 'Unknown'),
       approverEmail: approval.approverEmail || approval.approver?.emp_email,

@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 export async function GET(
   request: NextRequest,
@@ -41,8 +39,6 @@ export async function GET(
       { error: 'Failed to fetch conversations' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -92,7 +88,7 @@ export async function POST(
       type: 'user',
       message: message.trim(),
       author: `${user.emp_fname} ${user.emp_lname}`,
-      timestamp: new Date(Date.now() - (8 * 60 * 60 * 1000)).toISOString(), // Subtract 8 hours
+      timestamp: new Date().toISOString(),
       authorId: user.id,
       attachments: attachments || [] // Store attachment information
     };
@@ -127,7 +123,5 @@ export async function POST(
       { error: 'Failed to add conversation' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

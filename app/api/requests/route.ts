@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth';
 import { getDatabaseTimestamp } from '@/lib/server-time-utils';
+import { addHistory } from '@/lib/history';
 
 // Define the status enums as constants to match the database enums
 const REQUEST_STATUS = {
@@ -243,18 +244,24 @@ export async function POST(request: Request) {
 
     console.log('Request created with ID:', newRequest.id);
 
+    // Ensure createdAt/updatedAt are stored as Asia/Manila local time
+    try {
+      await prisma.$executeRawUnsafe(
+        `UPDATE requests SET "createdAt" = (NOW() AT TIME ZONE 'Asia/Manila'), "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila') WHERE id = ${newRequest.id}`
+      );
+    } catch (e) {
+      console.warn('Failed to set PH time for request timestamps:', e);
+    }
+
     // 📝 STANDARD HISTORY ENTRY 1: Request Created (Priority 1)
     if (requestUser) {
-      await prisma.requestHistory.create({
-        data: {
-          requestId: newRequest.id,
-          action: "Created",
-          actorName: `${requestUser.emp_fname} ${requestUser.emp_lname}`,
-          actorType: "user",
-          details: `${requestUser.emp_fname} ${requestUser.emp_lname}`,
-          actorId: requestUser.id,
-          timestamp: new Date()
-        }
+      await addHistory(prisma as any, {
+        requestId: newRequest.id,
+        action: "Created",
+        actorName: `${requestUser.emp_fname} ${requestUser.emp_lname}`,
+        actorType: "user",
+        details: `${requestUser.emp_fname} ${requestUser.emp_lname}`,
+        actorId: requestUser.id,
       });
       console.log('✅ Created history entry: Request Created');
     }
@@ -380,7 +387,7 @@ export async function POST(request: Request) {
                 
                 // Create the approval record if we have a valid approver ID
                 if (actualApproverId) {
-                  await prisma.requestApproval.create({
+                  const createdApprover = await prisma.requestApproval.create({
                     data: {
                       requestId: newRequest.id,
                       level: levelNumber,
@@ -390,6 +397,24 @@ export async function POST(request: Request) {
                       createdAt: new Date(),
                     }
                   });
+                  try {
+                    // Ensure createdAt/updatedAt are PH time; Level 1 is immediately sent
+                    await prisma.$executeRaw`
+                      UPDATE request_approvals
+                      SET "createdAt" = (NOW() AT TIME ZONE 'Asia/Manila'),
+                          "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
+                      WHERE id = ${createdApprover.id}
+                    `;
+                    if (levelNumber === 1) {
+                      await prisma.$executeRaw`
+                        UPDATE request_approvals
+                        SET "sentOn" = (NOW() AT TIME ZONE 'Asia/Manila')
+                        WHERE id = ${createdApprover.id}
+                      `;
+                    }
+                  } catch (tzErr) {
+                    console.warn('Failed to set PH time for level 1 approval creation:', tzErr);
+                  }
                   level1ApproverNames.push(approverName);
                   console.log(`Created template approver for level ${levelNumber}: ${approverName}`);
                 }
@@ -421,7 +446,7 @@ export async function POST(request: Request) {
                 });
                 
                 if (additionalApprover) {
-                  await prisma.requestApproval.create({
+                  const createdAdditional = await prisma.requestApproval.create({
                     data: {
                       requestId: newRequest.id,
                       level: levelNumber,
@@ -431,6 +456,23 @@ export async function POST(request: Request) {
                       createdAt: new Date(),
                     }
                   });
+                  try {
+                    await prisma.$executeRaw`
+                      UPDATE request_approvals
+                      SET "createdAt" = (NOW() AT TIME ZONE 'Asia/Manila'),
+                          "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
+                      WHERE id = ${createdAdditional.id}
+                    `;
+                    if (levelNumber === 1) {
+                      await prisma.$executeRaw`
+                        UPDATE request_approvals
+                        SET "sentOn" = (NOW() AT TIME ZONE 'Asia/Manila')
+                        WHERE id = ${createdAdditional.id}
+                      `;
+                    }
+                  } catch (tzErr) {
+                    console.warn('Failed to set PH time for additional approver creation:', tzErr);
+                  }
                   level1ApproverNames.push(`${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`);
                   console.log(`Created additional approver for level ${levelNumber}: ${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`);
                 } else {
@@ -441,15 +483,12 @@ export async function POST(request: Request) {
             
             // 📧 STANDARD HISTORY ENTRY 2: Approvals Initiated - Level 1 (Priority 2)
             if (level1ApproverNames.length > 0) {
-              await prisma.requestHistory.create({
-                data: {
-                  requestId: newRequest.id,
-                  action: "Approvals Initiated",
-                  actorName: "System",
-                  actorType: "system",
-                  details: `Approver(s) : ${level1ApproverNames.join(', ')}\nLevel : ${level.displayName || `Level ${levelNumber}`}`,
-                  timestamp: new Date()
-                }
+              await addHistory(prisma as any, {
+                requestId: newRequest.id,
+                action: "Approvals Initiated",
+                actorName: "System",
+                actorType: "system",
+                details: `Approver(s) : ${level1ApproverNames.join(', ')}\nLevel : ${level.displayName || `Level ${levelNumber}`}`,
               });
               console.log('✅ Created history entry: Approvals Initiated - Level 1');
             }
@@ -541,7 +580,7 @@ export async function POST(request: Request) {
                 
                 // Create the approval record if we have a valid approver ID
                 if (actualApproverId) {
-                  await prisma.requestApproval.create({
+                  const createdOther = await prisma.requestApproval.create({
                     data: {
                       requestId: newRequest.id,
                       level: levelNumber,
@@ -551,6 +590,17 @@ export async function POST(request: Request) {
                       createdAt: new Date(),
                     }
                   });
+                  try {
+                    await prisma.$executeRaw`
+                      UPDATE request_approvals
+                      SET "createdAt" = (NOW() AT TIME ZONE 'Asia/Manila'),
+                          "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
+                      WHERE id = ${createdOther.id}
+                    `;
+                    // Do not set sentOn for levels > 1 until activation
+                  } catch (tzErr) {
+                    console.warn('Failed to set PH time for non-level1 approval creation:', tzErr);
+                  }
                   console.log(`Created template approver for level ${levelNumber}: ${approverName}`);
                 }
               }

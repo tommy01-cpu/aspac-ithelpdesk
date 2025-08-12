@@ -3,7 +3,9 @@ import { withAuth } from "next-auth/middleware"
 export default withAuth(
   function middleware(req) {
     // Add any additional middleware logic here if needed
-    console.log("Middleware running for:", req.nextUrl.pathname);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log("Middleware running for:", req.nextUrl.pathname);
+    }
   },
   {
     callbacks: {
@@ -27,12 +29,12 @@ export const config = {
   matcher: [
     /*
      * Match all request paths except for the ones starting with:
-     * - api/auth (auth endpoints)
+     * - api (all API routes are excluded to avoid middleware on data fetches)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public folder
      */
-    "/((?!api/auth|_next/static|_next/image|favicon.ico|public).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|public).*)",
   ]
 }

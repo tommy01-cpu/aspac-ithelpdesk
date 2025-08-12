@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 export async function GET(
   request: NextRequest,
@@ -41,14 +39,36 @@ export async function GET(
       }
     });
 
-    // Format the history data
+    // Helper: format Date to 'YYYY-MM-DD HH:mm:ss' in Asia/Manila without timezone suffix
+    const toManilaString = (d: Date) => {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).formatToParts(d);
+      const get = (type: string) => parts.find(p => p.type === type)?.value || '';
+      const dd = get('day');
+      const mm = get('month');
+      const yyyy = get('year');
+      const HH = get('hour');
+      const MM = get('minute');
+      const SS = get('second');
+      return `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`;
+    };
+
+    // Format the history data with PH-local strings
     const formattedHistory = history.map(record => ({
       id: record.id.toString(),
       action: record.action,
       actorName: record.actorName,
       actorType: record.actorType,
       details: record.details || '',
-      createdAt: record.timestamp.toISOString()
+      createdAt: toManilaString(record.timestamp)
     }));
 
     return NextResponse.json({ 
@@ -62,7 +82,5 @@ export async function GET(
       { error: 'Failed to fetch request history' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

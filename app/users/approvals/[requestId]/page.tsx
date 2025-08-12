@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { 
@@ -26,7 +26,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { SessionWrapper } from '@/components/session-wrapper';
 import { toast } from '@/hooks/use-toast';
 import { getStatusColor, getPriorityColor, getApprovalStatusColor } from '@/lib/status-colors';
-import { formatPhilippineTimeDisplay } from '@/lib/time-utils';
 
 // Component for individual approval message input
 const ApprovalMessageInput = ({ 
@@ -159,6 +158,7 @@ export default function ApprovalDetailsPage() {
   const [selectedApproval, setSelectedApproval] = useState<PendingApproval | null>(null);
   const [requestDetails, setRequestDetails] = useState<RequestDetails | null>(null);
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
+  const [allApprovals, setAllApprovals] = useState<any[]>([]); // full list for duplicate detection
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -173,6 +173,15 @@ export default function ApprovalDetailsPage() {
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [approvalComment, setApprovalComment] = useState('');
+  // Mounted ref to prevent state updates after navigation/unmount
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (session?.user) {
@@ -245,34 +254,38 @@ export default function ApprovalDetailsPage() {
         throw new Error('Failed to fetch approvals');
       }
 
-      const data = await response.json();
+  const data = await response.json();
       console.log('Fetched approvals:', data.approvals); // Debug log
+  setAllApprovals(data.approvals || []);
       
       // Filter to show only approvals where the current user is the assigned approver
       const userApprovals = data.approvals?.filter((approval: any) => 
         session?.user?.email && approval.approverEmail === session.user.email
       ) || [];
       
-      // Further filter to show only the current active approval level
-      // Rule: Only show approvals that are in 'pending_approval' or 'for_clarification' status
-      // This ensures that future levels (not yet activated) are not shown
-      const activeUserApprovals = userApprovals.filter((approval: any) => 
-        approval.status === 'pending_approval' || 
-        approval.status === 'for_clarification' ||
-        approval.status === 'pending-clarification' ||
-        approval.status === 'pending clarification'
-      );
+      // Further filter to show ONLY the current active approval level for this request.
+      // Determine current level: the smallest level in any non-final state (pending/clarification) across ALL approvals.
+      const activeStatuses = new Set(['pending approval', 'for clarification', 'pending clarification']);
+      const activeLevels = (data.approvals || [])
+        .filter((a: any) => activeStatuses.has(normalizeStatus(a.status)))
+        .map((a: any) => a.level);
+      const currentActiveLevel = activeLevels.length > 0 ? Math.min(...activeLevels) : undefined;
+
+      // Keep only the user's approvals that are both active-status AND at the current active level
+      const activeUserApprovals = userApprovals.filter((approval: any) => {
+        const st = normalizeStatus(approval.status);
+        return activeStatuses.has(st) && (currentActiveLevel === undefined || approval.level === currentActiveLevel);
+      });
       
       console.log('User-specific approvals:', userApprovals); // Debug log
       console.log('Active user approvals:', activeUserApprovals); // Debug log
       setApprovals(activeUserApprovals);
 
       // Auto-expand conversations for approvals that need clarification or have messages
-      const approvalsWithClarification = activeUserApprovals.filter((approval: any) => 
-        approval.status === 'pending clarification' || 
-        approval.status === 'for_clarification' ||
-        approval.status === 'pending-clarification'
-      );
+  const approvalsWithClarification = activeUserApprovals.filter((approval: any) => {
+        const st = normalizeStatus(approval.status);
+        return st === 'for clarification' || st === 'pending clarification';
+      });
 
       if (approvalsWithClarification.length > 0) {
         const expansions: {[key: string]: boolean} = {};
@@ -284,13 +297,86 @@ export default function ApprovalDetailsPage() {
         setExpandedApprovals(prev => ({ ...prev, ...expansions }));
       }
 
-      // Load conversations for current user's active approvals to show notification counts
-      for (const approval of activeUserApprovals) {
+  // Load conversations for current user's active approvals (current level only)
+  for (const approval of activeUserApprovals) {
         await fetchConversations(approval.id);
+      }
+
+      // Attempt auto-approve for duplicate approvers in later levels (system-like behavior)
+      try {
+        await maybeAutoApproveDuplicates(data.approvals || []);
+      } catch (e) {
+        console.warn('Auto-approve duplicates skipped:', e);
       }
     } catch (error) {
       console.error('Error fetching approvals:', error);
     }
+  };
+
+  // Guard to avoid concurrent auto-approve runs; allows sequential runs after refresh
+  const [autoApproveInProgress, setAutoApproveInProgress] = useState(false);
+
+  // Detect and auto-approve ONLY the immediate next level where the approver already approved in a previous level
+  const maybeAutoApproveDuplicates = async (all: any[]) => {
+    if (autoApproveInProgress || !Array.isArray(all) || all.length === 0) return;
+    // Build map of approver -> lowest approved level
+    const keyOf = (a: any) => (a.approverEmail || a.approver?.emp_email || a.approverId || a.approverName || '').toString().toLowerCase();
+    const approvedByApprover: Record<string, number> = {};
+    for (const a of all) {
+      if (normalizeStatus(a.status) === 'approved') {
+        const k = keyOf(a);
+        if (!k) continue;
+        if (!(k in approvedByApprover) || a.level < approvedByApprover[k]) {
+          approvedByApprover[k] = a.level;
+        }
+      }
+    }
+
+    // Determine the next active approval level (smallest level currently pending)
+    const pending = all.filter(a => normalizeStatus(a.status) === 'pending approval');
+    if (pending.length === 0) return;
+    const nextLevel = Math.min(...pending.map(a => a.level));
+
+    // Candidates: only pending approvals at the next level whose approver previously approved a lower level
+    const duplicates = pending.filter(a => {
+      if (a.level !== nextLevel) return false;
+      const k = keyOf(a);
+      if (!k) return false;
+      const prev = approvedByApprover[k];
+      return typeof prev === 'number' && prev < a.level;
+    });
+
+    if (duplicates.length === 0) return;
+    setAutoApproveInProgress(true);
+
+    // Try to approve each duplicate approval record
+    const note = 'Auto approved by System since the approver has already approved in one of the previous levels.';
+    await Promise.all(duplicates.map(async (a) => {
+      try {
+        const res = await fetch('/api/approvals/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approvalId: a.id, action: 'approve', comments: note })
+        });
+        if (!res.ok) {
+          // Ignore errors silently to avoid blocking other updates
+          console.warn('Auto-approve failed for', a.id);
+        }
+      } catch (e) {
+        console.warn('Auto-approve error for', a.id, e);
+      }
+    }));
+
+    // Refresh approvals and history to reflect changes
+    if (selectedApproval) {
+      await fetchApprovals(selectedApproval.requestId);
+      await fetchHistory(selectedApproval.requestId);
+    }
+    toast({
+      title: 'Auto-approved duplicates',
+      description: `${duplicates.length} approval(s) auto-approved`,
+    });
+    setAutoApproveInProgress(false);
   };
 
   const fetchHistory = async (reqId: number) => {
@@ -523,13 +609,9 @@ export default function ApprovalDetailsPage() {
         description: "Your clarification request has been sent to the requester",
       });
 
-      // Refresh data
-      await fetchApprovals(selectedApproval.requestId);
-      await fetchHistory(selectedApproval.requestId);
-      
-      // Close modal and clear message
-      setShowClarificationModal(false);
-      setClarificationMessage('');
+  // Navigate back to the approvals list to avoid intermediate re-renders
+  router.replace('/users?tab=approvals');
+  return;
       
     } catch (error) {
       console.error('Error requesting clarification:', error);
@@ -539,12 +621,7 @@ export default function ApprovalDetailsPage() {
         variant: "destructive"
       });
     } finally {
-      setActionLoading(null);
-      
-      // Refresh the page after a short delay to ensure everything is completed
-      setTimeout(() => {
-        window.location.reload();
-      }, 500);
+      if (isMounted.current) setActionLoading(null);
     }
   };
 
@@ -604,17 +681,9 @@ export default function ApprovalDetailsPage() {
         description: `Request ${actionText} successfully`,
       });
 
-      // Refresh data
-      await fetchApprovals(selectedApproval.requestId);
-      await fetchHistory(selectedApproval.requestId);
-      
-      // Clear comment and close modals
-      setApprovalComment('');
-      setShowApprovalModal(false);
-      setShowRejectModal(false);
-      
-      // Navigate back to approvals list
-      router.push('/users?tab=approvals');
+  // Navigate immediately to approvals list to avoid transient UI churn
+  router.replace('/users?tab=approvals');
+  return;
       
     } catch (error) {
       console.error('Error processing approval:', error);
@@ -624,18 +693,75 @@ export default function ApprovalDetailsPage() {
         variant: "destructive"
       });
     } finally {
-      setActionLoading(null);
+      if (isMounted.current) setActionLoading(null);
     }
   };
 
+  // Format DB timestamp string without timezone conversion.
+  // Supports: "YYYY-MM-DD HH:mm[:ss]", "YYYY/MM/DD HH:mm[:ss]", and ISO-like strings; ignores trailing timezone markers like 'Z' or offsets.
+  const formatDbTimestampDisplay = (
+    input: string | null | undefined,
+    opts?: { shortFormat?: boolean; dateOnly?: boolean }
+  ): string => {
+    if (!input) return '-';
+    const raw = String(input).trim();
+
+    // Normalize common ISO separators but avoid actual Date parsing to prevent TZ conversion
+    const normalized = raw
+      .replace('T', ' ')
+      .replace(/Z$/, '')
+      // Drop timezone offsets like +08:00 or -0500 if present
+      .replace(/[\+\-]\d{2}:?\d{2}$/i, '');
+
+    const match = normalized.match(/(\d{4})[-\/](\d{2})[-\/](\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (!match) {
+      return raw; // Fallback to raw if unknown format
+    }
+
+    const [, yStr, mStr, dStr, hhStr, mmStr] = match;
+    const year = parseInt(yStr, 10);
+    const month = parseInt(mStr, 10); // 1-12
+    const day = parseInt(dStr, 10);
+    const hasTime = hhStr !== undefined && mmStr !== undefined;
+
+    const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthLabel = monthsShort[Math.max(0, Math.min(11, month - 1))];
+
+    const datePart = `${monthLabel} ${day}, ${year}`;
+
+    if (opts?.dateOnly || !hasTime) return datePart;
+
+    let hour = parseInt(hhStr!, 10);
+    const minute = parseInt(mmStr!, 10);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12;
+    if (hour === 0) hour = 12;
+    const hh = hour.toString().padStart(2, '0');
+    const mi = minute.toString().padStart(2, '0');
+
+    // Match en-US "Mon DD, YYYY, hh:mm AM/PM"
+    return `${datePart}, ${hh}:${mi} ${ampm}`;
+  };
+
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return formatDbTimestampDisplay(dateString, { shortFormat: true });
+  };
+
+  // Normalize approval status strings to a consistent set for safe rendering
+  const normalizeStatus = (val: unknown): string => {
+    if (!val) return 'pending approval';
+    const s = String(val).trim().toLowerCase().replace(/[_-]+/g, ' ');
+    if (s.includes('reject')) return 'rejected';
+    if (s.includes('approve') && !s.includes('pending')) return 'approved';
+    if (s.includes('pending clarification')) return 'pending clarification';
+    if (s.includes('for clarification')) return 'for clarification';
+    if (s.includes('pending')) return 'pending approval';
+    return s || 'pending approval';
+  };
+
+  const titleCaseStatus = (s: string): string => {
+    const n = normalizeStatus(s);
+    return n.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
 
   const getApprovalStatusDisplay = () => {
@@ -643,7 +769,7 @@ export default function ApprovalDetailsPage() {
     
     // Check the overall request approval status first
     const formData = requestDetails.formData || {};
-    const overallApprovalStatus = formData['5'] || 'pending approval';
+    const overallApprovalStatus = normalizeStatus(formData['5'] || 'pending approval');
     
     // If all approvals are complete, show the overall status
     if (overallApprovalStatus === 'approved') {
@@ -652,31 +778,26 @@ export default function ApprovalDetailsPage() {
     
     // If there's a selected approval, show its specific status with more context
     if (selectedApproval) {
-      switch (selectedApproval.status.toLowerCase()) {
-        case 'for_clarification':
-        case 'for-clarification':
-        case 'pending clarification':
-        case 'pending-clarification':
-          return { text: 'For Clarification', color: getApprovalStatusColor('for clarification') };
-        case 'approved':
-          return { text: 'Level Approved', color: getApprovalStatusColor('approved') };
-        case 'rejected':
-          return { text: 'Rejected', color: getApprovalStatusColor('rejected') };
-        case 'pending_approval':
-        case 'pending approval':
-        default:
-          return { text: 'Pending Approval', color: getApprovalStatusColor('pending approval') };
+      const norm = normalizeStatus(selectedApproval.status);
+      if (norm === 'for clarification' || norm === 'pending clarification') {
+        return { text: 'For Clarification', color: getApprovalStatusColor('for clarification') };
       }
+      if (norm === 'approved') {
+        return { text: 'Level Approved', color: getApprovalStatusColor('approved') };
+      }
+      if (norm === 'rejected') {
+        return { text: 'Rejected', color: getApprovalStatusColor('rejected') };
+      }
+      return { text: 'Pending Approval', color: getApprovalStatusColor('pending approval') };
     }
     
     // Fallback to overall status from formData
-    switch (overallApprovalStatus.toLowerCase()) {
+    switch (overallApprovalStatus) {
       case 'approved':
         return { text: 'Approved', color: getApprovalStatusColor('approved') };
       case 'rejected':
         return { text: 'Rejected', color: getApprovalStatusColor('rejected') };
       case 'for clarification':
-      case 'for-clarification':
         return { text: 'For Clarification', color: getApprovalStatusColor('for clarification') };
       default:
         return { text: 'Pending Approval', color: getApprovalStatusColor('pending approval') };
@@ -889,17 +1010,11 @@ export default function ApprovalDetailsPage() {
                                   {approval.requestTitle}
                                 </h3>
                                 <p className="text-xs text-gray-600 mt-1">
-                                  by {approval.requesterName} on {new Date(approval.createdDate).toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    year: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })}
+                                  by {approval.requesterName} on {formatDbTimestampDisplay(approval.createdDate, { shortFormat: true })}
                                 </p>
                                 <div className="flex items-center justify-between mt-2">
                                   <span className="text-xs text-gray-500">
-                                    DueBy: {approval.dueDate ? new Date(approval.dueDate).toLocaleDateString() : 'N/A'}
+                                    DueBy: {approval.dueDate ? formatDbTimestampDisplay(approval.dueDate, { dateOnly: true }) : 'N/A'}
                                   </span>
                                 </div>
                                 <div className="mt-2">
@@ -1103,13 +1218,7 @@ export default function ApprovalDetailsPage() {
                                       return (
                                         <div className="space-y-2">
                                           <p className={`text-sm font-medium ${isOverdue ? 'text-red-600' : timeRemaining < 4 * 60 * 60 * 1000 ? 'text-amber-600' : 'text-green-600'}`}>
-                                            {dueDate.toLocaleDateString('en-US', {
-                                              year: 'numeric',
-                                              month: 'short',
-                                              day: 'numeric',
-                                              hour: '2-digit',
-                                              minute: '2-digit'
-                                            })}
+                                            {formatDbTimestampDisplay(slaDueDate, { shortFormat: true })}
                                           </p>
                                           <div className="flex items-center gap-2">
                                             <Badge 
@@ -1128,7 +1237,7 @@ export default function ApprovalDetailsPage() {
                                       // Fallback to regular due date or placeholder
                                       return (
                                         <p className="text-gray-900">
-                                          {requestDetails.dueDate ? new Date(requestDetails.dueDate).toLocaleDateString() : '-'}
+                                          {requestDetails.dueDate ? formatDbTimestampDisplay(requestDetails.dueDate, { dateOnly: true }) : '-'}
                                         </p>
                                       );
                                     }
@@ -1182,9 +1291,14 @@ export default function ApprovalDetailsPage() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <Badge className={getApprovalStatusColor(approval.status)}>
-                                    {approval.status.replace('_', ' ').replace('-', ' ')}
-                                  </Badge>
+                                  {(() => {
+                                    const norm = normalizeStatus(approval.status);
+                                    return (
+                                      <Badge className={getApprovalStatusColor(norm)}>
+                                        {titleCaseStatus(norm)}
+                                      </Badge>
+                                    );
+                                  })()}
                                   
                                   {/* Message Count and Notification - Only show if there are unread messages */}
                                   {conversations[approval.id] && conversations[approval.id].length > 0 && (
@@ -1267,9 +1381,7 @@ export default function ApprovalDetailsPage() {
                                                     ? 'text-gray-500' // Gray text for gray background
                                                     : 'text-blue-100' // Light blue text for blue background
                                                 }`}>
-                                                  {formatPhilippineTimeDisplay(conv.timestamp, {
-                                                    shortFormat: true
-                                                  })}
+                                                  {formatDbTimestampDisplay(conv.timestamp, { shortFormat: true })}
                                                 </span>
                                               </div>
                                               <p className={`text-sm ${
@@ -1285,9 +1397,10 @@ export default function ApprovalDetailsPage() {
                                       <div className="text-center py-6">
                                         <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
                                         <p className="text-sm text-gray-500 mb-3">No conversation yet</p>
-                                        {approval.status === 'pending clarification' || 
-                                         approval.status === 'for_clarification' || 
-                                         approval.status === 'pending-clarification' ? (
+                                        {(() => {
+                                          const st = normalizeStatus(approval.status);
+                                          return st === 'for clarification' || st === 'pending clarification';
+                                        })() ? (
                                           <div className="text-sm text-orange-600 mb-3 font-medium">
                                             ⚠️ Clarification Requested
                                           </div>
@@ -1363,7 +1476,11 @@ export default function ApprovalDetailsPage() {
                         </Button>
                         
                         {/* Only show Need Clarification button if approval status is NOT for_clarification */}
-                        {selectedApproval && selectedApproval.status !== 'for_clarification' && selectedApproval.status !== 'pending clarification' && selectedApproval.status !== 'pending-clarification' && (
+                        {(() => {
+                          if (!selectedApproval) return false;
+                          const st = normalizeStatus(selectedApproval.status);
+                          return !(st === 'for clarification' || st === 'pending clarification');
+                        })() && (
                           <Button
                             variant="outline"
                             onClick={() => setShowClarificationModal(true)}

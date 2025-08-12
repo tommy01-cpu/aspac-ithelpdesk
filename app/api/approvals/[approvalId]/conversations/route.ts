@@ -1,10 +1,11 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { PrismaClient } from '@prisma/client';
 import { getDatabaseTimestamp, normalizeClientTimestamp } from '@/lib/server-time-utils';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 export async function GET(
   request: NextRequest,
@@ -59,8 +60,6 @@ export async function GET(
       { error: 'Failed to fetch conversations' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -76,7 +75,7 @@ export async function POST(
     }
 
     const approvalId = parseInt(params.approvalId);
-    const { message, type, timestamp } = await request.json();
+  const { message, type } = await request.json();
 
     if (!message?.trim()) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
@@ -95,13 +94,20 @@ export async function POST(
       // Try direct SQL insert with proper error handling
       const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
-      // Use Philippine Time for timestamp - prioritize client timestamp if provided, otherwise use server time
-      const phTime = normalizeClientTimestamp(timestamp);
-      
-      // Use $executeRaw for INSERT operations - cast readBy to jsonb
+      // Use DB-side Philippine time for timestamps
       await prisma.$executeRaw`
         INSERT INTO approval_conversations (id, "approvalId", "authorId", type, message, "isRead", "readBy", "createdAt", "updatedAt")
-        VALUES (${conversationId}, ${approvalId}, ${user.id}, ${type || 'user'}, ${message.trim()}, false, ${JSON.stringify([user.id])}::jsonb, ${phTime}, ${phTime})
+        VALUES (
+          ${conversationId},
+          ${approvalId},
+          ${user.id},
+          ${type || 'user'},
+          ${message.trim()},
+          false,
+          ${JSON.stringify([user.id])}::jsonb,
+          (NOW() AT TIME ZONE 'Asia/Manila'),
+          (NOW() AT TIME ZONE 'Asia/Manila')
+        )
       `;
 
       // Get the approval to find the request ID for history tracking
@@ -124,14 +130,14 @@ export async function POST(
             ${user.id}, 
             ${`${user.emp_fname} ${user.emp_lname}`},
             'user', 
-            ${phTime}
+            (NOW() AT TIME ZONE 'Asia/Manila')
           )
         `;
       }
 
       console.log('✅ Successfully saved conversation to database');
       console.log('🔍 Conversation ID:', conversationId);
-      console.log('🔍 Philippine Time used:', phTime);
+  console.log('🔍 Philippine Time used: DB-side NOW() AT TIME ZONE Asia/Manila');
 
       // Fetch the actual saved conversation from database to return exact timestamp
       const savedConversation = await prisma.$queryRaw`
@@ -175,7 +181,7 @@ export async function POST(
         type: type || 'user',
         message: message.trim(),
         author: `${user.emp_fname} ${user.emp_lname}`,
-        timestamp: getDatabaseTimestamp().toISOString(),
+  timestamp: getDatabaseTimestamp().toISOString(),
         isRead: true,
         isOwnMessage: true
       };
@@ -188,7 +194,5 @@ export async function POST(
       { error: 'Failed to create conversation' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

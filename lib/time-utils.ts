@@ -79,46 +79,18 @@ export const formatPhilippineTime = (
  * Use this when the timestamp is already stored as Philippine Time in database
  */
 export const formatPhilippineTimeDisplay = (
-  timestamp: string | Date, 
-  options?: { 
-    dateOnly?: boolean; 
-    timeOnly?: boolean; 
+  timestamp: string | Date,
+  options?: {
+    dateOnly?: boolean;
+    timeOnly?: boolean;
     includeSeconds?: boolean;
     shortFormat?: boolean;
     longFormat?: boolean;
   }
 ): string => {
-  if (!timestamp) return '-';
-  
-  // Parse the UTC timestamp and subtract 8 hours to get Philippine Time
-  const date = new Date(timestamp);
-  const phTime = new Date(date.getTime() - (8 * 60 * 60 * 1000)); // Subtract 8 hours
-  
-  // Extract the individual components
-  const year = phTime.getFullYear();
-  const month = phTime.toLocaleDateString('en-US', { month: 'short' });
-  const day = phTime.getDate();
-  let hours = phTime.getHours();
-  const minutes = phTime.getMinutes();
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  
-  // Convert to 12-hour format
-  hours = hours % 12;
-  hours = hours ? hours : 12; // the hour '0' should be '12'
-  
-  const minutesStr = minutes < 10 ? '0' + minutes : minutes;
-  const hoursStr = hours < 10 ? '0' + hours : hours;
-  
-  if (options?.dateOnly) {
-    return `${month} ${day}, ${year}`;
-  }
-  
-  if (options?.timeOnly) {
-    return `${hoursStr}:${minutesStr} ${ampm}`;
-  }
-  
-  // Default: both date and time
-  return `${month} ${day}, ${year}, ${hoursStr}:${minutesStr} ${ampm}`;
+  // Delegate to the standardized formatter that renders in Asia/Manila.
+  // This avoids any manual hour shifting which previously caused an 8-hour offset.
+  return formatPhilippineTime(timestamp, options);
 };
 
 /**

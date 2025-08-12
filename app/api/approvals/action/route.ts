@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { PrismaClient, ApprovalStatus, RequestStatus } from '@prisma/client';
-import { getDatabaseTimestamp } from '@/lib/server-time-utils';
-
-const prisma = new PrismaClient();
+import { ApprovalStatus, RequestStatus } from '@prisma/client';
+import { addHistory } from '@/lib/history';
+import { calculateSLADueDate } from '@/lib/sla-calculator';
+import { autoAssignTechnician } from '@/lib/load-balancer';
+import { prisma } from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {
@@ -81,17 +82,26 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    // Force Asia/Manila time for actedOn/updatedAt
+    try {
+      await prisma.$executeRaw`
+        UPDATE request_approvals
+        SET "actedOn" = (NOW() AT TIME ZONE 'Asia/Manila'),
+            "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
+        WHERE id = ${parseInt(approvalId)}
+      `;
+    } catch (e) {
+      console.warn('Failed to set PH time for approval actedOn:', e);
+    }
+
     // Add to request history
-    await prisma.requestHistory.create({
-      data: {
-        requestId: approval.requestId,
-        action: historyAction,
-        actorName: `${user.emp_fname} ${user.emp_lname}`,
-        actorType: 'approver',
-        details: historyDetails,
-        actorId: user.id,
-        timestamp: new Date()
-      }
+    await addHistory(prisma, {
+      requestId: approval.requestId,
+      action: historyAction,
+      actorName: `${user.emp_fname} ${user.emp_lname}`,
+      actorType: 'approver',
+      details: historyDetails,
+      actorId: user.id,
     });
 
     // Handle business logic based on approval action
@@ -102,18 +112,96 @@ export async function POST(request: NextRequest) {
         data: { status: RequestStatus.closed }
       });
 
-      await prisma.requestHistory.create({
-        data: {
-          requestId: approval.requestId,
-          action: 'Request Closed',
-          actorName: 'System',
-          actorType: 'system',
-          details: 'Request automatically closed due to approval rejection',
-          timestamp: new Date()
-        }
+      await addHistory(prisma, {
+        requestId: approval.requestId,
+        action: 'Request Closed',
+        actorName: 'System',
+        actorType: 'system',
+        details: 'Request automatically closed due to approval rejection',
       });
 
     } else if (action === 'approve') {
+      // Helper to finalize request if all approvals are approved
+      const finalizeIfAllApproved = async () => {
+        const allApprovals = await prisma.requestApproval.findMany({ where: { requestId: approval.requestId } });
+        const everyoneApproved = allApprovals.length > 0 && allApprovals.every(a => a.status === ApprovalStatus.approved);
+        if (!everyoneApproved) return;
+
+        // Avoid duplicate finalization
+        const currentReq = await prisma.request.findUnique({ where: { id: approval.requestId } });
+        if (!currentReq || currentReq.status === RequestStatus.open) return;
+
+        const finalRequest = await prisma.request.update({
+          where: { id: approval.requestId },
+          data: {
+            status: RequestStatus.open,
+            formData: {
+              ...(approval.request.formData as any || {}),
+              '5': 'approved',
+            },
+          },
+          include: { user: true },
+        });
+
+        // Trigger SLA and write consolidated Updated entry
+        try {
+          const templateId = finalRequest.templateId ? parseInt(finalRequest.templateId) : undefined;
+          const origin = new URL(request.url).origin;
+          const cookie = request.headers.get('cookie') || '';
+          const response = await fetch(`${origin}/api/requests/${approval.requestId}/sla-assignment`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              cookie,
+            },
+            redirect: 'manual',
+            body: JSON.stringify({ requestId: approval.requestId, templateId }),
+          });
+
+          const isJson = (response.headers.get('content-type') || '').includes('application/json');
+          if (response.ok && isJson) {
+            const slaResult = await response.json();
+            const prevStatus = approval.request.status;
+            const prevDue: string | undefined = (approval.request.formData as any)?.slaDueDate;
+            const newDue: string | undefined = slaResult?.results?.sla?.dueDate;
+            const assignedTechName: string | undefined = slaResult?.results?.assignment?.technician?.name || undefined;
+            const autoAssigned: boolean = !!(slaResult?.results?.assignment?.success && !slaResult?.results?.assignment?.technician?.alreadyAssigned);
+            const fmt = (iso?: string) => {
+              if (!iso) return '-';
+              const d = new Date(iso);
+              return d.toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+            };
+            const lines: string[] = [];
+            if (newDue) {
+              if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(newDue)}`);
+              else lines.push(`DueBy Date set to ${fmt(newDue)}`);
+            }
+            if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
+            lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Open`);
+            lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
+            await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
+          } else {
+            // Fallback path mirrors Image 1 entries
+            const priority = (finalRequest.priority || '').toLowerCase();
+            let slaHours = 48; if (priority === 'top') slaHours = 4; else if (priority === 'high') slaHours = 8; else if (priority === 'medium') slaHours = 16;
+            const computedDue = await calculateSLADueDate(finalRequest.createdAt, slaHours);
+            await prisma.request.update({ where: { id: approval.requestId }, data: { formData: { ...(finalRequest.formData as any || {}), slaHours: slaHours.toString(), slaDueDate: computedDue.toISOString(), slaCalculatedAt: new Date().toISOString() } } });
+            await addHistory(prisma, { requestId: approval.requestId, action: 'Start Timer', actorName: 'System', actorType: 'system', details: 'Timer started by System and status set to Open' });
+            const prevDue = (approval.request.formData as any)?.slaDueDate as string | undefined;
+            const fmt = (iso?: string) => { if (!iso) return '-'; const d = new Date(iso); return d.toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }); };
+            const lines: string[] = [];
+            if (computedDue) {
+              if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDue.toISOString())}`);
+              else lines.push(`DueBy Date set to ${fmt(computedDue.toISOString())}`);
+            }
+            lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
+            lines.push('Technician Auto Assign : NO');
+            await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
+          }
+        } catch (e) {
+          console.error('Safety finalization failed:', e);
+        }
+      };
       // Check if all approvals in this level are complete
       const levelApprovals = await prisma.requestApproval.findMany({
         where: {
@@ -153,19 +241,224 @@ export async function POST(request: NextRequest) {
               sentOn: new Date()
             }
           });
+          // Set PH time for next level sentOn/updatedAt
+          try {
+            await prisma.$executeRaw`
+              UPDATE request_approvals
+              SET "sentOn" = (NOW() AT TIME ZONE 'Asia/Manila'),
+                  "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
+              WHERE "requestId" = ${approval.requestId} AND level = ${approval.level + 1}
+            `;
+          } catch (e) {
+            console.warn('Failed to set PH time for next level approvals:', e);
+          }
 
           // Add history for next level activation
-          await prisma.requestHistory.create({
-            data: {
-              requestId: approval.requestId,
-              action: 'Next Level Activated',
-              actorName: 'System',
-              actorType: 'system',
-              details: `Level ${approval.level + 1} approvals activated`,
-              timestamp: new Date()
-            }
+          await addHistory(prisma, {
+            requestId: approval.requestId,
+            action: 'Next Level Activated',
+            actorName: 'System',
+            actorType: 'system',
+            details: `Level ${approval.level + 1} approvals activated`,
           });
-        } else {
+
+          // Server-side auto-approve ONLY the immediate next level duplicates:
+          // If an approver in the next level already approved in any previous level, auto-approve their entry.
+          try {
+            // Collect approvers who approved in lower levels
+            const lowerApproved = await prisma.requestApproval.findMany({
+              where: {
+                requestId: approval.requestId,
+                level: { lt: approval.level + 1 },
+                status: ApprovalStatus.approved,
+              },
+              select: { approverId: true, approverEmail: true }
+            });
+
+            const approvedEmailSet = new Set(
+              lowerApproved
+                .map(a => (a.approverEmail || '').toLowerCase())
+                .filter(e => !!e)
+            );
+            const approvedIdSet = new Set(
+              lowerApproved
+                .map(a => a.approverId)
+                .filter((id): id is number => typeof id === 'number')
+            );
+
+            // Find next-level pending approvals that are duplicates of previous approvers
+            const nextPending = await prisma.requestApproval.findMany({
+              where: {
+                requestId: approval.requestId,
+                level: approval.level + 1,
+                status: ApprovalStatus.pending_approval,
+              },
+              include: {
+                approver: { select: { emp_fname: true, emp_lname: true, emp_email: true } }
+              }
+            });
+
+            const duplicates = nextPending.filter(a => {
+              const email = (a.approverEmail || a.approver?.emp_email || '').toLowerCase();
+              return (email && approvedEmailSet.has(email)) || (a.approverId && approvedIdSet.has(a.approverId));
+            });
+
+            if (duplicates.length > 0) {
+              await Promise.all(
+                duplicates.map(async (dup) => {
+                  // Approve the duplicate
+                  await prisma.requestApproval.update({
+                    where: { id: dup.id },
+                    data: {
+                      status: ApprovalStatus.approved,
+                      actedOn: new Date(),
+                      comments: dup.comments || 'Auto approved by System since the approver has already approved in one of the previous levels.'
+                    }
+                  });
+                  // Force Asia/Manila timestamps for the auto-approval
+                  try {
+                    await prisma.$executeRaw`
+                      UPDATE request_approvals
+                      SET "actedOn" = (NOW() AT TIME ZONE 'Asia/Manila'),
+                          "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
+                      WHERE id = ${dup.id}
+                    `;
+                  } catch (tzErr) {
+                    console.warn('Failed to set PH time for auto-approved duplicate:', tzErr);
+                  }
+
+                  // History entry reflecting system auto-approval
+                  const approverName = dup.approver
+                    ? `${dup.approver.emp_fname} ${dup.approver.emp_lname}`
+                    : (dup.approverEmail || 'Approver');
+                  await addHistory(prisma, {
+                    requestId: approval.requestId,
+                    action: 'Approved',
+                    actorName: 'System',
+                    actorType: 'system',
+                    details: `Auto approved by System since the approver (${approverName}) has already approved in one of the previous levels.`,
+                  });
+                })
+              );
+            }
+
+            // If after auto-approvals, the entire next level is approved, progress the workflow
+            const refreshedNextLevel = await prisma.requestApproval.findMany({
+              where: { requestId: approval.requestId, level: approval.level + 1 },
+            });
+            const allNextApproved = refreshedNextLevel.length > 0 && refreshedNextLevel.every(a => a.status === ApprovalStatus.approved);
+
+            if (allNextApproved) {
+              // Check if there is a further level (level + 2)
+              const furtherLevel = await prisma.requestApproval.findMany({
+                where: { requestId: approval.requestId, level: approval.level + 2 },
+              });
+
+              if (furtherLevel.length > 0) {
+                // Activate next-next level (do not auto-approve further per rule)
+                await prisma.requestApproval.updateMany({
+                  where: { requestId: approval.requestId, level: approval.level + 2 },
+                  data: { status: ApprovalStatus.pending_approval, sentOn: new Date() }
+                });
+                try {
+                  await prisma.$executeRaw`
+                    UPDATE request_approvals
+                    SET "sentOn" = (NOW() AT TIME ZONE 'Asia/Manila'),
+                        "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
+                    WHERE "requestId" = ${approval.requestId} AND level = ${approval.level + 2}
+                  `;
+                } catch (e2) {
+                  console.warn('Failed to set PH time for level+2 activation:', e2);
+                }
+                await addHistory(prisma, {
+                  requestId: approval.requestId,
+                  action: 'Next Level Activated',
+                  actorName: 'System',
+                  actorType: 'system',
+                  details: `Level ${approval.level + 2} approvals activated`,
+                });
+              } else {
+                // No further levels; if ALL approvals are approved, finalize: set request OPEN and write Image 1 entries
+                const allApprovalsNow = await prisma.requestApproval.findMany({ where: { requestId: approval.requestId } });
+                const allApprovedNow = allApprovalsNow.every(a => a.status === ApprovalStatus.approved);
+
+                if (allApprovedNow) {
+                  const finalRequest = await prisma.request.update({
+                    where: { id: approval.requestId },
+                    data: {
+                      status: RequestStatus.open,
+                      formData: {
+                        ...(approval.request.formData as any || {}),
+                        '5': 'approved'
+                      }
+                    },
+                    include: { user: true }
+                  });
+
+                  try {
+                    const templateId = finalRequest.templateId ? parseInt(finalRequest.templateId) : undefined;
+                    const origin = new URL(request.url).origin;
+                    const cookie = request.headers.get('cookie') || '';
+                    const response = await fetch(`${origin}/api/requests/${approval.requestId}/sla-assignment`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        cookie,
+                      },
+                      redirect: 'manual',
+                      body: JSON.stringify({ requestId: approval.requestId, templateId })
+                    });
+
+                    const isJson = (response.headers.get('content-type') || '').includes('application/json');
+                    if (response.ok && isJson) {
+                      const slaResult = await response.json();
+                      const prevStatus = approval.request.status;
+                      const prevDue: string | undefined = (approval.request.formData as any)?.slaDueDate;
+                      const newDue: string | undefined = slaResult?.results?.sla?.dueDate;
+                      const assignedTechName: string | undefined = slaResult?.results?.assignment?.technician?.name || undefined;
+                      const autoAssigned: boolean = !!(slaResult?.results?.assignment?.success && !slaResult?.results?.assignment?.technician?.alreadyAssigned);
+                      const fmt = (iso?: string) => {
+                        if (!iso) return '-';
+                        const d = new Date(iso);
+                        return d.toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+                      };
+                      const lines: string[] = [];
+                      if (newDue) {
+                        if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(newDue)}`);
+                        else lines.push(`DueBy Date set to ${fmt(newDue)}`);
+                      }
+                      if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
+                      lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Open`);
+                      lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
+                      await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
+                    } else {
+                      // SLA endpoint failed; fallback
+                      const priority = (finalRequest.priority || '').toLowerCase();
+                      let slaHours = 48; if (priority === 'top') slaHours = 4; else if (priority === 'high') slaHours = 8; else if (priority === 'medium') slaHours = 16;
+                      const computedDue = await calculateSLADueDate(finalRequest.createdAt, slaHours);
+                      await prisma.request.update({ where: { id: approval.requestId }, data: { formData: { ...(finalRequest.formData as any || {}), slaHours: slaHours.toString(), slaDueDate: computedDue.toISOString(), slaCalculatedAt: new Date().toISOString() } } });
+                      await addHistory(prisma, { requestId: approval.requestId, action: 'Start Timer', actorName: 'System', actorType: 'system', details: 'Timer started by System and status set to Open' });
+                      const prevDue = (approval.request.formData as any)?.slaDueDate as string | undefined;
+                      const fmt = (iso?: string) => { if (!iso) return '-'; const d = new Date(iso); return d.toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }); };
+                      const lines: string[] = [];
+                      if (computedDue) {
+                        if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDue.toISOString())}`);
+                        else lines.push(`DueBy Date set to ${fmt(computedDue.toISOString())}`);
+                      }
+                      lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
+                      lines.push('Technician Auto Assign : NO');
+                      await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
+                    }
+                  } catch (e3) {
+                    console.error('Finalize after auto-approval failed (SLA/Updated path):', e3);
+                  }
+                }
+              }
+            }
+          } catch (autoErr) {
+            console.warn('Next-level duplicate auto-approval failed:', autoErr);
+          }
+  } else {
           // All approval levels complete, check if ALL approvals across all levels are approved
           const allRequestApprovals = await prisma.requestApproval.findMany({
             where: { requestId: approval.requestId }
@@ -197,16 +490,10 @@ export async function POST(request: NextRequest) {
               }
             });
 
-            await prisma.requestHistory.create({
-              data: {
-                requestId: approval.requestId,
-                action: 'Request Approved - Ready for Work',
-                actorName: 'System',
-                actorType: 'system',
-                details: 'All approvals completed successfully, request is now open for work',
-                timestamp: new Date()
-              }
-            });
+            // Note: We intentionally do NOT create the generic
+            // 'Request Approved - Ready for Work' history entry.
+            // Instead we will create 'Start Timer' (from SLA endpoint)
+            // and a consolidated 'Updated' entry (below), matching Image 1.
 
             // Trigger SLA calculation and technician assignment
             try {
@@ -215,7 +502,8 @@ export async function POST(request: NextRequest) {
               console.log(`Triggering SLA and assignment for request ${approval.requestId}, template ${templateId}`);
               
               // Call the SLA and assignment API
-              const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/requests/${approval.requestId}/sla-assignment`, {
+              const origin = new URL(request.url).origin;
+              const response = await fetch(`${origin}/api/requests/${approval.requestId}/sla-assignment`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -229,40 +517,206 @@ export async function POST(request: NextRequest) {
               if (response.ok) {
                 const slaResult = await response.json();
                 console.log('✅ SLA and assignment processing completed:', slaResult.results);
-                
-                // Add additional history entry if technician was assigned
-                if (slaResult.results?.assignment?.success && slaResult.results.assignment.technician && !slaResult.results.assignment.technician.alreadyAssigned) {
-                  await prisma.requestHistory.create({
-                    data: {
-                      requestId: approval.requestId,
-                      action: 'Auto-Assignment Completed',
-                      actorName: 'System',
-                      actorType: 'system',
-                      details: `Request automatically assigned to ${slaResult.results.assignment.technician.name} from ${slaResult.results.assignment.technician.supportGroup} via ${slaResult.results.assignment.technician.loadBalanceType} load balancing`,
-                      timestamp: new Date()
-                    }
+
+                // We no longer write a separate 'Auto-Assignment Completed' entry.
+                // Assignment info will be included in the consolidated 'Updated' entry below.
+
+                // 🆕 Consolidated "Updated" entry to mirror Image 1
+                try {
+                  const prevStatus = approval.request.status;
+                  const prevDue: string | undefined = (approval.request.formData as any)?.slaDueDate;
+                  const newDue: string | undefined = slaResult?.results?.sla?.dueDate;
+                  const assignedTechName: string | undefined = slaResult?.results?.assignment?.technician?.name || undefined;
+                  const autoAssigned: boolean = !!(slaResult?.results?.assignment?.success && !slaResult?.results?.assignment?.technician?.alreadyAssigned);
+
+                  const fmt = (iso?: string) => {
+                    if (!iso) return '-';
+                    const d = new Date(iso);
+                    return d.toLocaleString('en-US', {
+                      month: 'short', day: '2-digit', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit', hour12: true
+                    });
+                  };
+
+                  const lines: string[] = [];
+                  if (newDue) {
+                    if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(newDue)}`);
+                    else lines.push(`DueBy Date set to ${fmt(newDue)}`);
+                  }
+                  if (assignedTechName) {
+                    lines.push(`Technician : ${assignedTechName}`);
+                  }
+                  lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Open`);
+                  lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
+
+                  await addHistory(prisma, {
+                    requestId: approval.requestId,
+                    action: 'Updated',
+                    actorName: 'System',
+                    actorType: 'system',
+                    details: lines.join('\n'),
                   });
+                } catch (e) {
+                  console.warn('Failed to add consolidated Updated history entry:', e);
                 }
               } else {
-                console.error('❌ SLA and assignment processing failed:', await response.text());
+                // SLA endpoint failed — replace error entry with Image 1 entries instead.
+                const errorText = await response.text().catch(() => 'Unknown error');
+                console.error('❌ SLA and assignment processing failed:', errorText);
+
+                try {
+                  // Fallback: compute SLA locally and optionally attempt assignment
+                  const priority = (updatedRequest.priority || '').toLowerCase();
+                  let slaHours = 48; // default low
+                  if (priority === 'top') slaHours = 4;
+                  else if (priority === 'high') slaHours = 8;
+                  else if (priority === 'medium') slaHours = 16;
+
+                  const computedDue = await calculateSLADueDate(updatedRequest.createdAt, slaHours);
+
+                  // Persist SLA fields in formData
+                  await prisma.request.update({
+                    where: { id: approval.requestId },
+                    data: {
+                      formData: {
+                        ...(updatedRequest.formData as any || {}),
+                        slaHours: slaHours.toString(),
+                        slaDueDate: computedDue.toISOString(),
+                        slaCalculatedAt: new Date().toISOString(),
+                      },
+                    },
+                  });
+
+                  // Start Timer entry (as in Image 1)
+                  await addHistory(prisma, {
+                    requestId: approval.requestId,
+                    action: 'Start Timer',
+                    actorName: 'System',
+                    actorType: 'system',
+                    details: 'Timer started by System and status set to Open',
+                  });
+
+                  // Try auto-assign directly (best-effort)
+                  let assignedTechName: string | undefined;
+                  try {
+                    const templateId = updatedRequest.templateId ? parseInt(updatedRequest.templateId) : undefined;
+                    const assignment = await autoAssignTechnician(approval.requestId, templateId);
+                    if (assignment.success && assignment.technicianName) {
+                      assignedTechName = assignment.technicianName;
+                    }
+                  } catch {
+                    // ignore
+                  }
+
+                  // Consolidated Updated entry
+                  const prevDue = (approval.request.formData as any)?.slaDueDate as string | undefined;
+                  const fmt = (iso?: string) => {
+                    if (!iso) return '-';
+                    const d = new Date(iso);
+                    return d.toLocaleString('en-US', {
+                      month: 'short', day: '2-digit', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit', hour12: true,
+                    });
+                  };
+                  const lines: string[] = [];
+                  if (computedDue) {
+                    if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDue.toISOString())}`);
+                    else lines.push(`DueBy Date set to ${fmt(computedDue.toISOString())}`);
+                  }
+                  if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
+                  lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
+                  lines.push(`Technician Auto Assign : ${assignedTechName ? 'YES' : 'NO'}`);
+
+                  await addHistory(prisma, {
+                    requestId: approval.requestId,
+                    action: 'Updated',
+                    actorName: 'System',
+                    actorType: 'system',
+                    details: lines.join('\n'),
+                  });
+
+                } catch (fallbackErr) {
+                  console.warn('Fallback SLA/assignment failed to create Image 1 entries:', fallbackErr);
+                }
               }
             } catch (slaError) {
               console.error('❌ Error triggering SLA and assignment:', slaError);
-              // Don't fail the approval process if SLA/assignment fails
-              await prisma.requestHistory.create({
-                data: {
+              // Replace the error entry by producing Image 1 entries via local fallback
+              try {
+                const priority = (updatedRequest.priority || '').toLowerCase();
+                let slaHours = 48; // default low
+                if (priority === 'top') slaHours = 4;
+                else if (priority === 'high') slaHours = 8;
+                else if (priority === 'medium') slaHours = 16;
+
+                const computedDue = await calculateSLADueDate(updatedRequest.createdAt, slaHours);
+
+                await prisma.request.update({
+                  where: { id: approval.requestId },
+                  data: {
+                    formData: {
+                      ...(updatedRequest.formData as any || {}),
+                      slaHours: slaHours.toString(),
+                      slaDueDate: computedDue.toISOString(),
+                      slaCalculatedAt: new Date().toISOString(),
+                    },
+                  },
+                });
+
+                await addHistory(prisma, {
                   requestId: approval.requestId,
-                  action: 'SLA/Assignment Error',
+                  action: 'Start Timer',
                   actorName: 'System',
                   actorType: 'system',
-                  details: `Failed to calculate SLA or assign technician: ${slaError instanceof Error ? slaError.message : 'Unknown error'}`,
-                  timestamp: new Date()
+                  details: 'Timer started by System and status set to Open',
+                });
+
+                // Best-effort assignment; ignore result if fails
+                let assignedTechName: string | undefined;
+                try {
+                  const templateId = updatedRequest.templateId ? parseInt(updatedRequest.templateId) : undefined;
+                  const assignment = await autoAssignTechnician(approval.requestId, templateId);
+                  if (assignment.success && assignment.technicianName) {
+                    assignedTechName = assignment.technicianName;
+                  }
+                } catch {}
+
+                const prevDue = (approval.request.formData as any)?.slaDueDate as string | undefined;
+                const fmt = (iso?: string) => {
+                  if (!iso) return '-';
+                  const d = new Date(iso);
+                  return d.toLocaleString('en-US', {
+                    month: 'short', day: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit', hour12: true,
+                  });
+                };
+                const lines: string[] = [];
+                if (computedDue) {
+                  if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDue.toISOString())}`);
+                  else lines.push(`DueBy Date set to ${fmt(computedDue.toISOString())}`);
                 }
-              });
+                if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
+                lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
+                lines.push(`Technician Auto Assign : ${assignedTechName ? 'YES' : 'NO'}`);
+
+                await addHistory(prisma, {
+                  requestId: approval.requestId,
+                  action: 'Updated',
+                  actorName: 'System',
+                  actorType: 'system',
+                  details: lines.join('\n'),
+                });
+
+              } catch (fallbackErr) {
+                console.warn('Fallback SLA/assignment (exception path) failed to create Image 1 entries:', fallbackErr);
+              }
             }
           }
         }
       }
+
+  // Final safety check: if everything is approved, ensure we finalize and write history
+  await finalizeIfAllApproved();
     } else if (action === 'clarification') {
       // For clarification, we only update the approval status
       // The request status remains unchanged
@@ -274,21 +728,28 @@ export async function POST(request: NextRequest) {
           const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           await prisma.$executeRaw`
             INSERT INTO approval_conversations (id, "approvalId", "authorId", type, message, "isRead", "readBy", "createdAt", "updatedAt")
-            VALUES (${conversationId}, ${parseInt(approvalId)}, ${user.id}, 'technician', ${comments.trim()}, false, ${JSON.stringify([user.id])}::jsonb, ${new Date()}, ${new Date()})
+            VALUES (
+              ${conversationId},
+              ${parseInt(approvalId)},
+              ${user.id},
+              'technician',
+              ${comments.trim()},
+              false,
+              ${JSON.stringify([user.id])}::jsonb,
+              (NOW() AT TIME ZONE 'Asia/Manila'),
+              (NOW() AT TIME ZONE 'Asia/Manila')
+            )
           `;
         } catch (error) {
           console.log('ApprovalConversation table not available, using history instead');
           // Fallback to history if conversation table doesn't exist
-          await prisma.requestHistory.create({
-            data: {
-              requestId: approval.requestId,
-              action: 'Conversation',
-              actorName: `${user.emp_fname} ${user.emp_lname}`,
-              actorType: 'approver',
-              details: `Clarification message: ${comments}`,
-              actorId: user.id,
-              timestamp: new Date()
-            }
+          await addHistory(prisma, {
+            requestId: approval.requestId,
+            action: 'Conversation',
+            actorName: `${user.emp_fname} ${user.emp_lname}`,
+            actorType: 'approver',
+            details: `Clarification message: ${comments}`,
+            actorId: user.id,
           });
         }
       }
@@ -305,7 +766,5 @@ export async function POST(request: NextRequest) {
       { error: 'Failed to process approval action' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

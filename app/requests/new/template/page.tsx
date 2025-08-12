@@ -52,6 +52,20 @@ const quillStyles = `
   }
 `;
 
+// Format a duration in minutes as "X days Y hours Z minutes"
+function formatDurationFromMinutes(totalMinutes: number): string {
+  if (!isFinite(totalMinutes) || totalMinutes < 0) totalMinutes = 0;
+  const minutesPerDay = 24 * 60;
+  const days = Math.floor(totalMinutes / minutesPerDay);
+  const hours = Math.floor((totalMinutes % minutesPerDay) / 60);
+  const minutes = Math.floor(totalMinutes % 60);
+  const parts: string[] = [];
+  parts.push(`${days} day${days === 1 ? '' : 's'}`);
+  if (hours > 0) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
+  if (minutes > 0) parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`);
+  return parts.join(' ');
+}
+
 interface Template {
   id: number;
   name: string;
@@ -406,8 +420,8 @@ export default function RequestForm() {
                 {template.sla && (
                   <>
                     <strong> SLA:</strong> {template.sla.name} 
-                    (Response: {Math.floor(template.sla.responseTime / 60)}h, 
-                    Resolution: {Math.floor(template.sla.resolutionTime / 60)}h)
+                    (Response: {formatDurationFromMinutes(template.sla.responseTime)}, 
+                    Resolution: {formatDurationFromMinutes(template.sla.resolutionTime)})
                   </>
                 )}
                 {template.requiresApproval && (

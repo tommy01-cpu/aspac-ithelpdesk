@@ -81,6 +81,21 @@ const ReactQuill = dynamic(() => import('react-quill'), {
   loading: () => <div className="h-32 bg-slate-50 rounded border animate-pulse" />
 });
 
+// Format a duration in hours or minutes; templateData.slaService fields seem to be in hours.
+function formatDurationFromHours(totalHours: number): string {
+  if (!isFinite(totalHours) || totalHours < 0) totalHours = 0;
+  const totalMinutes = Math.round(totalHours * 60);
+  const minutesPerDay = 24 * 60;
+  const days = Math.floor(totalMinutes / minutesPerDay);
+  const hours = Math.floor((totalMinutes % minutesPerDay) / 60);
+  const minutes = Math.floor(totalMinutes % 60);
+  const parts: string[] = [];
+  parts.push(`${days} day${days === 1 ? '' : 's'}`);
+  if (hours > 0) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
+  if (minutes > 0) parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`);
+  return parts.join(' ');
+}
+
 // Enhanced Rich Text Editor Component with Image Upload
 interface RichTextEditorProps {
   value?: string;
@@ -1191,19 +1206,17 @@ export default function RequestPage() {
                   <AlertDescription className="flex items-center justify-between text-amber-900">
                     <div>
                       <strong>{templateData.type === 'service' ? 'Service' : 'Incident'} Template:</strong> {templateData.name} |
-                      <strong> Category:</strong> {templateData.category} |
+                      <strong> Category:</strong> {templateData.type} |
                       {templateData.slaService && (
                         <>
                           <strong> SLA:</strong> {templateData.slaService.name}
-                          (Resolution: {Math.floor(templateData.slaService.resolutionTime)}h)
+                          (Resolution: {formatDurationFromHours(templateData.slaService.resolutionTime)})
                         </>
                       )}
                       {templateData.selectedTemplate && (
                         <Badge variant="outline" className="ml-2 bg-amber-100 text-amber-700 border-amber-300 status-badge">Requires Approval</Badge>
                       )}
-                      <Badge variant="outline" className="ml-2 bg-amber-200 text-amber-800 border-amber-400">
-                        {templateData.type}
-                      </Badge>
+                    
                     </div>
                   </AlertDescription>
                 </Alert>

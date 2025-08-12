@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams, usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import 'react-quill/dist/quill.snow.css';
@@ -36,6 +36,7 @@ import {
   Plus,
   Info
 } from 'lucide-react';
+import { Search as SearchIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -46,7 +47,92 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { getStatusColor, getApprovalStatusColor, getPriorityColor, normalizeApprovalStatus } from '@/lib/status-colors';
-import { formatPhilippineTime, formatPhilippineTimeDisplay, formatPhilippineTimeRelative, getApiTimestamp } from '@/lib/time-utils';
+import { getApiTimestamp } from '@/lib/time-utils';
+
+// Display timestamp in Asia/Manila (PHT) when source has timezone (ISO/Z);
+// if it's a plain 'YYYY-MM-DD HH:mm:ss' assume already PHT.
+function parseDbTimestamp(input?: string | null) {
+  if (!input) return null;
+  const s = String(input).trim();
+  let dateStr = '';
+  let timeStr = '';
+  if (s.includes('T')) {
+    const [d, t] = s.split('T');
+    dateStr = d;
+    timeStr = (t || '').replace('Z', '').replace(/\..+$/, '');
+  } else if (s.includes(' ')) {
+    const [d, ...rest] = s.split(' ');
+    dateStr = d;
+    timeStr = rest.join(' ').replace(/\..+$/, '');
+  } else {
+    // Fallback if only date is provided
+    dateStr = s;
+  }
+  return { dateStr, timeStr };
+}
+
+function formatMonthDayYear(dateStr: string) {
+  // Expecting YYYY-MM-DD
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const [y, m, d] = parts;
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const mi = Math.max(1, Math.min(12, parseInt(m || '1', 10))) - 1;
+  const dd = d?.padStart(2, '0');
+  return `${monthNames[mi]} ${dd}, ${y}`;
+}
+
+function formatTo12Hour(timeStr: string) {
+  // Expecting HH:mm or HH:mm:ss
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':');
+  if (h == null || m == null) return timeStr;
+  let hour = parseInt(h, 10);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  hour = hour % 12 || 12;
+  return `${String(hour).padStart(2, '0')}:${m.padStart(2, '0')} ${ampm}`;
+}
+
+function formatDbTimestamp(input?: string | null, opts?: { dateOnly?: boolean; timeOnly?: boolean }) {
+  if (!input) return '-';
+  const s = String(input).trim();
+  const isIso = /T/.test(s); // likely UTC/offset time
+  try {
+    if (isIso) {
+      // Convert ISO to Asia/Manila
+      const date = new Date(s);
+      const dateFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: '2-digit' });
+      const timeFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true });
+      const datePart = dateFmt.format(date);
+      const timePart = timeFmt.format(date).toUpperCase();
+      if (opts?.dateOnly) return datePart || '-';
+      if (opts?.timeOnly) return timePart || '-';
+      return `${datePart} ${timePart}`;
+    }
+  } catch {}
+  // Fallback: treat as plain PHT string without conversion
+  const parts = parseDbTimestamp(s);
+  if (!parts) return '-';
+  const dateDisp = parts.dateStr ? formatMonthDayYear(parts.dateStr) : '';
+  const timeDisp = parts.timeStr ? formatTo12Hour(parts.timeStr) : '';
+  if (opts?.dateOnly) return dateDisp || '-';
+  if (opts?.timeOnly) return timeDisp || '-';
+  if (dateDisp && timeDisp) return `${dateDisp} ${timeDisp}`;
+  return dateDisp || timeDisp || '-';
+}
+
+// Convert HTML content to plain text (for compact table cells)
+function htmlToText(html?: string | null) {
+  if (!html) return '';
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(String(html), 'text/html');
+    return (doc.body.textContent || '').trim();
+  } catch {
+    // Fallback: naive strip tags
+    return String(html).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+}
 
 // Dynamically import ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import('react-quill'), { 
@@ -229,6 +315,7 @@ interface ApprovalLevel {
   level: number;
   name: string;
   status: 'pending' | 'approved' | 'rejected' | 'not_sent';
+  approverId?: number; // Added to support filtering users already in approver list
   approver: string;
   sentOn?: string;
   actedOn?: string;
@@ -247,6 +334,8 @@ interface HistoryEntry {
 export default function RequestViewPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   const { data: session } = useSession();
   const [requestData, setRequestData] = useState<RequestData | null>(null);
   const [templateData, setTemplateData] = useState<TemplateData | null>(null);
@@ -269,6 +358,37 @@ export default function RequestViewPage() {
   const [dragActive, setDragActive] = useState(false);
   const noteFileInputRef = useRef<HTMLInputElement>(null);
   const conversationRefs = useRef<{[approvalId: string]: HTMLDivElement | null}>({});
+  // Work Logs state (technician-only)
+  const [workLogs, setWorkLogs] = useState<any[]>([]);
+  const [loadingWorkLogs, setLoadingWorkLogs] = useState(false);
+  const [showWorkLogModal, setShowWorkLogModal] = useState(false);
+  const [editingWorkLog, setEditingWorkLog] = useState<any | null>(null);
+  const [wlOwnerName, setWlOwnerName] = useState('');
+  const [wlOwnerId, setWlOwnerId] = useState<number | null>(null);
+  const [wlOwnerPickerOpen, setWlOwnerPickerOpen] = useState(false);
+  const [techSearch, setTechSearch] = useState('');
+  const [techOptions, setTechOptions] = useState<any[]>([]);
+  const [techLoading, setTechLoading] = useState(false);
+  const [wlStartTime, setWlStartTime] = useState('');
+  const [wlEndTime, setWlEndTime] = useState('');
+  const [wlHours, setWlHours] = useState('');
+  const [wlMinutes, setWlMinutes] = useState('');
+  const [wlIncludeNonOp, setWlIncludeNonOp] = useState(false);
+  const [wlDescription, setWlDescription] = useState('');
+  // Resolution tab state (per provided UI)
+  const [resNotes, setResNotes] = useState<string>('');
+  const [resFiles, setResFiles] = useState<File[]>([]);
+  const [resDragActive, setResDragActive] = useState(false);
+  const resFileInputRef = useRef<HTMLInputElement>(null);
+  const [resStatus, setResStatus] = useState<string>('open');
+  const [resAddWorkLog, setResAddWorkLog] = useState<boolean>(false);
+  const [savingResolution, setSavingResolution] = useState(false);
+  // Resolve modal state
+  const [showResolveModal, setShowResolveModal] = useState(false);
+  const [resolveFcr, setResolveFcr] = useState(false);
+  const [resolveClosureCode, setResolveClosureCode] = useState('');
+  const [resolveComments, setResolveComments] = useState('');
+  const [savingResolve, setSavingResolve] = useState(false);
   
   // Add approval modal states
   const [showAddApprovalModal, setShowAddApprovalModal] = useState(false);
@@ -278,6 +398,74 @@ export default function RequestViewPage() {
   const [loadingUsers, setLoadingUsers] = useState(false);
 
   const requestId = params?.id as string;
+
+  // Persisted read-state helpers (avoid unread reappearing after refresh)
+  const getLastSeenKey = (approvalId: string) => `convSeen:${requestId}:${approvalId}`;
+  const getLastSeenTs = (approvalId: string): string | null => {
+    if (typeof window === 'undefined') return null;
+    try { return localStorage.getItem(getLastSeenKey(approvalId)); } catch { return null; }
+  };
+  const setLastSeenTs = (approvalId: string, ts: string) => {
+    if (typeof window === 'undefined') return;
+    try { localStorage.setItem(getLastSeenKey(approvalId), ts); } catch {}
+  };
+  const normalizeTsKey = (ts?: string) => {
+    if (!ts) return '';
+    const s = String(ts).trim().replace('T', ' ').replace('Z', '').replace(/\..+$/, '');
+    const m = s.match(/(\d{4})[-/](\d{2})[-/](\d{2})(?: (\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (!m) return s;
+    const [, y, mo, d, hh = '00', mi = '00', ss = '00'] = m;
+    return `${y}-${mo}-${d} ${hh}:${mi}:${ss}`;
+  };
+  const getLatestConvTs = (list: ConversationEntry[] | undefined): string => {
+    if (!list || list.length === 0) return '';
+    let latest = '';
+    for (const c of list) {
+      const k = normalizeTsKey(c.timestamp);
+      if (k > latest) latest = k;
+    }
+    return latest;
+  };
+  const computeUnreadFromLocal = (approvalId: string, list: ConversationEntry[] | undefined): number => {
+    const lastSeen = normalizeTsKey(getLastSeenTs(approvalId) || '');
+    if (!list || list.length === 0) return 0;
+    // Count only incoming messages from approvers/technicians; exclude my own ('user') and system events
+    return list.filter(c => (c.type !== 'user' && c.type !== 'system') && normalizeTsKey(c.timestamp) > lastSeen).length;
+  };
+
+  // Helper: format current date to datetime-local (YYYY-MM-DDTHH:mm)
+  const formatForDatetimeLocal = (d = new Date()) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const mm = pad(d.getMonth() + 1);
+    const dd = pad(d.getDate());
+    const hh = pad(d.getHours());
+    const mi = pad(d.getMinutes());
+    return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+  };
+
+  // Keep current tab in URL so refresh restores it
+  useEffect(() => {
+    const urlTab = searchParams?.get('tab');
+    if (!urlTab) return;
+    const allowed = ['details', 'resolution', 'approvals', 'history', 'worklogs'];
+    const nextTab = allowed.includes(urlTab) ? urlTab : 'details';
+    if (nextTab !== activeTab) {
+      // If worklogs requested but user isn't technician, fallback
+      if (nextTab === 'worklogs' && !session?.user?.isTechnician) {
+        setActiveTab('details');
+      } else {
+        setActiveTab(nextTab);
+      }
+    }
+  }, [searchParams, session?.user?.isTechnician]);
+
+  const handleTabChange = (val: string) => {
+    setActiveTab(val);
+    const paramsObj = new URLSearchParams(searchParams ? Array.from(searchParams.entries()) : []);
+    paramsObj.set('tab', val);
+    router.replace(`${pathname}?${paramsObj.toString()}`, { scroll: false });
+  };
 
   useEffect(() => {
     if (requestId && session) {
@@ -325,6 +513,10 @@ export default function RequestViewPage() {
       setConversations(data.conversations || []);
       setApprovals(data.approvals || []);
       setHistory(data.history || []);
+      // Load work logs for technician
+      if (session?.user?.isTechnician) {
+        loadWorkLogs();
+      }
     } catch (error) {
       console.error('Error fetching request:', error);
       toast({
@@ -336,6 +528,177 @@ export default function RequestViewPage() {
       setLoading(false);
     }
   };
+
+  // Work Logs functions
+  const loadWorkLogs = async () => {
+    if (!requestId) return;
+    try {
+      setLoadingWorkLogs(true);
+      const res = await fetch(`/api/requests/${requestId}/worklogs`);
+      if (res.ok) {
+        const data = await res.json();
+        setWorkLogs(Array.isArray(data.worklogs) ? data.worklogs : []);
+      } else {
+        setWorkLogs([]);
+      }
+    } catch (e) {
+      console.error('Failed to load worklogs', e);
+    } finally {
+      setLoadingWorkLogs(false);
+    }
+  };
+
+  const resetWorkLogForm = (prefillOwner = true) => {
+    setEditingWorkLog(null);
+    setWlOwnerName(prefillOwner ? `${session?.user?.name || ''}` : '');
+    setWlOwnerId(prefillOwner ? (session?.user?.id ? parseInt(String(session.user.id)) : null) : null);
+    setWlOwnerPickerOpen(!prefillOwner); // if owner prefilled, keep picker closed
+    setTechSearch('');
+    // Prefill with current local date/time
+    const nowStr = formatForDatetimeLocal(new Date());
+    setWlStartTime(nowStr);
+    setWlEndTime(nowStr);
+    setWlHours('');
+    setWlMinutes('');
+    setWlIncludeNonOp(false);
+   
+  };
+
+  const openAddWorkLog = () => {
+    resetWorkLogForm();
+    setShowWorkLogModal(true);
+  };
+
+  const openEditWorkLog = (wl: any) => {
+    setEditingWorkLog(wl);
+    setShowWorkLogModal(true);
+    setWlOwnerName(wl.ownerName || '');
+  setWlOwnerId(typeof wl.ownerId === 'number' ? wl.ownerId : null);
+  setWlOwnerPickerOpen(false);
+  setTechSearch('');
+    setWlStartTime(wl.startTime || '');
+    setWlEndTime(wl.endTime || '');
+    const hrs = Math.floor((wl.timeTakenMinutes || 0) / 60);
+    const mins = (wl.timeTakenMinutes || 0) % 60;
+    setWlHours(hrs ? String(hrs).padStart(2, '0') : '');
+    setWlMinutes(mins ? String(mins).padStart(2, '0') : '');
+    setWlIncludeNonOp(!!wl.includeNonOperational);
+    setWlDescription(wl.description || '');
+  };
+
+  // Auto-calc hours/mins on time change
+  useEffect(() => {
+    if (wlStartTime && wlEndTime) {
+      const start = new Date(wlStartTime).getTime();
+      const end = new Date(wlEndTime).getTime();
+      const diff = Math.max(0, end - start);
+      const mins = Math.floor(diff / 60000);
+      const hrs = Math.floor(mins / 60);
+      const rem = mins % 60;
+      setWlHours(String(hrs).padStart(2, '0'));
+      setWlMinutes(String(rem).padStart(2, '0'));
+    } else {
+      setWlHours('');
+      setWlMinutes('');
+    }
+  }, [wlStartTime, wlEndTime]);
+
+  const saveWorkLog = async () => {
+    // Auto-calc minutes from start/end
+    let minutes = (parseInt(wlHours || '0') * 60) + (parseInt(wlMinutes || '0') || 0);
+    if (wlStartTime && wlEndTime) {
+      const startMs = new Date(wlStartTime).getTime();
+      const endMs = new Date(wlEndTime).getTime();
+      const diff = Math.max(0, endMs - startMs);
+      minutes = Math.floor(diff / 60000);
+    }
+    try {
+      const isEdit = !!editingWorkLog;
+      const res = await fetch(`/api/requests/${requestId}/worklogs`, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(isEdit ? { id: editingWorkLog.id } : {}),
+          ownerId: wlOwnerId,
+          startTime: wlStartTime || null,
+          endTime: wlEndTime || null,
+          timeTakenMinutes: minutes,
+          includeNonOperational: wlIncludeNonOp,
+          description: wlDescription,
+        })
+      });
+      if (!res.ok) throw new Error('Failed to save work log');
+      toast({ title: 'Saved', description: isEdit ? 'Work log updated successfully' : 'Work log saved successfully' });
+      setShowWorkLogModal(false);
+      await loadWorkLogs();
+      await fetchRequestData(); // refresh history
+    } catch (e) {
+      console.error(e);
+      toast({ title: 'Error', description: 'Failed to save work log', variant: 'destructive' });
+    }
+  };
+
+  const deleteWorkLog = async (wl: any) => {
+    if (!wl?.id) return;
+    try {
+      const res = await fetch(`/api/requests/${requestId}/worklogs`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: wl.id })
+      });
+      if (!res.ok) throw new Error('Failed to delete');
+      toast({ title: 'Deleted', description: 'Work log removed' });
+      await loadWorkLogs();
+      await fetchRequestData();
+    } catch (e) {
+      console.error(e);
+      toast({ title: 'Error', description: 'Failed to delete work log', variant: 'destructive' });
+    }
+  };
+
+  // Technician search for owner selector
+  useEffect(() => {
+    let active = true;
+    const run = async () => {
+      if (!techSearch.trim()) { setTechOptions([]); return; }
+      try {
+        setTechLoading(true);
+        const res = await fetch(`/api/users/technicians?search=${encodeURIComponent(techSearch)}`);
+        if (active && res.ok) {
+          const data = await res.json();
+          setTechOptions(Array.isArray(data.data) ? data.data : []);
+        }
+      } catch (e) {
+        if (active) setTechOptions([]);
+      } finally {
+        if (active) setTechLoading(false);
+      }
+    };
+    const t = setTimeout(run, 300);
+    return () => { active = false; clearTimeout(t); };
+  }, [techSearch]);
+
+  // When opening the owner picker with no search, load a default list
+  useEffect(() => {
+    let stop = false;
+    const loadDefault = async () => {
+      if (!wlOwnerPickerOpen) return;
+      try {
+        setTechLoading(true);
+        const res = await fetch(`/api/users/technicians?search=`);
+        if (!stop && res.ok) {
+          const data = await res.json();
+          setTechOptions(Array.isArray(data.data) ? data.data : []);
+        }
+      } catch {
+        if (!stop) setTechOptions([]);
+      } finally {
+        if (!stop) setTechLoading(false);
+      }
+    };
+    loadDefault();
+    return () => { stop = true; };
+  }, [wlOwnerPickerOpen]);
 
   const handleDownloadAttachment = async (attachmentId: string, originalName: string) => {
     try {
@@ -436,22 +799,21 @@ export default function RequestViewPage() {
   };
 
   // Conversation functions
-  const toggleConversation = (approvalId: string) => {
-    setConversationStates(prev => ({
-      ...prev,
-      [approvalId]: !prev[approvalId]
-    }));
+  const toggleConversation = async (approvalId: string) => {
+    const wasOpen = !!conversationStates[approvalId];
+    setConversationStates(prev => ({ ...prev, [approvalId]: !prev[approvalId] }));
     
-    // Load conversations for this approval if not already loaded
-    if (!approvalConversations[approvalId]) {
-      fetchApprovalConversations(approvalId);
+    // If opening, load first (await) then mark as read using the freshly fetched list
+    if (!wasOpen) {
+      let list: ConversationEntry[] | undefined = approvalConversations[approvalId];
+      if (!list) {
+        list = await fetchApprovalConversations(approvalId);
+      }
+      await markConversationAsRead(approvalId, list);
     }
-
-    // Mark messages as read when opening conversation
-    markConversationAsRead(approvalId);
   };
 
-  const markConversationAsRead = async (approvalId: string) => {
+  const markConversationAsRead = async (approvalId: string, list?: ConversationEntry[]) => {
     try {
       // Mark all unread messages for this approval as read
       const response = await fetch(`/api/approvals/${approvalId}/conversations/mark-read`, {
@@ -461,33 +823,35 @@ export default function RequestViewPage() {
         },
       });
 
+      // Update unread count to 0 for this approval and persist last seen (use freshest list)
+      const src = list || approvalConversations[approvalId] || [];
+      const latest = getLatestConvTs(src);
+      if (latest) setLastSeenTs(approvalId, latest);
       if (response.ok) {
-        // Update unread count to 0 for this approval
-        setUnreadCounts(prev => ({
-          ...prev,
-          [approvalId]: 0
-        }));
+        setUnreadCounts(prev => ({ ...prev, [approvalId]: 0 }));
       }
     } catch (error) {
       console.error('Error marking conversation as read:', error);
     }
   };
 
-  const fetchApprovalConversations = async (approvalId: string) => {
+  const fetchApprovalConversations = async (approvalId: string): Promise<ConversationEntry[]> => {
     try {
       const response = await fetch(`/api/approvals/${approvalId}/conversations`);
       if (response.ok) {
         const data = await response.json();
-        setApprovalConversations(prev => ({
-          ...prev,
-          [approvalId]: data.conversations || []
-        }));
-        
-        // Mark messages as read (reset unread count for this approval)
-        setUnreadCounts(prev => ({
-          ...prev,
-          [approvalId]: 0
-        }));
+        const list: ConversationEntry[] = data.conversations || [];
+        setApprovalConversations(prev => ({ ...prev, [approvalId]: list }));
+        // If panel is open, persist last seen and clear unread
+        if (conversationStates[approvalId]) {
+          const latest = getLatestConvTs(list);
+          if (latest) setLastSeenTs(approvalId, latest);
+          setUnreadCounts(prev => ({ ...prev, [approvalId]: 0 }));
+        } else {
+          // Otherwise compute unread from local last seen
+          const unread = computeUnreadFromLocal(approvalId, list);
+          setUnreadCounts(prev => ({ ...prev, [approvalId]: unread }));
+        }
         
         // Scroll to bottom when conversations are loaded
         setTimeout(() => {
@@ -496,10 +860,12 @@ export default function RequestViewPage() {
             conversationContainer.scrollTop = conversationContainer.scrollHeight;
           }
         }, 100);
+        return list;
       }
     } catch (error) {
       console.error('Error fetching conversations:', error);
     }
+    return [];
   };
 
   const fetchUnreadCounts = async () => {
@@ -507,7 +873,23 @@ export default function RequestViewPage() {
       const response = await fetch('/api/approvals/conversations/unread');
       if (response.ok) {
         const data = await response.json();
-        setUnreadCounts(data.unreadCounts || {});
+        const serverCounts: {[k: string]: number} = data.unreadCounts || {};
+        // Prefer local last-seen based counts when available to prevent flicker
+        setUnreadCounts(prev => {
+          const merged: {[k: string]: number} = { ...prev };
+          for (const approval of approvals as any[]) {
+            const id = approval.id;
+            const list = approvalConversations[id];
+            if (!list) {
+              // Only set from server when we have no local basis yet
+              merged[id] = serverCounts[id] ?? merged[id] ?? 0;
+            } else {
+              // Keep local computation
+              merged[id] = computeUnreadFromLocal(id, list);
+            }
+          }
+          return merged;
+        });
       }
     } catch (error) {
       console.error('Error fetching unread counts:', error);
@@ -534,15 +916,16 @@ export default function RequestViewPage() {
       
       // Update approval conversations counts without auto-opening panels
       const newApprovalConversations: {[key: string]: ConversationEntry[]} = {};
+      const newUnread: {[key: string]: number} = {};
       
       results.forEach(result => {
         newApprovalConversations[result.approvalId] = result.conversations;
+        newUnread[result.approvalId] = computeUnreadFromLocal(result.approvalId, result.conversations);
       });
       
-      setApprovalConversations(newApprovalConversations);
-
-      // Fetch fresh unread counts from the dedicated API (this will reflect read status)
-      await fetchUnreadCounts();
+  setApprovalConversations(newApprovalConversations);
+  setUnreadCounts(prev => ({ ...prev, ...newUnread }));
+  // Avoid immediate server reconciliation to prevent flicker back to old counts.
     } catch (error) {
       console.error('Error loading conversation counts:', error);
     }
@@ -1116,9 +1499,13 @@ export default function RequestViewPage() {
                     <div className="flex items-center gap-2 text-sm text-gray-500">
                       <span>by {requestData.user.emp_fname} {requestData.user.emp_lname}</span>
                       <span>•</span>
-                      <span>{formatPhilippineTime(requestData.createdAt, { dateOnly: true })}</span>
+                          <span>{formatDbTimestamp(requestData.createdAt)}</span>
                       <span>•</span>
-                      <span>DueBy: N/A</span>
+                      <span>
+                        DueBy: {requestData.formData?.slaDueDate
+                          ? formatDbTimestamp(String(requestData.formData.slaDueDate))
+                          : 'N/A'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1149,8 +1536,8 @@ export default function RequestViewPage() {
           <div className="grid grid-cols-12 gap-6">
             {/* Main Content */}
             <div className="col-span-8">
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-4 mb-6">
+              <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+                <TabsList className="grid w-full grid-cols-5 mb-6">
                   <TabsTrigger value="details" className="flex items-center gap-2">
                     <FileText className="h-4 w-4" />
                     Details
@@ -1163,6 +1550,12 @@ export default function RequestViewPage() {
                     <CheckSquare className="h-4 w-4" />
                     Approvals
                   </TabsTrigger>
+                  {session?.user?.isTechnician && (
+                    <TabsTrigger value="worklogs" className="flex items-center gap-2">
+                      <Edit className="h-4 w-4" />
+                      Work Logs
+                    </TabsTrigger>
+                  )}
                   <TabsTrigger value="history" className="flex items-center gap-2">
                     <History className="h-4 w-4" />
                     History
@@ -1267,18 +1660,7 @@ export default function RequestViewPage() {
                             </div>
                           ))}
                         </div>
-                        <div className="mt-4 pt-4 border-t border-gray-200">
-                          <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
-                            <Paperclip className="h-4 w-4" />
-                            <span>Browse Files</span>
-                            <span>or Drag files here [ Max size: 20 MB ]</span>
-                          </div>
-                          <div className="flex justify-center gap-2 mt-2">
-                            <Button variant="outline" size="sm">Reply All</Button>
-                            <Button variant="outline" size="sm">Reply</Button>
-                            <Button variant="outline" size="sm">Forward</Button>
-                          </div>
-                        </div>
+                       
                       </CardContent>
                     </Card>
                   )}
@@ -1321,7 +1703,9 @@ export default function RequestViewPage() {
                                   <div className="flex items-center gap-2 text-sm">
                                     <span className="font-medium">{conversation.author}</span>
                                     <span className="text-gray-500">
-                                      {formatPhilippineTimeRelative(conversation.timestamp)}
+                                      {/* Keep relative for main notes which are ISO; no DB conversion applied */}
+                                      {/* If needed to be raw, switch to formatDbTimestamp */}
+                                      {formatDbTimestamp(conversation.timestamp)}
                                     </span>
                                   </div>
                                   <div className="mt-1">
@@ -1436,7 +1820,7 @@ export default function RequestViewPage() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Created Date</span>
-                            <span className="text-sm text-gray-600">{formatPhilippineTime(requestData.createdAt, { dateOnly: true })}</span>
+                            <span className="text-sm text-gray-600">{formatDbTimestamp(requestData.createdAt)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Scheduled End Time</span>
@@ -1461,7 +1845,11 @@ export default function RequestViewPage() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Technician</span>
-                            <span className="text-sm text-gray-600">Not Assigned</span>
+                            <span className="text-sm text-gray-600">
+                              {requestData.formData?.assignedTechnician && String(requestData.formData.assignedTechnician).trim() !== ''
+                                ? String(requestData.formData.assignedTechnician)
+                                : 'Not Assigned'}
+                            </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Created By</span>
@@ -1469,23 +1857,50 @@ export default function RequestViewPage() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">SLA</span>
-                            <span className="text-sm text-gray-600">Regular SLA for HRIS+ Services</span>
+                            <span className="text-sm text-gray-600">
+                              {requestData.formData?.slaName
+                                ? String(requestData.formData.slaName)
+                                : 'Regular SLA for HRIS+ Services'}
+                            </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Template</span>
                             <span className="text-sm text-gray-600">{requestData.templateName}</span>
+                          </div>
+                          {/* SLA metadata */}
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">SLA Source</span>
+                            <span className="text-sm text-gray-600">
+                              {requestData.formData?.slaSource
+                                ? String(requestData.formData.slaSource)
+                                    .replace(/_/g, ' ')
+                                    .replace(/\b\w/g, c => c.toUpperCase())
+                                : '-'}
+                            </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Scheduled Start Time</span>
                             <span className="text-sm text-gray-600">-</span>
                           </div>
                           <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">SLA Start Time</span>
+                            <span className="text-sm text-gray-600">
+                              {requestData.formData?.slaStartAt
+                                ? formatDbTimestamp(String(requestData.formData.slaStartAt))
+                                : '-'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">DueBy Date</span>
-                            <span className="text-sm text-gray-600">Aug 13, 2025 08:52 AM</span>
+                            <span className="text-sm text-gray-600">
+                              {requestData.formData?.slaDueDate
+                                ? formatDbTimestamp(String(requestData.formData.slaDueDate))
+                                : '-'}
+                            </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Last Update Time</span>
-                            <span className="text-sm text-gray-600">{formatPhilippineTime(requestData.updatedAt, { dateOnly: true })}</span>
+                            <span className="text-sm text-gray-600">{formatDbTimestamp(requestData.updatedAt)}</span>
                           </div>
                         </div>
                       </div>
@@ -1494,14 +1909,239 @@ export default function RequestViewPage() {
                 </TabsContent>
 
                 <TabsContent value="resolution" className="space-y-6">
-                  <Card>
-                    <CardContent className="flex items-center justify-center py-12">
-                      <div className="text-center">
-                        <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-500">No Resolution Available</p>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  {session?.user?.isTechnician ? (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">Resolution</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        {/* Rich editor for resolution notes */}
+                        <div>
+                          <RichTextEditor
+                            value={resNotes}
+                            onChange={setResNotes}
+                            placeholder="Type resolution notes here..."
+                            className="min-h-[180px]"
+                          />
+                        </div>
+
+                        {/* Attachments section */}
+                        <div className="border rounded">
+                          <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium text-gray-700">Attachments</div>
+                          <div className="p-3 space-y-3">
+                            {resFiles.length === 0 ? (
+                              <div className="text-sm text-gray-500">There are no files attached</div>
+                            ) : (
+                              <div className="space-y-2">
+                                {resFiles.map((file, idx) => (
+                                  <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                                    <div className="flex items-center gap-2">
+                                      <Paperclip className="h-4 w-4 text-gray-400" />
+                                      <span className="text-sm text-gray-700">{file.name}</span>
+                                      <span className="text-xs text-gray-500">({(file.size/1024/1024).toFixed(2)} MB)</span>
+                                    </div>
+                                    <button className="text-red-500 hover:text-red-600 p-1" onClick={() => setResFiles(prev => prev.filter((_, i) => i !== idx))}>
+                                      <X className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div
+                              className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer ${resDragActive ? 'border-gray-400 bg-gray-50' : 'border-gray-300 bg-white hover:border-gray-400 hover:bg-gray-50'}`}
+                              onDragOver={(e) => { e.preventDefault(); setResDragActive(true); }}
+                              onDragLeave={(e) => { e.preventDefault(); setResDragActive(false); }}
+                              onDrop={(e) => { e.preventDefault(); setResDragActive(false); const files = Array.from(e.dataTransfer.files).filter(f => f.size <= 20*1024*1024); setResFiles(prev => [...prev, ...files]); }}
+                              onClick={() => resFileInputRef.current?.click()}
+                            >
+                              <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                              <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+                                <Paperclip className="h-4 w-4" />
+                                <span className="text-blue-600 hover:underline cursor-pointer">Browse Files</span>
+                                <span>or Drag files here [ Max size: 20 MB ]</span>
+                              </div>
+                              <input ref={resFileInputRef} type="file" multiple className="hidden" onChange={(e) => { if (!e.target.files) return; const files = Array.from(e.target.files).filter(f => f.size <= 20*1024*1024); setResFiles(prev => [...prev, ...files]); }} />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status + Add Work Log */}
+                        <div className="border rounded">
+                          <div className="px-3 py-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="md:col-span-2">
+                              <label className="text-sm text-gray-700">Update request status to</label>
+                              <select
+                                className="w-full border rounded px-2 py-2 mt-1 text-sm"
+                                value={resStatus}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setResStatus(v);
+                                  if (v === 'resolved') {
+                                    // Show Resolve modal immediately when selecting Resolved
+                                    setShowResolveModal(true);
+                                  }
+                                }}
+                              >
+                                <option value="open">Open</option>
+                                <option value="on_hold">On-hold</option>
+                                <option value="resolved">Resolved</option>
+                              </select>
+                            </div>
+                            <div className="flex items-end">
+                              {session?.user?.isTechnician && (
+                                <label className="flex items-center gap-2 text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={resAddWorkLog}
+                                    onChange={e => {
+                                      const checked = e.target.checked;
+                                      setResAddWorkLog(checked);
+                                      if (checked) {
+                                        // Show Work Log modal immediately when ticking
+                                        openAddWorkLog();
+                                      }
+                                    }}
+                                  />
+                                  <span>Add Work Log</span>
+                                </label>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-3">
+                          <Button
+                            onClick={async () => {
+                              if (!session?.user?.isTechnician) { toast({ title: 'Not allowed', description: 'Only technicians can update resolution.', variant: 'destructive' }); return; }
+                              try {
+                                setSavingResolution(true);
+                                // 1) Upload files if any
+                                let uploaded: any[] = [];
+                                if (resFiles.length > 0) {
+                                  const fd = new FormData();
+                                  resFiles.forEach(f => fd.append('files', f));
+                                  const up = await fetch('/api/attachments', { method: 'POST', body: fd });
+                                  if (up.ok) { const j = await up.json(); uploaded = j.files || []; }
+                                }
+                                const attachmentIds: string[] = uploaded.map((f: any) => f.id).filter(Boolean);
+                                // 2) If Resolved, call resolve endpoint; else call status endpoint
+                                if (resStatus === 'resolved') {
+                                  // Enforce mandatory fields before resolve
+                                  const fd: any = requestData?.formData || {};
+                                  const missing: string[] = [];
+                                  if (!fd.category && !fd.serviceCategory && !fd.ServiceCategory) missing.push('Service Category');
+                                  if (!requestData?.priority) missing.push('Priority');
+                                  if (!requestData?.type) missing.push('Request Type');
+                                  if (!fd.assignedTechnician && !fd.assignedTechnicianId) missing.push('Technician');
+                                  if (!resNotes || htmlToText(resNotes).trim().length === 0) missing.push('Resolution');
+                                  const worklogs = Array.isArray(fd.worklogs) ? fd.worklogs : [];
+                                  if (worklogs.length === 0) missing.push('Work Log');
+                                  if (missing.length > 0) {
+                                    toast({ title: 'Missing required fields', description: `Please provide: ${missing.join(', ')}` , variant: 'destructive' });
+                                    throw new Error('Validation failed');
+                                  }
+                                  const resR = await fetch(`/api/requests/${requestId}/resolve`, {
+                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ fcr: false, closureComments: resNotes, attachmentIds })
+                                  });
+                                  if (!resR.ok) {
+                                    let msg = 'Failed to resolve';
+                                    try { const j = await resR.json(); if (j?.error) msg = Array.isArray(j.details) ? `${j.error}: ${j.details.join(', ')}` : j.error; } catch {}
+                                    throw new Error(msg);
+                                  }
+                                } else {
+                                  const resS = await fetch(`/api/requests/${requestId}/status`, {
+                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ status: resStatus, notes: resNotes, attachmentIds })
+                                  });
+                                  if (!resS.ok) throw new Error('Failed to update status');
+                                }
+                                toast({ title: 'Saved', description: 'Resolution updated.' });
+                                if (resAddWorkLog) { openAddWorkLog(); }
+                                // reset
+                                setResFiles([]); setResNotes('');
+                                await fetchRequestData();
+                              } catch (e) {
+                                toast({ title: 'Error', description: e instanceof Error ? e.message : 'Failed to save resolution', variant: 'destructive' });
+                              } finally {
+                                setSavingResolution(false);
+                              }
+                            }}
+                            disabled={savingResolution}
+                          >{savingResolution ? 'Saving...' : 'Save'}</Button>
+                          <Button variant="outline" onClick={() => { setResNotes(''); setResFiles([]); setResStatus(requestData?.status || 'open'); setResAddWorkLog(false); }}>Cancel</Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    // Read-only Resolution for requesters (non-technicians)
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">Resolution</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {(() => {
+                          const fd: any = requestData.formData || {};
+                          const resBlock = fd.resolution || {};
+                          const html = String(resBlock.closureComments || fd.closureComments || '').trim();
+                          const attIds: string[] = Array.isArray(resBlock.attachments) ? resBlock.attachments : [];
+                          const resAtts: AttachmentFile[] = (attachments || []).filter(a => attIds.includes(a.id));
+                          const hasContent = html.length > 0 || resAtts.length > 0;
+
+                          if (!hasContent) {
+                            return (
+                              <div className="w-full">
+                                <div className="bg-gray-50 border rounded p-4 text-sm text-gray-600 flex items-center gap-2">
+                                  <Info className="h-4 w-4 text-gray-500" />
+                                  No Resolution Available
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <>
+                              {/* Resolution HTML */}
+                              {html && (
+                                <div
+                                  className="bg-white border rounded p-3 prose max-w-none"
+                                  dangerouslySetInnerHTML={{ __html: html }}
+                                />
+                              )}
+                              {/* Attachments */}
+                              <div className="border rounded">
+                                <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium text-gray-700">Attachments</div>
+                                <div className="p-3 space-y-2">
+                                  {resAtts.length === 0 ? (
+                                    <div className="text-sm text-gray-500">There are no files attached</div>
+                                  ) : (
+                                    resAtts.map((a) => (
+                                      <div key={a.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg border">
+                                        <Paperclip className="h-4 w-4 text-gray-400" />
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-sm font-medium text-gray-900 truncate">{a.originalName}</p>
+                                          <p className="text-xs text-gray-500">{formatFileSize(a.size)}</p>
+                                        </div>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleDownloadAttachment(a.id, a.originalName)}
+                                          disabled={downloading === a.id}
+                                        >
+                                          <Download className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </CardContent>
+                    </Card>
+                  )}
                 </TabsContent>
 
                 <TabsContent value="approvals" className="space-y-6">
@@ -1649,7 +2289,7 @@ export default function RequestViewPage() {
                                               
                                               <div className="flex items-center gap-2">
                                                 {/* Status Badge */}
-                                                <div className="flex items-center gap-1.5">
+                                                <div className="flex items-center gap-1.5 min-w-[190px] justify-end">
                                                   {approval.status === 'approved' ? (
                                                     <>
                                                       <CheckCircle className="h-4 w-4 text-green-500" />
@@ -1686,29 +2326,22 @@ export default function RequestViewPage() {
                                                   variant="ghost"
                                                   size="sm"
                                                   onClick={() => toggleConversation(approval.id)}
-                                                  className="h-8 w-8 p-0 hover:bg-blue-50 relative"
+                                                  className="h-8 w-8 p-0 hover:bg-blue-50 relative shrink-0"
                                                 >
                                                   <MessageSquare className="h-4 w-4 text-blue-600" />
                                                   
                                                   {/* Red Unread Messages Badge from Approvers */}
                                                   {unreadCounts[approval.id] > 0 && (
-                                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center font-medium">
+                                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full h-4 w-4 flex items-center justify-center font-medium leading-none">
                                                       {unreadCounts[approval.id]}
                                                     </span>
                                                   )}
                                                 </Button>
 
-                                                {/* Message Count Display */}
-                                                {unreadCounts[approval.id] === 0 && approvalConversations[approval.id] && approvalConversations[approval.id].length > 0 && (
-                                                  <span className="text-xs bg-blue-100 text-blue-800 rounded-full px-2 py-1">
-                                                    {approvalConversations[approval.id].length} messages
-                                                  </span>
-                                                )}
-                                                
-                                                {/* No Messages Indicator */}
-                                                {(!approvalConversations[approval.id] || approvalConversations[approval.id].length === 0) && unreadCounts[approval.id] === 0 && (
-                                                  <span className="text-xs text-gray-400">No messages</span>
-                                                )}
+                                                {/* Message Count Display (always show total) */}
+                                                <span className="text-xs bg-blue-50 text-blue-700 rounded-full px-2 py-1 whitespace-nowrap">
+                                                  {(approvalConversations[approval.id]?.length || 0)} messages
+                                                </span>
                                               </div>
                                             </div>
 
@@ -1719,15 +2352,15 @@ export default function RequestViewPage() {
                                                 <p className="font-medium">
                                                   {(() => {
                                                     if (approval.sentOn) {
-                                                      return formatPhilippineTime(approval.sentOn);
+                                                      return formatDbTimestamp(approval.sentOn);
                                                     } else if (approval.level === 1) {
-                                                      return requestData?.createdAt ? formatPhilippineTime(requestData.createdAt) : '-';
+                                                      return requestData?.createdAt ? formatDbTimestamp(requestData.createdAt) : '-';
                                                     } else {
                                                       const previousLevel = approval.level - 1;
                                                       const previousApproval = approvals.find((app: any) => 
                                                         app.level === previousLevel && app.status === 'approved'
                                                       );
-                                                      return previousApproval?.actedOn ? formatPhilippineTime(previousApproval.actedOn) : '-';
+                                                      return previousApproval?.actedOn ? formatDbTimestamp(previousApproval.actedOn) : '-';
                                                     }
                                                   })()}
                                                 </p>
@@ -1735,7 +2368,7 @@ export default function RequestViewPage() {
                                               <div>
                                                 <span className="text-gray-500">Acted On:</span>
                                                 <p className="font-medium">
-                                                  {approval.actedOn ? formatPhilippineTime(approval.actedOn) : '-'}
+                                                  {approval.actedOn ? formatDbTimestamp(approval.actedOn) : '-'}
                                                 </p>
                                               </div>
                                               <div>
@@ -1765,22 +2398,24 @@ export default function RequestViewPage() {
                                                 >
                                                   {approvalConversations[approval.id] && approvalConversations[approval.id].length > 0 ? (
                                                     approvalConversations[approval.id].map((conv: ConversationEntry, convIndex: number) => (
-                                                      <div key={convIndex} className={`p-3 rounded-lg max-w-xs ${
-                                                        conv.type === 'user' 
-                                                          ? 'bg-blue-100 ml-auto text-right' 
-                                                          : 'bg-gray-100 mr-auto text-left'
-                                                      }`}>
-                                                        <div className="flex items-center justify-between mb-1">
-                                                          <span className="text-xs font-medium text-gray-900">
-                                                            {conv.author}
-                                                          </span>
-                                                          <span className="text-xs text-gray-500">
-                                                            {formatPhilippineTimeDisplay(conv.timestamp)}
-                                                          </span>
+                                                      <div key={convIndex} className={`w-full flex ${conv.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                                        <div className={`p-3 rounded-lg max-w-[75%] ${
+                                                          conv.type === 'user' 
+                                                            ? 'bg-blue-100 text-right' 
+                                                            : 'bg-gray-100 text-left'
+                                                        }`}>
+                                                          <div className="flex items-center justify-between mb-1 gap-3">
+                                                            <span className="text-xs font-medium text-gray-900 truncate">
+                                                              {conv.author}
+                                                            </span>
+                                                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                                                              {formatDbTimestamp(conv.timestamp)}
+                                                            </span>
+                                                          </div>
+                                                          <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                                                            {conv.message}
+                                                          </p>
                                                         </div>
-                                                        <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                                                          {conv.message}
-                                                        </p>
                                                       </div>
                                                     ))
                                                   ) : (
@@ -1847,6 +2482,67 @@ export default function RequestViewPage() {
                     </CardContent>
                   </Card>
                 </TabsContent>
+
+                {session?.user?.isTechnician && (
+                  <TabsContent value="worklogs" className="space-y-6">
+                    <Card>
+                      <CardContent className="py-4">
+                        {/* Header + Add New */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="font-medium text-gray-900">Work Logs</div>
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" onClick={openAddWorkLog}>
+                              + New
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Empty State */}
+                        {loadingWorkLogs ? (
+                          <div className="text-center text-gray-500 py-8">Loading...</div>
+                        ) : (workLogs.length === 0 ? (
+                          <div className="text-gray-500 text-sm p-3 border rounded bg-gray-50">
+                            No work log is available. "Add New"
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto border rounded">
+                            <table className="min-w-full text-sm">
+                              <thead className="bg-gray-50 text-gray-600">
+                                <tr>
+                                  <th className="text-left px-3 py-2">Owner</th>
+                                  <th className="text-left px-3 py-2">Time Taken</th>
+                                  <th className="text-left px-3 py-2">Start Time</th>
+                                  <th className="text-left px-3 py-2">End Time</th>
+                                  <th className="text-left px-3 py-2">Description</th>
+                                  <th className="text-left px-3 py-2">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {workLogs.map((wl: any) => {
+                                  const hrs = Math.floor((wl.timeTakenMinutes || 0) / 60);
+                                  const mins = (wl.timeTakenMinutes || 0) % 60;
+                                  return (
+                                    <tr key={wl.id} className="border-t hover:bg-gray-50">
+                                      <td className="px-3 py-2">{wl.ownerName || '-'}</td>
+                                      <td className="px-3 py-2">{String(hrs).padStart(2,'0')} hr {String(mins).padStart(2,'0')} min</td>
+                                      <td className="px-3 py-2">{wl.startTime ? formatDbTimestamp(wl.startTime) : '-'}</td>
+                                      <td className="px-3 py-2">{wl.endTime ? formatDbTimestamp(wl.endTime) : '-'}</td>
+                                      <td className="px-3 py-2 truncate max-w-[320px]" title={htmlToText(wl.description)}>{htmlToText(wl.description)}</td>
+                                      <td className="px-3 py-2 space-x-2">
+                                        <Button variant="outline" size="sm" onClick={() => openEditWorkLog(wl)}>Edit</Button>
+                                        <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => deleteWorkLog(wl)}>Delete</Button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                )}
 
                 <TabsContent value="history" className="space-y-6">
                   <Card>
@@ -1921,17 +2617,27 @@ export default function RequestViewPage() {
                                 }
                               };
 
+                              // Hide conversations and worklogs from history
+                              const HIDDEN_ACTIONS = new Set([
+                                'Conversation Message',
+                                'WorkLog Added',
+                                'Work Log Added',
+                                // Hide internal/system noise entries not desired in UI
+                                'SLA/Assignment Error',
+                                'Request Approved - Ready for Work',
+                                'Auto-Assignment Completed',
+                              ]);
+
+                              const visibleHistory = (history || []).filter((e: any) => !HIDDEN_ACTIONS.has(e.action));
+
                               // Sort by timestamp (newest first for display - latest at top)
-                              const sortedHistory = [...history].sort((a, b) => {
+                              const sortedHistory = [...visibleHistory].sort((a, b) => {
                                 return new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime();
                               });
 
                               // Group by date
                               const groupedByDate = sortedHistory.reduce((acc: any, entry: any) => {
-                                const date = formatPhilippineTime(entry.timestamp, { 
-                                  dateOnly: true, 
-                                  shortFormat: true 
-                                });
+                                const date = formatDbTimestamp(entry.timestamp, { dateOnly: true });
                                 
                                 if (!acc[date]) {
                                   acc[date] = [];
@@ -1964,7 +2670,78 @@ export default function RequestViewPage() {
                                         // Sort by timestamp within same date (newest first within day)
                                         return new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime();
                                       })
-                                      .map((entry: any, index: number) => (
+                                      .map((entry: any, index: number) => {
+                                        // Transform 'Next Level Activated' to detailed 'Approvals Initiated' style
+                                        let displayAction = entry.action;
+                                        let customDetails: JSX.Element | null = null;
+                                        const actorLower = String(entry.actor || entry.actorName || '').toLowerCase();
+                                        // Auto-approval note when an approver already approved in a previous level
+                                        if (entry.action === 'Approved' && actorLower === 'system') {
+                                          try {
+                                            const entryTs = normalizeTsKey(entry.timestamp);
+                                            const aList = (approvals as any[]) || [];
+                                            // Find approvals approved at the same timestamp
+                                            const sameTimeApproved = aList.filter(a => a.status === 'approved' && normalizeTsKey(a.actedOn) === entryTs);
+                                            const getKey = (a: any) => (a.approver?.emp_email || a.approverEmail || a.approverId || a.approver || '').toString().toLowerCase();
+                                            const names: string[] = [];
+                                            for (const a of sameTimeApproved) {
+                                              const key = getKey(a);
+                                              if (!key) continue;
+                                              // Did this approver approve any previous level before?
+                                              const approvedBefore = aList.some(b => b.level < a.level && b.status === 'approved' && getKey(b) === key);
+                                              if (approvedBefore) {
+                                                const ap = a.approver;
+                                                let name = '';
+                                                if (ap && typeof ap === 'object') {
+                                                  name = `${(ap.emp_fname || '').trim()} ${(ap.emp_lname || '').trim()}`.trim();
+                                                  if (!name) name = ap.emp_email || '';
+                                                }
+                                                if (!name) name = (a.approverName || a.approver || a.approverEmail || '').toString();
+                                                if (name) names.push(name);
+                                              }
+                                            }
+                                            if (names.length > 0) {
+                                              customDetails = (
+                                                <div className="text-sm text-gray-500 whitespace-pre-line">
+                                                  <div>
+                                                    <span className="font-medium">Approved By :</span> {names.join(', ')}
+                                                    <span className="font-medium">(Auto approved by System Since the Approver has already approved in one of the previous levels.)</span>
+                                                  </div>
+                                                </div>
+                                              );
+                                            }
+                                          } catch (e) {
+                                            // Silent fail; keep default details
+                                          }
+                                        }
+                                        if (entry.action === 'Next Level Activated') {
+                                          // Try to extract level number from details text e.g., 'Level 2 approvals activated'
+                                          const m = String(entry.details || '').match(/Level\s+(\d+)/i);
+                                          const targetLevel = m ? parseInt(m[1], 10) : undefined;
+                                          if (targetLevel && Array.isArray(approvals) && approvals.length > 0) {
+                                            const levelApprovals = (approvals as any[]).filter(a => a.level === targetLevel);
+                                            const approverNames = levelApprovals.map(a => {
+                                              const ap = a.approver;
+                                              if (ap && typeof ap === 'object') {
+                                                const fn = (ap.emp_fname || '').trim();
+                                                const ln = (ap.emp_lname || '').trim();
+                                                return `${fn} ${ln}`.trim() || (ap.emp_email || 'Unknown');
+                                              }
+                                              return (a.approverName || a.approver || 'Unknown');
+                                            }).filter(Boolean);
+                                            const levelName = levelApprovals[0]?.name || `Approval Stage ${targetLevel}`;
+                                            displayAction = 'Approvals Initiated';
+                                            customDetails = (
+                                              <div className="text-sm text-gray-500 whitespace-pre-line">
+                                                {approverNames.length > 0 && (
+                                                  <div>Approver(s) : {approverNames.join(', ')}</div>
+                                                )}
+                                                <div>Level : {levelName}</div>
+                                              </div>
+                                            );
+                                          }
+                                        }
+                                        return (
                                       <div key={entry.id} className="flex gap-4">
                                         {/* 🎯 Standardized Icon */}
                                         <div className="flex flex-col items-center">
@@ -1980,21 +2757,20 @@ export default function RequestViewPage() {
                                         <div className="flex-1 pb-4">
                                           <div className="flex items-center gap-2 mb-1">
                                             <span className="text-sm font-medium text-gray-900">
-                                              {formatPhilippineTimeDisplay(entry.timestamp, { timeOnly: true })}
+                                              {formatDbTimestamp(entry.timestamp, { timeOnly: true })}
                                             </span>
-                                            <span className="text-sm font-medium text-gray-700">{entry.action}</span>
+                                            <span className="text-sm font-medium text-gray-700">{displayAction}</span>
                                           </div>
                                           <p className="text-sm text-gray-600 mb-1">
                                             by <span className="font-medium text-blue-600">{entry.actor || entry.actorName}</span>
                                           </p>
-                                          {entry.details && (
-                                            <div className="text-sm text-gray-500 whitespace-pre-line">
-                                              {entry.details}
-                                            </div>
-                                          )}
+                                          {customDetails ? customDetails : (entry.details && (
+                                            <div className="text-sm text-gray-500 whitespace-pre-line">{entry.details}</div>
+                                          ))}
                                         </div>
                                       </div>
-                                    ))}
+                                    );
+                                    })}
                                   </div>
                                 </div>
                               ));
@@ -2456,6 +3232,198 @@ export default function RequestViewPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Work Log Modal (Add/Edit) */}
+        {session?.user?.isTechnician && (
+          <Dialog open={showWorkLogModal} onOpenChange={setShowWorkLogModal}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>{editingWorkLog ? 'Edit Work Log' : 'New Work Log'}</DialogTitle>
+              </DialogHeader>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-gray-700">Owner</label>
+                  {/* Compact selected-owner display; click to open selector */}
+                  {!wlOwnerPickerOpen && (
+                    <button
+                      type="button"
+                      className="w-full mt-1 border rounded px-3 py-2 text-left hover:bg-gray-50 flex items-center justify-between"
+                      onClick={() => setWlOwnerPickerOpen(true)}
+                      title="Click to change owner"
+                    >
+                      <span className="text-sm text-gray-800 truncate">
+                        {wlOwnerName ? wlOwnerName : 'Select owner'}
+                      </span>
+                      <ChevronDown className="h-4 w-4 text-gray-500" />
+                    </button>
+                  )}
+                  {/* Expanded search selector */}
+                  {wlOwnerPickerOpen && (
+                    <div className="relative mt-1">
+                      {/* Selected header like your screenshot */}
+                      {wlOwnerName && (
+                        <div className="px-3 py-2 text-xs text-gray-600 border rounded-t-md border-b-0 bg-white">
+                          {wlOwnerName}
+                        </div>
+                      )}
+                      {/* Search box with icon */}
+                      <div className={`relative ${wlOwnerName ? '' : ''}`}>
+                        <input
+                          autoFocus
+                          className={`w-full border ${wlOwnerName ? 'rounded-b-md' : 'rounded-md'} px-2 py-2 pr-8`}
+                          placeholder=""
+                          value={techSearch}
+                          onChange={e => setTechSearch(e.target.value)}
+                        />
+                        <SearchIcon className="h-4 w-4 text-gray-400 absolute right-2 top-2.5" />
+                        {techLoading && <div className="absolute right-8 top-2.5"><RefreshCw className="h-4 w-4 animate-spin text-gray-300"/></div>}
+                      </div>
+                      {/* Results list */}
+                      <div className="absolute z-10 w-full bg-white shadow-lg rounded-b-md border border-t-0 max-h-60 overflow-auto">
+                        {techOptions.map(u => {
+                          const selected = wlOwnerId === u.id;
+                          return (
+                            <div
+                              key={u.id}
+                              className={`px-3 py-2 hover:bg-gray-50 cursor-pointer ${selected ? 'text-blue-600 italic' : ''}`}
+                              onClick={() => {
+                                setWlOwnerId(u.id);
+                                setWlOwnerName(`${u.emp_fname} ${u.emp_lname}`.trim() || u.emp_email);
+                                setTechSearch('');
+                                setWlOwnerPickerOpen(false);
+                              }}
+                            >
+                              <div className="text-sm font-medium">{u.emp_fname} {u.emp_lname}</div>
+                              <div className="text-xs text-gray-500">{u.emp_email}</div>
+                            </div>
+                          );
+                        })}
+                        {(!techLoading && techOptions.length === 0) && (
+                          <div className="px-3 py-2 text-sm text-gray-500">No technicians found</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div></div>
+                <div>
+                  <label className="text-sm text-gray-700">Start Time</label>
+                  <input type="datetime-local" className="w-full border rounded px-2 py-1" value={wlStartTime} onChange={e => setWlStartTime(e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-700">End Time</label>
+                  <input type="datetime-local" className="w-full border rounded px-2 py-1" value={wlEndTime} onChange={e => setWlEndTime(e.target.value)} />
+                </div>
+                <div className="flex items-end gap-2">
+                  <div>
+                    <label className="text-sm text-gray-700">Time Taken</label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <input placeholder="00" className="w-16 border rounded px-2 py-1 text-center" value={wlHours} disabled />
+                        <span className="text-sm text-gray-600">hours</span>
+                      </div>
+                      <span className="text-sm text-gray-400">,</span>
+                      <div className="flex items-center gap-1">
+                        <input placeholder="00" className="w-16 border rounded px-2 py-1 text-center" value={wlMinutes} disabled />
+                        <span className="text-sm text-gray-600">minutes</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* <label className="ml-7 flex items-center gap-2 text-sm"><input type="checkbox" checked={wlIncludeNonOp} onChange={e => setWlIncludeNonOp(e.target.checked)} /> Include non-operational hours</label> */}
+                </div>
+                <div className="col-span-2">
+                  <label className="text-sm text-gray-700">Description</label>
+                  <RichTextEditor value={wlDescription} onChange={setWlDescription} placeholder="Describe your work... paste screenshots/images if needed" className="min-h-[180px]" />
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowWorkLogModal(false)}>Cancel</Button>
+                <Button onClick={saveWorkLog}>Save</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Resolve (Close Request) Modal */}
+        {session?.user?.isTechnician && (
+      <Dialog open={showResolveModal} onOpenChange={setShowResolveModal}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+        <DialogTitle>Resolve Request</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-gray-700">First Call Resolution (FCR)</label>
+                    <div className="mt-2 flex items-center gap-2">
+                      <input id="fcr" type="checkbox" checked={resolveFcr} onChange={e => setResolveFcr(e.target.checked)} />
+                      <label htmlFor="fcr" className="text-sm text-gray-700">Mark as FCR</label>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-700">Closure Code</label>
+                    <select
+                      className="w-full border rounded px-2 py-2 mt-2 text-sm"
+                      value={resolveClosureCode}
+                      onChange={e => setResolveClosureCode(e.target.value)}
+                    >
+                      <option value="">Select closure code</option>
+                      <option value="Resolved - Fixed">Resolved - Fixed</option>
+                      <option value="Resolved - Workaround">Resolved - Workaround</option>
+                      <option value="Resolved - Knowledge Provided">Resolved - Knowledge Provided</option>
+                      <option value="Cancelled - User Request">Cancelled - User Request</option>
+                      <option value="Not Reproducible">Not Reproducible</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-700">Request Closure Comments</label>
+                  <Textarea
+                    value={resolveComments}
+                    onChange={e => setResolveComments(e.target.value)}
+                    placeholder="Add any comments for the requester (optional)"
+                    className="min-h-[80px]"
+                  />
+                </div>
+                <div className="text-xs text-gray-500">
+      Status will change to Resolved (not Closed) and a history entry will be recorded.
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowResolveModal(false)}>Cancel</Button>
+                <Button onClick={async () => {
+                  try {
+                    setSavingResolve(true);
+                    const res = await fetch(`/api/requests/${requestId}/resolve`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        fcr: resolveFcr,
+                        closureCode: resolveClosureCode,
+        closureComments: resolveComments
+                      })
+                    });
+                    if (!res.ok) throw new Error('Failed to resolve');
+                    toast({ title: 'Resolved', description: 'Request marked as Resolved.' });
+                    setShowResolveModal(false);
+                    // Reset fields
+                    setResolveFcr(false);
+                    setResolveClosureCode('');
+                    setResolveComments('');
+                    await fetchRequestData();
+                    handleTabChange('history');
+                  } catch (e) {
+                    toast({ title: 'Error', description: 'Failed to resolve request', variant: 'destructive' });
+                  } finally {
+                    setSavingResolve(false);
+                  }
+                }} disabled={savingResolve}>{savingResolve ? 'Saving...' : 'Resolve'}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </SessionWrapper>
   );

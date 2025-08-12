@@ -19,6 +19,18 @@ import { Input } from '@/components/ui/input';
 import { toast } from '@/hooks/use-toast';
 import { getPriorityColor, getApprovalStatusColor } from '@/lib/status-colors';
 
+// Normalize status locally to avoid importing helpers from another page
+const normalizeStatus = (val: unknown): string => {
+  if (!val) return 'pending approval';
+  const s = String(val).trim().toLowerCase().replace(/[_-]+/g, ' ');
+  if (s.includes('reject')) return 'rejected';
+  if (s.includes('approve') && !s.includes('pending')) return 'approved';
+  if (s.includes('pending clarification')) return 'pending clarification';
+  if (s.includes('for clarification')) return 'for clarification';
+  if (s.includes('pending')) return 'pending approval';
+  return s || 'pending approval';
+};
+
 interface ApprovalRequest {
   id: string;
   requestId: number;
@@ -181,9 +193,14 @@ export default function ApprovalsTab() {
                   </div>
                   
                   <div className="flex items-center gap-2 mt-3">
-                    <Badge className={`text-xs ${getApprovalStatusColor(approval.status)}`}>
-                      {approval.status.replace('_', ' ').toUpperCase()}
-                    </Badge>
+                    {(() => {
+                      const norm = normalizeStatus(approval.status);
+                      return (
+                        <Badge className={`text-xs ${getApprovalStatusColor(norm)}`}>
+                          {norm.toUpperCase()}
+                        </Badge>
+                      );
+                    })()}
                     <Badge className={`text-xs ${getPriorityColor(approval.priority)}`}>
                       {approval.priority.toUpperCase()}
                     </Badge>

@@ -32,7 +32,8 @@ export const toPhilippineTime = (timestamp: string | Date): Date => {
  * This ensures all database timestamps are in Philippine Time
  */
 export const getDatabaseTimestamp = (): Date => {
-  return getPhilippineTimeNow();
+  // Store timestamps in UTC; handle display-timezone on the client.
+  return new Date();
 };
 
 /**
@@ -40,12 +41,13 @@ export const getDatabaseTimestamp = (): Date => {
  * Use this when receiving timestamps from frontend
  */
 export const normalizeClientTimestamp = (clientTimestamp?: string): Date => {
+  // If client sends a timestamp (usually ISO UTC), trust it; otherwise use now (UTC).
   if (clientTimestamp) {
     try {
-      return toPhilippineTime(clientTimestamp);
+      return new Date(clientTimestamp);
     } catch (error) {
       console.warn('Invalid client timestamp provided:', clientTimestamp);
     }
   }
-  return getPhilippineTimeNow();
+  return new Date();
 };
