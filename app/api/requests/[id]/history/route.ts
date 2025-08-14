@@ -39,36 +39,28 @@ export async function GET(
       }
     });
 
-    // Helper: format Date to 'YYYY-MM-DD HH:mm:ss' in Asia/Manila without timezone suffix
-    const toManilaString = (d: Date) => {
-      const parts = new Intl.DateTimeFormat('en-GB', {
-        timeZone: 'Asia/Manila',
+    // Helper: format timestamp that's already in Philippine time
+    // Since we store Philippine time directly, we don't need timezone conversion
+    const formatStoredPhilippineTime = (d: Date) => {
+      return d.toLocaleString('en-PH', {
         year: 'numeric',
-        month: '2-digit',
+        month: '2-digit', 
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
-        hour12: false,
-      }).formatToParts(d);
-      const get = (type: string) => parts.find(p => p.type === type)?.value || '';
-      const dd = get('day');
-      const mm = get('month');
-      const yyyy = get('year');
-      const HH = get('hour');
-      const MM = get('minute');
-      const SS = get('second');
-      return `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`;
+        hour12: true
+      });
     };
 
-    // Format the history data with PH-local strings
+    // Format the history data - timestamps are already in Philippine time
     const formattedHistory = history.map(record => ({
       id: record.id.toString(),
       action: record.action,
       actorName: record.actorName,
       actorType: record.actorType,
       details: record.details || '',
-      createdAt: toManilaString(record.timestamp)
+      createdAt: formatStoredPhilippineTime(record.timestamp)
     }));
 
     return NextResponse.json({ 

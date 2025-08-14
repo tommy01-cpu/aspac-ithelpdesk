@@ -140,8 +140,8 @@ export default function UsersPage() {
   };
 
   const filteredUsers = users.filter(user =>
-    user.emp_fname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.emp_lname.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (user.emp_fname && user.emp_fname.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (user.emp_lname && user.emp_lname.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (user.emp_email && user.emp_email.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (user.emp_code && user.emp_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (user.department && user.department.toLowerCase().includes(searchTerm.toLowerCase())) ||

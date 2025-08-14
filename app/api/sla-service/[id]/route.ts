@@ -30,8 +30,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     }
 
     // Convert the service SLA data to match the frontend format
-    const resolutionDays = Math.floor(serviceSLA.resolutionTime / 24);
-    const resolutionHours = serviceSLA.resolutionTime % 24;
+    const resolutionDays = serviceSLA.resolutionDays || 0;
+    const resolutionHours = serviceSLA.resolutionHours || 0;
+    const resolutionMinutes = serviceSLA.resolutionMinutes || 0;
     
     // Process escalation levels
     const resolutionEscalation = {
@@ -106,7 +107,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       resolutionTime: {
         days: resolutionDays.toString(),
         hours: resolutionHours.toString(),
-        minutes: '0'
+        minutes: resolutionMinutes.toString()
       },
       operationalHours: {
         enabled: serviceSLA.operationalHours || false,
@@ -152,11 +153,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: 'Name and resolution time are required' }, { status: 400 });
     }
 
-    // Convert time values to total hours for compatibility with schema
+    // Convert time values to breakdown fields
     const resolutionDays = resolutionTime.days ? parseInt(resolutionTime.days) : 0;
-    const resolutionHours = resolutionTime.hours ? parseInt(resolutionTime.hours) : 8;
+    const resolutionHours = resolutionTime.hours ? parseInt(resolutionTime.hours) : 0;
     const resolutionMinutes = resolutionTime.minutes ? parseInt(resolutionTime.minutes) : 0;
-    const totalResolutionTime = (resolutionDays * 24) + resolutionHours + (resolutionMinutes / 60);
 
     // Update the service SLA
     const serviceSLA = await prisma.sLAService.update({
@@ -164,7 +164,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       data: {
         name,
         description: description || '',
-        resolutionTime: Math.ceil(totalResolutionTime),
+        resolutionDays: resolutionDays,
+        resolutionHours: resolutionHours,
+        resolutionMinutes: resolutionMinutes,
         operationalHours: operationalHours?.enabled || false,
         excludeHolidays: operationalHours?.excludeHolidays || false,
         excludeWeekends: operationalHours?.excludeWeekends || false,

@@ -386,7 +386,9 @@ interface TemplateData {
     name: string;
     description?: string;
     responseTime: number;
-    resolutionTime: number;
+    resolutionDays: number;
+    resolutionHours: number;
+    resolutionMinutes: number;
     priority: string;
   };
 }
@@ -395,7 +397,9 @@ interface SLAData {
   id: string;
   name: string;
   description: string;
-  resolutionTime: number;
+  resolutionDays: number;
+  resolutionHours: number;
+  resolutionMinutes: number;
   responseTime: number;
   timeUnit: string;
 }
@@ -575,7 +579,9 @@ export default function RequestPage() {
             id: template.slaService.id,
             name: template.slaService.name,
             description: template.slaService.description || '',
-            resolutionTime: template.slaService.resolutionTime,
+            resolutionDays: template.slaService.resolutionDays || 0,
+            resolutionHours: template.slaService.resolutionHours || 0,
+            resolutionMinutes: template.slaService.resolutionMinutes || 0,
             responseTime: template.slaService.responseTime,
             timeUnit: 'hours'
           });
@@ -1210,7 +1216,11 @@ export default function RequestPage() {
                       {templateData.slaService && (
                         <>
                           <strong> SLA:</strong> {templateData.slaService.name}
-                          (Resolution: {formatDurationFromHours(templateData.slaService.resolutionTime)})
+                          (Resolution: {formatDurationFromHours(
+                            (templateData.slaService.resolutionDays || 0) * 24 + 
+                            (templateData.slaService.resolutionHours || 0) + 
+                            (templateData.slaService.resolutionMinutes || 0) / 60
+                          )})
                         </>
                       )}
                       {templateData.selectedTemplate && (

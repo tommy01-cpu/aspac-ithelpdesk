@@ -229,6 +229,10 @@ export async function POST(request: Request) {
     });
 
     // Create the request in the database
+    // Create Philippine time by manually adjusting UTC
+    const now = new Date();
+    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+    
     const newRequest = await prisma.request.create({
       data: {
         templateId: String(templateId),
@@ -239,19 +243,12 @@ export async function POST(request: Request) {
         userId: parseInt(session.user.id),
         formData: formData,
         attachments: attachments || [],
+        createdAt: philippineTime,
+        updatedAt: philippineTime,
       },
     });
 
     console.log('Request created with ID:', newRequest.id);
-
-    // Ensure createdAt/updatedAt are stored as Asia/Manila local time
-    try {
-      await prisma.$executeRawUnsafe(
-        `UPDATE requests SET "createdAt" = (NOW() AT TIME ZONE 'Asia/Manila'), "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila') WHERE id = ${newRequest.id}`
-      );
-    } catch (e) {
-      console.warn('Failed to set PH time for request timestamps:', e);
-    }
 
     // 📝 STANDARD HISTORY ENTRY 1: Request Created (Priority 1)
     if (requestUser) {
@@ -387,6 +384,10 @@ export async function POST(request: Request) {
                 
                 // Create the approval record if we have a valid approver ID
                 if (actualApproverId) {
+                  // Create Philippine time by manually adjusting UTC
+                  const now = new Date();
+                  const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+                  
                   const createdApprover = await prisma.requestApproval.create({
                     data: {
                       requestId: newRequest.id,
@@ -394,27 +395,10 @@ export async function POST(request: Request) {
                       name: level.displayName || `Level ${levelNumber}`,
                       approverId: actualApproverId,
                       status: APPROVAL_STATUS.PENDING_APPROVAL,
-                      createdAt: new Date(),
+                      createdAt: philippineTime,
+                      updatedAt: philippineTime,
                     }
                   });
-                  try {
-                    // Ensure createdAt/updatedAt are PH time; Level 1 is immediately sent
-                    await prisma.$executeRaw`
-                      UPDATE request_approvals
-                      SET "createdAt" = (NOW() AT TIME ZONE 'Asia/Manila'),
-                          "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
-                      WHERE id = ${createdApprover.id}
-                    `;
-                    if (levelNumber === 1) {
-                      await prisma.$executeRaw`
-                        UPDATE request_approvals
-                        SET "sentOn" = (NOW() AT TIME ZONE 'Asia/Manila')
-                        WHERE id = ${createdApprover.id}
-                      `;
-                    }
-                  } catch (tzErr) {
-                    console.warn('Failed to set PH time for level 1 approval creation:', tzErr);
-                  }
                   level1ApproverNames.push(approverName);
                   console.log(`Created template approver for level ${levelNumber}: ${approverName}`);
                 }
@@ -446,6 +430,10 @@ export async function POST(request: Request) {
                 });
                 
                 if (additionalApprover) {
+                  // Create Philippine time by manually adjusting UTC
+                  const now = new Date();
+                  const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+                  
                   const createdAdditional = await prisma.requestApproval.create({
                     data: {
                       requestId: newRequest.id,
@@ -453,26 +441,10 @@ export async function POST(request: Request) {
                       name: level.displayName || `Level ${levelNumber}`,
                       approverId: additionalApprover.id,
                       status: APPROVAL_STATUS.PENDING_APPROVAL,
-                      createdAt: new Date(),
+                      createdAt: philippineTime,
+                      updatedAt: philippineTime,
                     }
                   });
-                  try {
-                    await prisma.$executeRaw`
-                      UPDATE request_approvals
-                      SET "createdAt" = (NOW() AT TIME ZONE 'Asia/Manila'),
-                          "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
-                      WHERE id = ${createdAdditional.id}
-                    `;
-                    if (levelNumber === 1) {
-                      await prisma.$executeRaw`
-                        UPDATE request_approvals
-                        SET "sentOn" = (NOW() AT TIME ZONE 'Asia/Manila')
-                        WHERE id = ${createdAdditional.id}
-                      `;
-                    }
-                  } catch (tzErr) {
-                    console.warn('Failed to set PH time for additional approver creation:', tzErr);
-                  }
                   level1ApproverNames.push(`${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`);
                   console.log(`Created additional approver for level ${levelNumber}: ${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`);
                 } else {
@@ -580,6 +552,10 @@ export async function POST(request: Request) {
                 
                 // Create the approval record if we have a valid approver ID
                 if (actualApproverId) {
+                  // Create Philippine time by manually adjusting UTC
+                  const now = new Date();
+                  const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+                  
                   const createdOther = await prisma.requestApproval.create({
                     data: {
                       requestId: newRequest.id,
@@ -587,20 +563,10 @@ export async function POST(request: Request) {
                       name: level.displayName || `Level ${levelNumber}`,
                       approverId: actualApproverId,
                       status: APPROVAL_STATUS.PENDING_APPROVAL,
-                      createdAt: new Date(),
+                      createdAt: philippineTime,
+                      updatedAt: philippineTime,
                     }
                   });
-                  try {
-                    await prisma.$executeRaw`
-                      UPDATE request_approvals
-                      SET "createdAt" = (NOW() AT TIME ZONE 'Asia/Manila'),
-                          "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
-                      WHERE id = ${createdOther.id}
-                    `;
-                    // Do not set sentOn for levels > 1 until activation
-                  } catch (tzErr) {
-                    console.warn('Failed to set PH time for non-level1 approval creation:', tzErr);
-                  }
                   console.log(`Created template approver for level ${levelNumber}: ${approverName}`);
                 }
               }

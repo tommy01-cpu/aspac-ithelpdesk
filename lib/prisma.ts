@@ -1,17 +1,37 @@
 import { PrismaClient } from '@prisma/client';
 
-type GlobalWithPrisma = typeof globalThis & { prisma?: PrismaClient };
-const g = globalThis as GlobalWithPrisma;
+const globalForPrisma = global as unknown as { prisma?: PrismaClient };
 
-if (!g.prisma) {
-  // Create once per process; reuse across hot reloads and route reloads
-  g.prisma = new PrismaClient({
-    // Enable minimal logging to help spot accidental re-instantiation
-    log: [
-      { emit: 'event', level: 'error' },
-      { emit: 'event', level: 'warn' },
-    ],
+const getConstrainedUrl = (): string => {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) return raw;
+  try {
+    const u = new URL(raw);
+    // Set connection pool limits to prevent exhaustion
+    if (!u.searchParams.has('connection_limit')) {
+      u.searchParams.set('connection_limit', '5');
+    }
+    if (!u.searchParams.has('connect_timeout')) {
+      u.searchParams.set('connect_timeout', '10');
+    }
+    if (!u.searchParams.has('pool_timeout')) {
+      u.searchParams.set('pool_timeout', '10');
+    }
+    return u.toString();
+  } catch {
+    return raw;
+  }
+};
+
+export const prisma =
+  globalForPrisma.prisma ||
+  new PrismaClient({
+    datasources: {
+      db: {
+        url: getConstrainedUrl(),
+      },
+    },
+    log: ["error", "warn"],
   });
-}
 
-export const prisma = g.prisma;
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;

@@ -1141,10 +1141,10 @@ export default function ApprovalDetailsPage() {
                                 <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Created Date</label>
                                 <p className="text-gray-900 mt-1">{formatDate(requestDetails.createdAt)}</p>
                               </div>
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
+                              {/* <div className="bg-white p-3 rounded-lg border border-gray-100">
                                 <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Last Update Time</label>
-                                <p className="text-gray-900 mt-1">{formatDate(requestDetails.createdAt)}</p>
-                              </div>
+                                <p className="text-gray-900 mt-1">{formatDate(requestDetails.updatedAt)}</p>
+                              </div> */}
                             </div>
                             
                             <div className="space-y-4">

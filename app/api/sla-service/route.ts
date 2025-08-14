@@ -59,11 +59,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Name and resolution time are required' }, { status: 400 });
     }
 
-    // Convert time values to total hours for compatibility with schema
+    // Convert time values to breakdown fields
     const resolutionDays = resolutionTime.days ? parseInt(resolutionTime.days) : 0;
-    const resolutionHours = resolutionTime.hours ? parseInt(resolutionTime.hours) : 8;
+    const resolutionHours = resolutionTime.hours ? parseInt(resolutionTime.hours) : 0;
     const resolutionMinutes = resolutionTime.minutes ? parseInt(resolutionTime.minutes) : 0;
-    const totalResolutionTime = (resolutionDays * 24) + resolutionHours + (resolutionMinutes / 60);
 
     // Create the service SLA without priority (since this is service SLA)
     const serviceSLA = await prisma.sLAService.create({
@@ -73,7 +72,9 @@ export async function POST(request: NextRequest) {
         priority: 'Medium', // Default value since schema requires it
         category: null, // Remove category field as requested
         responseTime: 2, // Default response time
-        resolutionTime: Math.ceil(totalResolutionTime), // Convert to hours
+        resolutionDays: resolutionDays,
+        resolutionHours: resolutionHours,
+        resolutionMinutes: resolutionMinutes,
         operationalHours: operationalHours?.enabled || false,
         excludeHolidays: operationalHours?.excludeHolidays || false,
         excludeWeekends: operationalHours?.excludeWeekends || false,

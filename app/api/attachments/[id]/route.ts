@@ -45,5 +45,12 @@ export async function GET(
       { error: 'Failed to download file' },
       { status: 500 }
     );
+  } finally {
+    try {
+      if (process.env.NODE_ENV !== 'production') {
+        const { prismaAttachments } = require('@/lib/prisma-attachments');
+        await prismaAttachments.$disconnect();
+      }
+    } catch {}
   }
 }

@@ -19,49 +19,54 @@ export async function GET(request: NextRequest) {
       ]
     } : {};
     
-    // Get total count for pagination using raw SQL
-    const totalResult = await prisma.$queryRaw`
-      SELECT COUNT(*) as count FROM departments
-      WHERE (name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`})
-    ` as any[];
-    const total = parseInt(totalResult[0].count);
+    // Get total count for pagination using Prisma
+    const total = await prisma.department.count({
+      where: {
+        OR: [
+          { name: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+        ],
+      },
+    });
     
-    // Fetch departments with department head information
-    const departments = await prisma.$queryRaw`
-      SELECT 
-        d.id,
-        d.name,
-        d.description,
-        d."departmentHeadId",
-        d."isActive",
-        d."createdAt",
-        d."updatedAt",
-        u.id as "headId",
-        u.first_name as "headFirstName",
-        u.last_name as "headLastName", 
-        u.employee_id as "headEmployeeId",
-        u.corporate_email as "headEmail",
-        u.job_title as "headJobTitle"
-      FROM departments d
-      LEFT JOIN users u ON d."departmentHeadId" = u.id
-      WHERE (d.name ILIKE ${`%${search}%`} OR d.description ILIKE ${`%${search}%`})
-      ORDER BY d.name ASC
-      LIMIT ${limit} OFFSET ${offset}
-    ` as any[];
+    // Fetch departments with department head information using Prisma includes
+    const departments = await prisma.department.findMany({
+      where: {
+        OR: [
+          { name: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+        ],
+      },
+      include: {
+        departmentHead: {
+          select: {
+            id: true,
+            emp_fname: true,
+            emp_lname: true,
+            emp_code: true,
+            emp_email: true,
+            post_des: true,
+          },
+        },
+      },
+      orderBy: { name: 'asc' },
+      take: limit,
+      skip: offset,
+    });
     
     // Transform the data
     const transformedDepartments = departments.map((dept: any) => ({
       id: dept.id,
       name: dept.name,
       description: dept.description || undefined,
-      departmentHead: dept.headId ? {
-        id: dept.headId.toString(),
-        name: `${dept.headFirstName} ${dept.headLastName}`,
-        firstName: dept.headFirstName,
-        lastName: dept.headLastName,
-        employeeId: dept.headEmployeeId || '',
-        email: dept.headEmail || '',
-        jobTitle: dept.headJobTitle || ''
+      departmentHead: dept.departmentHead ? {
+        id: dept.departmentHead.id.toString(),
+        name: `${dept.departmentHead.emp_fname} ${dept.departmentHead.emp_lname}`,
+        firstName: dept.departmentHead.emp_fname,
+        lastName: dept.departmentHead.emp_lname,
+        employeeId: dept.departmentHead.emp_code || '',
+        email: dept.departmentHead.emp_email || '',
+        jobTitle: dept.departmentHead.post_des || ''
       } : undefined,
       isActive: dept.isActive,
       createdAt: dept.createdAt.toISOString(),
@@ -137,27 +142,28 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Create department using raw SQL to avoid Prisma client issues
-    const departmentHeadIdValue = departmentHeadId ? parseInt(departmentHeadId) : null;
+    // Create department using Prisma
+    const departmentHeadIdValue = departmentHeadId ? parseInt(departmentHeadId) : undefined;
     
-    const result = await prisma.$queryRaw`
-      INSERT INTO departments (name, description, "departmentHeadId", "isActive", "createdAt", "updatedAt")
-      VALUES (${name}, ${description || null}, ${departmentHeadIdValue}, ${isActive}, NOW(), NOW())
-      RETURNING id, name, description, "departmentHeadId", "isActive", "createdAt", "updatedAt"
-    ` as any[];
+    const newDepartment = await prisma.department.create({
+      data: {
+        name,
+        description: description || undefined,
+        departmentHeadId: departmentHeadIdValue,
+        isActive: isActive,
+      },
+    });
     
-    const department = result[0];
-
     return NextResponse.json({ 
       success: true,
       message: 'Department created successfully',
       department: {
-        id: department.id,
-        name: department.name,
-        description: department.description || undefined,
-        isActive: department.isActive,
-        createdAt: department.createdAt.toISOString(),
-        updatedAt: department.updatedAt.toISOString(),
+        id: newDepartment.id,
+        name: newDepartment.name,
+        description: newDepartment.description || undefined,
+        isActive: newDepartment.isActive,
+        createdAt: newDepartment.createdAt.toISOString(),
+        updatedAt: newDepartment.updatedAt.toISOString(),
       }
     });
   } catch (error) {

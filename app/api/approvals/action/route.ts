@@ -72,27 +72,37 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
 
+    // Create Philippine time by manually adjusting UTC (same as history.ts)
+    const now = new Date();
+    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+
+    // Helper function to format date to Philippine time string
+    const formatPhilippineTime = (date: Date) => {
+      const phTime = new Date(date.getTime() + (8 * 60 * 60 * 1000));
+      return phTime.toISOString().replace('T', ' ').replace('Z', '').substring(0, 19);
+    };
+
+    const philippineTimeLocal = new Date(now.getTime() );
+    // Format the already-adjusted Philippine time without additional timezone conversion
+    const philippineTimeString = philippineTimeLocal.toLocaleString("en-US", {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+    
     // Update the approval with new status
     const updatedApproval = await prisma.requestApproval.update({
       where: { id: parseInt(approvalId) },
       data: {
         status: newApprovalStatus,
-        actedOn: new Date(),
-        comments: comments || null
+        actedOn: philippineTime,
+        updatedAt: philippineTime,
+        comments: comments ? `Request ${action}d by ${user.emp_fname} ${user.emp_lname} on ${philippineTimeString}${comments ? '. Comments: ' + comments : ''}` : `Request ${action}d by ${user.emp_fname} ${user.emp_lname} on ${philippineTimeString}`
       }
     });
-
-    // Force Asia/Manila time for actedOn/updatedAt
-    try {
-      await prisma.$executeRaw`
-        UPDATE request_approvals
-        SET "actedOn" = (NOW() AT TIME ZONE 'Asia/Manila'),
-            "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
-        WHERE id = ${parseInt(approvalId)}
-      `;
-    } catch (e) {
-      console.warn('Failed to set PH time for approval actedOn:', e);
-    }
 
     // Add to request history
     await addHistory(prisma, {
@@ -107,12 +117,13 @@ export async function POST(request: NextRequest) {
     // Handle business logic based on approval action
     if (action === 'reject') {
       // If any approval is rejected, automatically close the request
-      await prisma.request.update({
-        where: { id: approval.requestId },
-        data: { status: RequestStatus.closed }
-      });
-
-      await addHistory(prisma, {
+        await prisma.request.update({
+          where: { id: approval.requestId },
+          data: { 
+            status: RequestStatus.closed,
+            updatedAt: philippineTime // Use same Philippine time as history
+          }
+        });      await addHistory(prisma, {
         requestId: approval.requestId,
         action: 'Request Closed',
         actorName: 'System',
@@ -135,6 +146,7 @@ export async function POST(request: NextRequest) {
           where: { id: approval.requestId },
           data: {
             status: RequestStatus.open,
+            updatedAt: philippineTime, // Use same Philippine time as history
             formData: {
               ...(approval.request.formData as any || {}),
               '5': 'approved',
@@ -184,15 +196,36 @@ export async function POST(request: NextRequest) {
             // Fallback path mirrors Image 1 entries
             const priority = (finalRequest.priority || '').toLowerCase();
             let slaHours = 48; if (priority === 'top') slaHours = 4; else if (priority === 'high') slaHours = 8; else if (priority === 'medium') slaHours = 16;
-            const computedDue = await calculateSLADueDate(finalRequest.createdAt, slaHours);
-            await prisma.request.update({ where: { id: approval.requestId }, data: { formData: { ...(finalRequest.formData as any || {}), slaHours: slaHours.toString(), slaDueDate: computedDue.toISOString(), slaCalculatedAt: new Date().toISOString() } } });
+            
+            // SLA should start from approval time, not request creation time
+            const currentTime = new Date(); // Same time for both slaStartAt and slaCalculatedAt
+            const computedDue = await calculateSLADueDate(currentTime, slaHours);
+            
+            // Convert dates to Philippine time format without Z
+            const computedDuePH = formatPhilippineTime(computedDue);
+            const slaCalculatedAtPH = formatPhilippineTime(currentTime);
+            const slaStartAtPH = formatPhilippineTime(currentTime);
+            
+            await prisma.request.update({ 
+              where: { id: approval.requestId }, 
+              data: { 
+                formData: { 
+                  ...(finalRequest.formData as any || {}), 
+                  slaHours: slaHours.toString(), 
+                  slaDueDate: computedDuePH,
+                  slaCalculatedAt: slaCalculatedAtPH,
+                  slaStartAt: slaStartAtPH,
+                  slaSource: 'fallback'
+                } 
+              } 
+            });
             await addHistory(prisma, { requestId: approval.requestId, action: 'Start Timer', actorName: 'System', actorType: 'system', details: 'Timer started by System and status set to Open' });
             const prevDue = (approval.request.formData as any)?.slaDueDate as string | undefined;
             const fmt = (iso?: string) => { if (!iso) return '-'; const d = new Date(iso); return d.toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }); };
             const lines: string[] = [];
             if (computedDue) {
-              if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDue.toISOString())}`);
-              else lines.push(`DueBy Date set to ${fmt(computedDue.toISOString())}`);
+              if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDuePH)}`);
+              else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
             }
             lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
             lines.push('Technician Auto Assign : NO');
@@ -238,20 +271,10 @@ export async function POST(request: NextRequest) {
             },
             data: {
               status: ApprovalStatus.pending_approval,
-              sentOn: new Date()
+              sentOn: philippineTime,
+              updatedAt: philippineTime
             }
           });
-          // Set PH time for next level sentOn/updatedAt
-          try {
-            await prisma.$executeRaw`
-              UPDATE request_approvals
-              SET "sentOn" = (NOW() AT TIME ZONE 'Asia/Manila'),
-                  "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
-              WHERE "requestId" = ${approval.requestId} AND level = ${approval.level + 1}
-            `;
-          } catch (e) {
-            console.warn('Failed to set PH time for next level approvals:', e);
-          }
 
           // Add history for next level activation
           await addHistory(prisma, {
@@ -311,21 +334,11 @@ export async function POST(request: NextRequest) {
                     where: { id: dup.id },
                     data: {
                       status: ApprovalStatus.approved,
-                      actedOn: new Date(),
+                      actedOn: philippineTime,
+                      updatedAt: philippineTime,
                       comments: dup.comments || 'Auto approved by System since the approver has already approved in one of the previous levels.'
                     }
                   });
-                  // Force Asia/Manila timestamps for the auto-approval
-                  try {
-                    await prisma.$executeRaw`
-                      UPDATE request_approvals
-                      SET "actedOn" = (NOW() AT TIME ZONE 'Asia/Manila'),
-                          "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
-                      WHERE id = ${dup.id}
-                    `;
-                  } catch (tzErr) {
-                    console.warn('Failed to set PH time for auto-approved duplicate:', tzErr);
-                  }
 
                   // History entry reflecting system auto-approval
                   const approverName = dup.approver
@@ -358,18 +371,12 @@ export async function POST(request: NextRequest) {
                 // Activate next-next level (do not auto-approve further per rule)
                 await prisma.requestApproval.updateMany({
                   where: { requestId: approval.requestId, level: approval.level + 2 },
-                  data: { status: ApprovalStatus.pending_approval, sentOn: new Date() }
+                  data: { 
+                    status: ApprovalStatus.pending_approval, 
+                    sentOn: philippineTime,
+                    updatedAt: philippineTime
+                  }
                 });
-                try {
-                  await prisma.$executeRaw`
-                    UPDATE request_approvals
-                    SET "sentOn" = (NOW() AT TIME ZONE 'Asia/Manila'),
-                        "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila')
-                    WHERE "requestId" = ${approval.requestId} AND level = ${approval.level + 2}
-                  `;
-                } catch (e2) {
-                  console.warn('Failed to set PH time for level+2 activation:', e2);
-                }
                 await addHistory(prisma, {
                   requestId: approval.requestId,
                   action: 'Next Level Activated',
@@ -387,6 +394,7 @@ export async function POST(request: NextRequest) {
                     where: { id: approval.requestId },
                     data: {
                       status: RequestStatus.open,
+                      updatedAt: philippineTime, // Use same Philippine time as history
                       formData: {
                         ...(approval.request.formData as any || {}),
                         '5': 'approved'
@@ -435,15 +443,36 @@ export async function POST(request: NextRequest) {
                       // SLA endpoint failed; fallback
                       const priority = (finalRequest.priority || '').toLowerCase();
                       let slaHours = 48; if (priority === 'top') slaHours = 4; else if (priority === 'high') slaHours = 8; else if (priority === 'medium') slaHours = 16;
-                      const computedDue = await calculateSLADueDate(finalRequest.createdAt, slaHours);
-                      await prisma.request.update({ where: { id: approval.requestId }, data: { formData: { ...(finalRequest.formData as any || {}), slaHours: slaHours.toString(), slaDueDate: computedDue.toISOString(), slaCalculatedAt: new Date().toISOString() } } });
+                      
+                      // SLA should start from approval time, not request creation time
+                      const currentTime = new Date(); // Same time for both slaStartAt and slaCalculatedAt
+                      const computedDue = await calculateSLADueDate(currentTime, slaHours);
+                      
+                      // Convert dates to Philippine time format without Z
+                      const computedDuePH = formatPhilippineTime(computedDue);
+                      const slaCalculatedAtPH = formatPhilippineTime(currentTime);
+                      const slaStartAtPH = formatPhilippineTime(currentTime);
+                      
+                      await prisma.request.update({ 
+                        where: { id: approval.requestId }, 
+                        data: { 
+                          formData: { 
+                            ...(finalRequest.formData as any || {}), 
+                            slaHours: slaHours.toString(), 
+                            slaDueDate: computedDuePH,
+                            slaCalculatedAt: slaCalculatedAtPH,
+                            slaStartAt: slaStartAtPH,
+                            slaSource: 'fallback'
+                          } 
+                        } 
+                      });
                       await addHistory(prisma, { requestId: approval.requestId, action: 'Start Timer', actorName: 'System', actorType: 'system', details: 'Timer started by System and status set to Open' });
                       const prevDue = (approval.request.formData as any)?.slaDueDate as string | undefined;
                       const fmt = (iso?: string) => { if (!iso) return '-'; const d = new Date(iso); return d.toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }); };
                       const lines: string[] = [];
                       if (computedDue) {
-                        if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDue.toISOString())}`);
-                        else lines.push(`DueBy Date set to ${fmt(computedDue.toISOString())}`);
+                        if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDuePH)}`);
+                        else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
                       }
                       lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
                       lines.push('Technician Auto Assign : NO');
@@ -475,11 +504,13 @@ export async function POST(request: NextRequest) {
           });
 
           if (allApproved) {
+            
             // All approvals complete, update request status to OPEN and formData approval status
             const updatedRequest = await prisma.request.update({
               where: { id: approval.requestId },
               data: { 
                 status: RequestStatus.open,
+                updatedAt: philippineTime, // Use same Philippine time as history
                 formData: {
                   ...(approval.request.formData as any || {}),
                   '5': 'approved' // Update the approval status field
@@ -572,7 +603,14 @@ export async function POST(request: NextRequest) {
                   else if (priority === 'high') slaHours = 8;
                   else if (priority === 'medium') slaHours = 16;
 
-                  const computedDue = await calculateSLADueDate(updatedRequest.createdAt, slaHours);
+                  // SLA should start from approval time, not request creation time
+                  const currentTime = new Date(); // Same time for both slaStartAt and slaCalculatedAt
+                  const computedDue = await calculateSLADueDate(currentTime, slaHours);
+
+                  // Convert dates to Philippine time format without Z
+                  const computedDuePH = formatPhilippineTime(computedDue);
+                  const slaCalculatedAtPH = formatPhilippineTime(currentTime);
+                  const slaStartAtPH = formatPhilippineTime(currentTime);
 
                   // Persist SLA fields in formData
                   await prisma.request.update({
@@ -581,8 +619,10 @@ export async function POST(request: NextRequest) {
                       formData: {
                         ...(updatedRequest.formData as any || {}),
                         slaHours: slaHours.toString(),
-                        slaDueDate: computedDue.toISOString(),
-                        slaCalculatedAt: new Date().toISOString(),
+                        slaDueDate: computedDuePH,
+                        slaCalculatedAt: slaCalculatedAtPH,
+                        slaStartAt: slaStartAtPH,
+                        slaSource: 'fallback'
                       },
                     },
                   });
@@ -620,8 +660,8 @@ export async function POST(request: NextRequest) {
                   };
                   const lines: string[] = [];
                   if (computedDue) {
-                    if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDue.toISOString())}`);
-                    else lines.push(`DueBy Date set to ${fmt(computedDue.toISOString())}`);
+                    if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDuePH)}`);
+                    else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
                   }
                   if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
                   lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
@@ -649,7 +689,14 @@ export async function POST(request: NextRequest) {
                 else if (priority === 'high') slaHours = 8;
                 else if (priority === 'medium') slaHours = 16;
 
-                const computedDue = await calculateSLADueDate(updatedRequest.createdAt, slaHours);
+                // SLA should start from approval time, not request creation time
+                const currentTime = new Date(); // Same time for both slaStartAt and slaCalculatedAt
+                const computedDue = await calculateSLADueDate(currentTime, slaHours);
+
+                // Convert dates to Philippine time format without Z
+                const computedDuePH = formatPhilippineTime(computedDue);
+                const slaCalculatedAtPH = formatPhilippineTime(currentTime);
+                const slaStartAtPH = formatPhilippineTime(currentTime);
 
                 await prisma.request.update({
                   where: { id: approval.requestId },
@@ -657,8 +704,10 @@ export async function POST(request: NextRequest) {
                     formData: {
                       ...(updatedRequest.formData as any || {}),
                       slaHours: slaHours.toString(),
-                      slaDueDate: computedDue.toISOString(),
-                      slaCalculatedAt: new Date().toISOString(),
+                      slaDueDate: computedDuePH,
+                      slaCalculatedAt: slaCalculatedAtPH,
+                      slaStartAt: slaStartAtPH,
+                      slaSource: 'fallback'
                     },
                   },
                 });
@@ -692,8 +741,8 @@ export async function POST(request: NextRequest) {
                 };
                 const lines: string[] = [];
                 if (computedDue) {
-                  if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDue.toISOString())}`);
-                  else lines.push(`DueBy Date set to ${fmt(computedDue.toISOString())}`);
+                  if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDuePH)}`);
+                  else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
                 }
                 if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
                 lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
@@ -715,31 +764,31 @@ export async function POST(request: NextRequest) {
         }
       }
 
-  // Final safety check: if everything is approved, ensure we finalize and write history
-  await finalizeIfAllApproved();
+      // Final safety check: if everything is approved, ensure we finalize and write history
+      await finalizeIfAllApproved();
     } else if (action === 'clarification') {
       // For clarification, we only update the approval status
       // The request status remains unchanged
       
-      // Create a conversation entry for clarification
+      // Create a conversation entry for clarification  
       if (comments && comments.trim()) {
         try {
-          // Try to create an approval conversation entry
-          const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          await prisma.$executeRaw`
-            INSERT INTO approval_conversations (id, "approvalId", "authorId", type, message, "isRead", "readBy", "createdAt", "updatedAt")
-            VALUES (
-              ${conversationId},
-              ${parseInt(approvalId)},
-              ${user.id},
-              'technician',
-              ${comments.trim()},
-              false,
-              ${JSON.stringify([user.id])}::jsonb,
-              (NOW() AT TIME ZONE 'Asia/Manila'),
-              (NOW() AT TIME ZONE 'Asia/Manila')
-            )
-          `;
+          // Create Philippine time by manually adjusting UTC (same as history.ts)
+          const conversationNow = new Date();
+          const conversationTime = new Date(conversationNow.getTime() + (8 * 60 * 60 * 1000));
+          
+          // Try to create an approval conversation entry using Prisma
+          await prisma.approvalConversation.create({
+            data: {
+              approvalId: parseInt(approvalId),
+              authorId: user.id,
+              type: 'technician',
+              message: comments.trim(),
+              isRead: false,
+              createdAt: conversationTime,
+              readBy: [user.id],
+            }
+          });
         } catch (error) {
           console.log('ApprovalConversation table not available, using history instead');
           // Fallback to history if conversation table doesn't exist

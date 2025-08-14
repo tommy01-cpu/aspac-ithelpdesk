@@ -20,31 +20,32 @@ export async function GET(
 
     const approvalId = params.approvalId;
 
-    // Use direct SQL query to get conversations from database
+    // Use Prisma relations instead of raw SQL
     try {
-      const conversations = await prisma.$queryRaw`
-        SELECT 
-          ac.id,
-          ac.type,
-          ac.message,
-          ac."createdAt" as timestamp,
-          ac."isRead",
-          ac."readBy",
-          ac."authorId",
-          u.first_name as emp_fname,
-          u.last_name as emp_lname
-        FROM approval_conversations ac
-        JOIN users u ON ac."authorId" = u.id
-        WHERE ac."approvalId" = ${parseInt(approvalId)}
-        ORDER BY ac."createdAt" ASC
-      `;
+      const conversations = await prisma.approvalConversation.findMany({
+        where: {
+          approvalId: parseInt(approvalId)
+        },
+        include: {
+          author: {
+            select: {
+              id: true,
+              emp_fname: true,
+              emp_lname: true
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'asc'
+        }
+      });
 
-      const formattedConversations = (conversations as any[]).map((conv: any) => ({
+      const formattedConversations = conversations.map((conv: any) => ({
         id: conv.id,
         type: conv.type,
         message: conv.message,
-        author: `${conv.emp_fname} ${conv.emp_lname}`,
-        timestamp: conv.timestamp,
+        author: `${conv.author.emp_fname} ${conv.author.emp_lname}`,
+        timestamp: conv.createdAt,
         isRead: conv.isRead,
         isOwnMessage: false // Will be determined on frontend
       }));
@@ -91,24 +92,33 @@ export async function POST(
     }
 
     try {
-      // Try direct SQL insert with proper error handling
+      // Use Prisma create with Philippine time
       const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
-      // Use DB-side Philippine time for timestamps
-      await prisma.$executeRaw`
-        INSERT INTO approval_conversations (id, "approvalId", "authorId", type, message, "isRead", "readBy", "createdAt", "updatedAt")
-        VALUES (
-          ${conversationId},
-          ${approvalId},
-          ${user.id},
-          ${type || 'user'},
-          ${message.trim()},
-          false,
-          ${JSON.stringify([user.id])}::jsonb,
-          (NOW() AT TIME ZONE 'Asia/Manila'),
-          (NOW() AT TIME ZONE 'Asia/Manila')
-        )
-      `;
+      // Create Philippine time by manually adjusting UTC
+      const now = new Date();
+      const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+      
+      const conversation = await prisma.approvalConversation.create({
+        data: {
+          id: conversationId,
+          approvalId: approvalId,
+          authorId: user.id,
+          type: type || 'user',
+          message: message.trim(),
+          isRead: false,
+          readBy: [user.id],
+          createdAt: philippineTime,
+        },
+        include: {
+          author: {
+            select: {
+              emp_fname: true,
+              emp_lname: true
+            }
+          }
+        }
+      });
 
       // Get the approval to find the request ID for history tracking
       const approval = await prisma.requestApproval.findUnique({
@@ -121,51 +131,25 @@ export async function POST(
 
       // Add history entry for the conversation message
       if (approval?.request) {
-        await prisma.$executeRaw`
-          INSERT INTO request_history ("requestId", action, details, "actorId", "actorName", "actorType", timestamp)
-          VALUES (
-            ${approval.request.id}, 
-            'Conversation Message', 
-            ${`New message in approval conversation with ${approval.approver?.emp_fname || 'Unknown'} ${approval.approver?.emp_lname || 'Approver'}: "${message.trim().substring(0, 100)}${message.trim().length > 100 ? '...' : ''}"`}, 
-            ${user.id}, 
-            ${`${user.emp_fname} ${user.emp_lname}`},
-            'user', 
-            (NOW() AT TIME ZONE 'Asia/Manila')
-          )
-        `;
+        await addHistory(prisma as any, {
+          requestId: approval.request.id,
+          action: 'Conversation Message',
+          actorName: `${user.emp_fname} ${user.emp_lname}`,
+          actorType: 'user',
+          details: `New message in approval conversation with ${approval.approver?.emp_fname || 'Unknown'} ${approval.approver?.emp_lname || 'Approver'}: "${message.trim().substring(0, 100)}${message.trim().length > 100 ? '...' : ''}"`,
+          actorId: user.id,
+        });
       }
 
       console.log('✅ Successfully saved conversation to database');
       console.log('🔍 Conversation ID:', conversationId);
-  console.log('🔍 Philippine Time used: DB-side NOW() AT TIME ZONE Asia/Manila');
-
-      // Fetch the actual saved conversation from database to return exact timestamp
-      const savedConversation = await prisma.$queryRaw`
-        SELECT 
-          ac.id,
-          ac.type,
-          ac.message,
-          ac."createdAt" as timestamp,
-          ac."isRead",
-          ac."readBy",
-          ac."authorId",
-          u.first_name as emp_fname,
-          u.last_name as emp_lname
-        FROM approval_conversations ac
-        JOIN users u ON ac."authorId" = u.id
-        WHERE ac.id = ${conversationId}
-      `;
-
-      console.log('🔍 Saved conversation from DB:', savedConversation);
-      const conversation = (savedConversation as any[])[0];
-      console.log('🔍 First conversation record:', conversation);
       
       const formattedConversation = {
         id: conversation.id,
         type: conversation.type,
         message: conversation.message,
-        author: `${conversation.emp_fname} ${conversation.emp_lname}`,
-        timestamp: conversation.timestamp, // Use exact database timestamp
+        author: `${conversation.author.emp_fname} ${conversation.author.emp_lname}`,
+        timestamp: conversation.createdAt,
         isRead: conversation.isRead,
         isOwnMessage: true
       };

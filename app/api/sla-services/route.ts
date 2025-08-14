@@ -13,7 +13,9 @@ export async function GET() {
         priority: true,
         category: true,
         responseTime: true,
-        resolutionTime: true,
+        resolutionDays: true,
+        resolutionHours: true,
+        resolutionMinutes: true,
         operationalHours: true,
         autoEscalate: true,
         escalationTime: true

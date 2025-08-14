@@ -36,64 +36,40 @@ export async function GET(req: NextRequest) {
     // Skip technician exclusion for now due to Prisma client schema mismatch
     // This feature will need to be reimplemented after Prisma client regeneration
 
-    // Fetch users with their roles using raw SQL to include profile_image
-    let usersWithRoles;
-    
-    if (search) {
-      const searchPattern = `%${search.toLowerCase()}%`;
-      usersWithRoles = await prisma.$queryRaw`
-        SELECT 
-          u.*,
-          rm.id as "reportingManagerId",
-          rm.first_name as "reportingManagerFirstName",
-          rm.last_name as "reportingManagerLastName",
-          rm.employee_id as "reportingManagerEmpCode",
-          array_agg(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL) as roles
-        FROM users u
-        LEFT JOIN user_roles ur ON u.id = ur.user_id
-        LEFT JOIN roles r ON ur.role_id = r.id
-        LEFT JOIN users rm ON u."reportingToId" = rm.id
-        WHERE (
-          LOWER(u.first_name) LIKE ${searchPattern} OR
-          LOWER(u.last_name) LIKE ${searchPattern} OR
-          LOWER(u.corporate_email) LIKE ${searchPattern} OR
-          LOWER(u.employee_id) LIKE ${searchPattern}
-        )
-        GROUP BY u.id, rm.id, rm.first_name, rm.last_name, rm.employee_id
-        ORDER BY u.first_name ASC
-        LIMIT ${limit}
-      `;
-    } else {
-      usersWithRoles = await prisma.$queryRaw`
-        SELECT 
-          u.*,
-          rm.id as "reportingManagerId",
-          rm.first_name as "reportingManagerFirstName",
-          rm.last_name as "reportingManagerLastName",
-          rm.employee_id as "reportingManagerEmpCode",
-          array_agg(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL) as roles
-        FROM users u
-        LEFT JOIN user_roles ur ON u.id = ur.user_id
-        LEFT JOIN roles r ON ur.role_id = r.id
-        LEFT JOIN users rm ON u."reportingToId" = rm.id
-        GROUP BY u.id, rm.id, rm.first_name, rm.last_name, rm.employee_id
-        ORDER BY u.first_name ASC
-        LIMIT ${limit}
-      `;
-    }
+    // Fetch users with their roles using Prisma includes
+    const users = await prisma.users.findMany({
+      where: whereClause,
+      take: limit,
+      orderBy: { emp_fname: 'asc' },
+      include: {
+        user_roles: {
+          include: {
+            roles: true,
+          },
+        },
+        reportingTo: {
+          select: {
+            id: true,
+            emp_fname: true,
+            emp_lname: true,
+            emp_code: true,
+          },
+        },
+      },
+    });
 
     // Map the database fields back to the expected frontend format
-    const mappedUsers = (usersWithRoles as any[]).map(user => ({
+    const mappedUsers = users.map(user => ({
       id: user.id,
-      emp_code: user.employee_id,
-      emp_fname: user.first_name,
-      emp_mid: user.middle_name,
-      emp_lname: user.last_name,
-      emp_suffix: user.suffix,
-      emp_email: user.corporate_email,
-      emp_cell: user.corporate_mobile_no,
-      post_des: user.job_title,
-      emp_status: user.status,
+      emp_code: user.emp_code,
+      emp_fname: user.emp_fname,
+      emp_mid: user.emp_mid,
+      emp_lname: user.emp_lname,
+      emp_suffix: user.emp_suffix,
+      emp_email: user.emp_email,
+      emp_cell: user.emp_cell,
+      post_des: user.post_des,
+      emp_status: user.emp_status,
       department: user.department,
       created_at: user.created_at,
       profile_image: user.profile_image,
@@ -101,15 +77,15 @@ export async function GET(req: NextRequest) {
       landline_no: user.landline_no,
       local_no: user.local_no,
       reportingToId: user.reportingToId,
-      reportingTo: user.reportingManagerId ? {
-        id: user.reportingManagerId,
-        emp_fname: user.reportingManagerFirstName,
-        emp_lname: user.reportingManagerLastName,
-        emp_code: user.reportingManagerEmpCode
+      reportingTo: user.reportingTo ? {
+        id: user.reportingTo.id,
+        emp_fname: user.reportingTo.emp_fname,
+        emp_lname: user.reportingTo.emp_lname,
+        emp_code: user.reportingTo.emp_code
       } : undefined,
       isServiceApprover: user.isServiceApprover || false,
       requester_view_permission: user.requester_view_permission || 'own_requests',
-      roles: user.roles || [],
+      roles: user.user_roles.map(ur => ur.roles.name) || [],
     }));
 
     return NextResponse.json({ 
@@ -266,23 +242,18 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Update the user with profile image using raw SQL (workaround for Prisma client issue)
+    // Update the user with profile image using Prisma update
+    let finalUser = newUser;
     if (profileImageName) {
-      await prisma.$executeRaw`
-        UPDATE users 
-        SET profile_image = ${profileImageName}
-        WHERE id = ${newUser.id}
-      `;
+      finalUser = await prisma.users.update({
+        where: { id: newUser.id },
+        data: { profile_image: profileImageName },
+      });
     }
-
-    // Fetch the updated user data
-    const updatedUser = await prisma.$queryRaw`
-      SELECT * FROM users WHERE id = ${newUser.id}
-    `;
 
     return NextResponse.json({
       success: true,
-      user: Array.isArray(updatedUser) ? updatedUser[0] : updatedUser,
+      user: finalUser,
     });
   } catch (error) {
     console.error('Error creating user:', error);

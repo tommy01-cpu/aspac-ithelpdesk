@@ -50,15 +50,19 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       },
     } as any;
 
+    // Update to resolved status
+    // Create Philippine time by manually adjusting UTC
+    const now = new Date();
+    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+    
     const updated = await prisma.request.update({
       where: { id: requestId },
-      data: { status: 'resolved', formData: updatedForm },
+      data: { 
+        status: 'resolved', 
+        formData: updatedForm,
+        updatedAt: philippineTime,
+      },
     });
-
-    // Force Asia/Manila timestamp for updatedAt
-    try {
-      await prisma.$executeRaw`UPDATE requests SET "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila') WHERE id = ${requestId}`;
-    } catch {}
 
     // History entry
     try {

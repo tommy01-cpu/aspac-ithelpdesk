@@ -17,7 +17,9 @@ interface SLAService {
   priority: string;
   category?: string;
   responseTime: number;
-  resolutionTime: number;
+  resolutionDays: number;
+  resolutionHours: number;
+  resolutionMinutes: number;
   operationalHours: boolean;
   autoEscalate: boolean;
   escalationTime: number;
@@ -83,6 +85,11 @@ export default function SLAAssignment({ templateType, selectedSLAId, onSLAChange
     if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
     if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
     return parts.length > 0 ? parts.join(' ') : '0 hours';
+  };
+
+  const formatSLATime = (sla: SLAService) => {
+    const totalHours = (sla.resolutionDays || 0) * 24 + (sla.resolutionHours || 0) + (sla.resolutionMinutes || 0) / 60;
+    return formatDaysAndHours(totalHours);
   };
 
   const filteredSLAs = slaServices.filter(sla =>
@@ -159,7 +166,7 @@ export default function SLAAssignment({ templateType, selectedSLAId, onSLAChange
                     <div className="flex flex-col gap-1 py-1">
                       <span className="font-medium">{sla.name}</span>
                       <span className="text-xs text-blue-600">
-                        SLA: Typically delivered within {formatDaysAndHours(sla.resolutionTime)} from full approval
+                        SLA: Typically delivered within {formatSLATime(sla)} from full approval
                       </span>
                     </div>
                   </SelectItem>
@@ -179,7 +186,7 @@ export default function SLAAssignment({ templateType, selectedSLAId, onSLAChange
               <div className="flex-1 space-y-2">
                 <h4 className="font-medium text-blue-900 mb-1">{selectedSLA.name}</h4>
                 <p className="text-blue-700 text-sm">
-                  SLA: Typically delivered within {formatDaysAndHours(selectedSLA.resolutionTime)} from full approval
+                  SLA: Typically delivered within {formatSLATime(selectedSLA)} from full approval
                 </p>
        
               </div>

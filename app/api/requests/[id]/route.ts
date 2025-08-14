@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
-import { prismaAttachments } from '@/lib/prisma-attachments';
 import { authOptions } from '@/lib/auth';
 
 export async function GET(
@@ -10,6 +9,23 @@ export async function GET(
 ) {
   try {
     console.log(`🔍 API: Fetching request ID ${params.id}`);
+    
+    // Define timestamp formatting function at the top
+    const formatStoredPhilippineTime = (date: Date | null) => {
+      if (!date) return null;
+      // Since we store Philippine time directly in the database,
+      // format it manually without timezone conversion
+      const year = date.getUTCFullYear();
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(date.getUTCDate()).padStart(2, '0');
+      const hours = String(date.getUTCHours()).padStart(2, '0');
+      const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+      const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+      const milliseconds = String(date.getUTCMilliseconds()).padStart(3, '0');
+      
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
+    };
+    
     const session = await getServerSession(authOptions);
     if (!session?.user) {
       console.log('❌ API: No session found');
@@ -92,6 +108,13 @@ export async function GET(
       return NextResponse.json({ error: 'Request not found' }, { status: 404 });
     }
 
+    console.log('🕒 Request timestamps:', {
+      createdAt: requestData.createdAt,
+      updatedAt: requestData.updatedAt,
+      createdAtType: typeof requestData.createdAt,
+      updatedAtType: typeof requestData.updatedAt
+    });
+
     // Fetch template details if available
     let templateDetails = null;
     try {
@@ -115,7 +138,9 @@ export async function GET(
                 name: true,
                 priority: true,
                 responseTime: true,
-                resolutionTime: true,
+                resolutionDays: true,
+                resolutionHours: true,
+                resolutionMinutes: true,
                 escalationTime: true,
                 operationalHours: true,
                 autoEscalate: true,
@@ -150,6 +175,8 @@ export async function GET(
       uploadedAt: Date;
     }> = [];
     try {
+      // Import prismaAttachments only when needed to avoid unnecessary client instantiation
+      const { prismaAttachments } = require('@/lib/prisma-attachments');
       attachments = await prismaAttachments.attachment.findMany({
         where: {
           requestId: String(requestId), // Convert to string
@@ -220,8 +247,8 @@ export async function GET(
       approver: approval.approverName || (approval.approver ? 
         `${approval.approver.emp_fname} ${approval.approver.emp_lname}` : 'Unknown'),
       approverEmail: approval.approverEmail || approval.approver?.emp_email,
-      sentOn: approval.sentOn?.toISOString(),
-      actedOn: approval.actedOn?.toISOString(),
+      sentOn: approval.sentOn ? formatStoredPhilippineTime(approval.sentOn) : null,
+      actedOn: approval.actedOn ? formatStoredPhilippineTime(approval.actedOn) : null,
       comments: approval.comments,
     }));
 
@@ -254,7 +281,7 @@ export async function GET(
         id: entry.id.toString(),
         action: entry.action,
         details: entry.details || '',
-        timestamp: entry.timestamp.toISOString(),
+        timestamp: formatStoredPhilippineTime(entry.timestamp),
         actor: currentActorName,
         actorName: currentActorName, // For consistency
         actorType: entry.actorType,
@@ -266,9 +293,22 @@ export async function GET(
     const formData = requestData.formData as any;
     const conversations = formData?.conversations || [];
 
+    const formattedRequestData = {
+      ...requestData,
+      createdAt: formatStoredPhilippineTime(requestData.createdAt),
+      updatedAt: formatStoredPhilippineTime(requestData.updatedAt),
+    };
+
+    console.log('🎯 Formatted timestamps:', {
+      originalCreatedAt: requestData.createdAt,
+      originalUpdatedAt: requestData.updatedAt,
+      formattedCreatedAt: formattedRequestData.createdAt,
+      formattedUpdatedAt: formattedRequestData.updatedAt
+    });
+
     return NextResponse.json({
       success: true,
-      request: requestData,
+      request: formattedRequestData,
       attachments: attachments,
       template: templateDetails,
       conversations: conversations,
@@ -313,13 +353,17 @@ export async function PUT(
     }
 
     // Update the request
+    // Create Philippine time by manually adjusting UTC
+    const now = new Date();
+    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+    
     const updatedRequest = await prisma.request.update({
       where: { id: requestId },
       data: {
         ...(status && { status }),
         ...(priority && { priority }),
         ...(formData && { formData }),
-        updatedAt: new Date(),
+        updatedAt: philippineTime,
       },
       include: {
         user: {

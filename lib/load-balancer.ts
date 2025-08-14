@@ -488,6 +488,18 @@ export async function autoAssignTechnician(
       if (assignedTechnician) {
         console.log(`Assigned technician ${assignedTechnician.name} (ID: ${assignedTechnician.id})`);
 
+        // Convert assignedDate to Philippine time format without Z
+        const assignedDatePH = new Date().toLocaleString('en-PH', { 
+          timeZone: 'Asia/Manila',
+          year: 'numeric',
+          month: '2-digit', 
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        }).replace(/(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})/, '$3-$1-$2 $4:$5:$6');
+
         // Update the request with the assigned technician
         await prisma.request.update({
           where: { id: requestId },
@@ -497,7 +509,7 @@ export async function autoAssignTechnician(
               assignedTechnician: assignedTechnician.name,
               assignedTechnicianId: assignedTechnician.id.toString(),
               assignedTechnicianEmail: assignedTechnician.email,
-              assignedDate: new Date().toISOString()
+              assignedDate: assignedDatePH
             }
           }
         });

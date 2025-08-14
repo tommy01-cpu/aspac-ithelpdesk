@@ -363,8 +363,13 @@ model SLAService {
   description           String?   @db.Text
   priority              String    @db.VarChar(20) // 'Low', 'Medium', 'High', 'Top'
   category              String?   @db.VarChar(100)
-  responseTime          Int       // in hours
-  resolutionTime        Int       // in hours
+  responseTime          Int       // in hours (legacy field)
+  
+  // Resolution Time Components (breakdown fields)
+  resolutionDays        Int       @default(0) @map("resolution_days")
+  resolutionHours       Int       @default(0) @map("resolution_hours")
+  resolutionMinutes     Int       @default(0) @map("resolution_minutes")
+  
   operationalHours      Boolean   @default(true)
   autoEscalate          Boolean   @default(false)
   escalationTime        Int       // in hours

@@ -72,6 +72,14 @@ export async function POST(request: NextRequest) {
       { error: 'Failed to upload files' },
       { status: 500 }
     );
+  } finally {
+    try {
+      // In dev, proactively disconnect to free connections quickly
+      if (process.env.NODE_ENV !== 'production') {
+        const { prismaAttachments } = require('@/lib/prisma-attachments');
+        await prismaAttachments.$disconnect();
+      }
+    } catch {}
   }
 }
 
@@ -120,5 +128,12 @@ export async function GET(request: NextRequest) {
       { error: 'Failed to fetch attachments' },
       { status: 500 }
     );
+  } finally {
+    try {
+      if (process.env.NODE_ENV !== 'production') {
+        const { prismaAttachments } = require('@/lib/prisma-attachments');
+        await prismaAttachments.$disconnect();
+      }
+    } catch {}
   }
 }

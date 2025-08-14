@@ -604,7 +604,7 @@ export default function ServiceTemplateBuilderPage() {
             const formattedSLAData = data.data.map((sla: any) => ({
               id: sla.id,
               name: sla.name,
-              deliveryTime: sla.resolutionTime || sla.deliveryTime || 0
+              deliveryTime: (sla.resolutionDays || 0) * 24 + (sla.resolutionHours || 0) + (sla.resolutionMinutes || 0) / 60
             }));
             setSlaData(formattedSLAData);
           }

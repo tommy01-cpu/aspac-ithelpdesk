@@ -14,38 +14,47 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Search users by name, email, or employee code
-    const searchPattern = `%${q.toLowerCase()}%`;
-    const users = await prisma.$queryRaw`
-      SELECT 
-        u.id,
-        u.employee_id as emp_code,
-        u.first_name as emp_fname,
-        u.middle_name as emp_mid,
-        u.last_name as emp_lname,
-        u.suffix as emp_suffix,
-        u.corporate_email as emp_email,
-        u.corporate_mobile_no as emp_cell,
-        u.job_title as post_des,
-        u.department,
-        u.status as emp_status,
-        u.profile_image,
-        u.description,
-        u.landline_no,
-        u.local_no,
-        u."reportingToId",
-        u."isServiceApprover"
-      FROM users u
-      WHERE (
-        LOWER(u.first_name) LIKE ${searchPattern} OR
-        LOWER(u.last_name) LIKE ${searchPattern} OR
-        LOWER(u.corporate_email) LIKE ${searchPattern} OR
-        LOWER(u.employee_id) LIKE ${searchPattern}
-      )
-      AND u.status = 'active'
-      ORDER BY u.first_name ASC, u.last_name ASC
-      LIMIT ${limit}
-    `;
+    // Use Prisma operations instead of raw SQL for better connection management
+    const searchTerm = q.toLowerCase();
+    const users = await prisma.users.findMany({
+      where: {
+        AND: [
+          { emp_status: 'active' },
+          {
+            OR: [
+              { emp_fname: { contains: searchTerm, mode: 'insensitive' } },
+              { emp_lname: { contains: searchTerm, mode: 'insensitive' } },
+              { emp_email: { contains: searchTerm, mode: 'insensitive' } },
+              { emp_code: { contains: searchTerm, mode: 'insensitive' } }
+            ]
+          }
+        ]
+      },
+      select: {
+        id: true,
+        emp_code: true,
+        emp_fname: true,
+        emp_mid: true,
+        emp_lname: true,
+        emp_suffix: true,
+        emp_email: true,
+        emp_cell: true,
+        post_des: true,
+        department: true,
+        emp_status: true,
+        profile_image: true,
+        description: true,
+        landline_no: true,
+        local_no: true,
+        reportingToId: true,
+        isServiceApprover: true
+      },
+      orderBy: [
+        { emp_fname: 'asc' },
+        { emp_lname: 'asc' }
+      ],
+      take: limit
+    });
 
     return NextResponse.json({
       success: true,

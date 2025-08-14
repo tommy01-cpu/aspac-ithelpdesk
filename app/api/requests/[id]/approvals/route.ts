@@ -49,27 +49,15 @@ export async function GET(
       }
     });
 
-    // Helper: format Date to 'YYYY-MM-DD HH:mm:ss' in Asia/Manila without timezone suffix
-    const toManilaString = (d: Date) => {
-      const parts = new Intl.DateTimeFormat('en-GB', {
-        timeZone: 'Asia/Manila',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-      }).formatToParts(d);
-      const get = (type: string) => parts.find(p => p.type === type)?.value || '';
-      const dd = get('day');
-      const mm = get('month');
-      const yyyy = get('year');
-      const HH = get('hour');
-      const MM = get('minute');
-      const SS = get('second');
-      // en-GB gives dd/mm/yyyy, convert to yyyy-mm-dd
-      return `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`;
+    // Helper: format Date that's already in Philippine time (no timezone conversion needed)
+    const formatStoredPhilippineTime = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const hour = String(d.getHours()).padStart(2, '0');
+      const minute = String(d.getMinutes()).padStart(2, '0');
+      const second = String(d.getSeconds()).padStart(2, '0');
+      return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
     };
 
     // Format the approvals data
@@ -83,8 +71,8 @@ export async function GET(
         : approval.approverEmail || 'Unknown Approver',
       approverEmail: approval.approver?.emp_email || approval.approverEmail || '',
       status: approval.status,
-      sentOn: approval.sentOn ? toManilaString(approval.sentOn) : null,
-      actedOn: approval.actedOn ? toManilaString(approval.actedOn) : null,
+      sentOn: approval.sentOn ? formatStoredPhilippineTime(approval.sentOn) : null,
+      actedOn: approval.actedOn ? formatStoredPhilippineTime(approval.actedOn) : null,
       comments: approval.comments
     }));
 
@@ -144,6 +132,10 @@ export async function POST(
     }
 
     // Prepare approval data
+    // Create Philippine time by manually adjusting UTC
+    const now = new Date();
+    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+    
     const approvalData = users.map(user => ({
       requestId: requestId,
       approverId: user.userId,
@@ -151,10 +143,15 @@ export async function POST(
       name: user.name,
       approverEmail: user.email,
       status: 'pending_approval' as const,
+      createdAt: philippineTime,
     }));
 
     // Create the approvals in a transaction
     const newApprovals = await prisma.$transaction(async (tx) => {
+      // Create Philippine time by manually adjusting UTC
+      const now = new Date();
+      const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+      
       // Create all approvals
       const createdApprovals = await Promise.all(
         approvalData.map(async (data) => {
@@ -162,6 +159,9 @@ export async function POST(
             data: {
               ...data,
               status: 'pending_approval',
+              createdAt: philippineTime,
+              updatedAt: philippineTime,
+              sentOn: philippineTime,
             },
             include: {
               approver: {
@@ -173,14 +173,6 @@ export async function POST(
               }
             }
           });
-          // Force timestamps to Asia/Manila for createdAt/sentOn/updatedAt
-          await tx.$executeRaw`
-            UPDATE request_approvals
-            SET "createdAt" = (NOW() AT TIME ZONE 'Asia/Manila'),
-                "updatedAt" = (NOW() AT TIME ZONE 'Asia/Manila'),
-                "sentOn"   = (NOW() AT TIME ZONE 'Asia/Manila')
-            WHERE id = ${created.id}
-          `;
           return created;
         })
       );

@@ -95,30 +95,40 @@ function formatTo12Hour(timeStr: string) {
 
 function formatDbTimestamp(input?: string | null, opts?: { dateOnly?: boolean; timeOnly?: boolean }) {
   if (!input) return '-';
-  const s = String(input).trim();
-  const isIso = /T/.test(s); // likely UTC/offset time
-  try {
-    if (isIso) {
-      // Convert ISO to Asia/Manila
-      const date = new Date(s);
-      const dateFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: '2-digit' });
-      const timeFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true });
-      const datePart = dateFmt.format(date);
-      const timePart = timeFmt.format(date).toUpperCase();
-      if (opts?.dateOnly) return datePart || '-';
-      if (opts?.timeOnly) return timePart || '-';
-      return `${datePart} ${timePart}`;
-    }
-  } catch {}
-  // Fallback: treat as plain PHT string without conversion
-  const parts = parseDbTimestamp(s);
-  if (!parts) return '-';
-  const dateDisp = parts.dateStr ? formatMonthDayYear(parts.dateStr) : '';
-  const timeDisp = parts.timeStr ? formatTo12Hour(parts.timeStr) : '';
-  if (opts?.dateOnly) return dateDisp || '-';
-  if (opts?.timeOnly) return timeDisp || '-';
-  if (dateDisp && timeDisp) return `${dateDisp} ${timeDisp}`;
-  return dateDisp || timeDisp || '-';
+  
+  // Convert UTC timestamp to Philippine time
+  const date = new Date(input);
+  const philippineTime = date.toLocaleString('en-PH', { 
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'short', 
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+  
+  if (opts?.dateOnly) {
+    const dateOnly = date.toLocaleDateString('en-PH', { 
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: 'short', 
+      day: '2-digit'
+    });
+    return dateOnly;
+  }
+  
+  if (opts?.timeOnly) {
+    const timeOnly = date.toLocaleTimeString('en-PH', { 
+      timeZone: 'Asia/Manila',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+    return timeOnly;
+  }
+  
+  return philippineTime;
 }
 
 // Convert HTML content to plain text (for compact table cells)
@@ -1885,8 +1895,8 @@ export default function RequestViewPage() {
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">SLA Start Time</span>
                             <span className="text-sm text-gray-600">
-                              {requestData.formData?.slaStartAt
-                                ? formatDbTimestamp(String(requestData.formData.slaStartAt))
+                              {requestData.formData.slaStartAt
+                                ? formatDbTimestamp(requestData.formData.slaStartAt)
                                 : '-'}
                             </span>
                           </div>
@@ -1898,10 +1908,10 @@ export default function RequestViewPage() {
                                 : '-'}
                             </span>
                           </div>
-                          <div className="flex justify-between">
+                          {/* <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Last Update Time</span>
                             <span className="text-sm text-gray-600">{formatDbTimestamp(requestData.updatedAt)}</span>
-                          </div>
+                          </div> */}
                         </div>
                       </div>
                     </CardContent>
