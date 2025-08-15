@@ -19,10 +19,10 @@ export default function AdminSettingsPage() {
         router.push('/admin/catalog-management?tab=categories');
         break;
       case 'Service Catalog':
-        router.push('/admin/catalog-management?tab=catalog');
+        router.push('/admin/catalog-management?tab=service');
         break;
       case 'Incident Template':
-        router.push('/admin/catalog-management?tab=incidents');
+        router.push('/admin/catalog-management?tab=incident');
         break;
       case 'Service Level Agreements':
         router.push('/admin/settings/sla-management?tab=sla-service');

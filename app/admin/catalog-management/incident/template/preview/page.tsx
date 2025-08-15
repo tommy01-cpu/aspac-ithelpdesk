@@ -12,7 +12,40 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { SessionWrapper } from '@/components/session-wrapper';
+// Predefined options for special field types
+const PRIORITY_OPTIONS = [
+  'Low',
+  'Medium', 
+  'High',
+  'Top'
+];
+
+// Priority help text mapping
+const PRIORITY_HELP_TEXT: Record<string, string> = {
+  'Low': 'Affects only you as an individual',
+  'Medium': 'Affects the delivery of your services',
+  'High': 'Affects the company\'s business',
+  'Top': 'Utmost action needed as classified by Management'
+};
+
+const REQUEST_STATUS_OPTIONS = [
+  'For Approval',
+  'Cancelled',
+  'Open',
+  'On-Hold',
+  'Resolved',
+  'Closed'
+];
+
+// Mode options (predefined values for request submission mode)
+const MODE_OPTIONS = [
+  'Self-Service Portal',
+  'Phone Call',
+  'Chat',
+  'Email'
+];
+
+const REQUEST_TYPE_OPTIONS = ['Service', 'Incident'];
 
 // Dynamically import ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import('react-quill'), { 
@@ -94,23 +127,23 @@ interface FormField {
   options?: string[];
   technicianOnly: boolean;
   helpText?: string;
+  defaultValue?: string;
+  readonly?: boolean;
+  disabled?: boolean;
 }
 
 interface TemplateData {
   name: string;
   description: string;
-  category?: string;
+  category: string;
   fields: FormField[];
   selectedTemplate?: string;
-  approvalEnabled?: boolean;
-  approvalLevels?: any[];
-  approvalConfig?: any;
 }
 
 // Default template if no data is available
 const defaultTemplate: TemplateData = {
-  name: 'General Incident Report',
-  description: 'Template for reporting general incidents and issues',
+  name: 'New Incident Template',
+  description: 'Template for reporting incidents',
   category: 'General',
   fields: [
     {
@@ -124,7 +157,7 @@ const defaultTemplate: TemplateData = {
     },
     {
       id: '2',
-      type: 'richtext',
+      type: 'textarea',
       label: 'Incident Description',
       required: true,
       placeholder: 'Detailed description of the incident...',
@@ -260,25 +293,39 @@ export default function IncidentTemplatePreviewPage() {
 
       case 'select':
       case 'priority':
+        const selectOptions = (() => {
+          const lowerLabel = field.label.toLowerCase();
+          if (lowerLabel.includes('priority')) {
+            return PRIORITY_OPTIONS;
+          }
+          if (lowerLabel.includes('status')) {
+            return REQUEST_STATUS_OPTIONS;
+          }
+          if (lowerLabel.includes('mode') || lowerLabel.includes('request mode')) {
+            return MODE_OPTIONS;
+          }
+          return field.options?.map(opt => ({ value: opt.toLowerCase().replace(/\s+/g, '-'), label: opt })) || [];
+        })();
+
         return (
           <Select value={value} onValueChange={(val) => handleFieldChange(field.id, val)} disabled={disabled}>
             <SelectTrigger className={`w-full ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}>
               <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
             </SelectTrigger>
             <SelectContent>
-              {field.options?.map((option: string) => (
-                <SelectItem key={option} value={option.toLowerCase().replace(/\s+/g, '-')}>
+              {selectOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
                   {field.type === 'priority' && (
                     <div className="flex items-center gap-2">
                       <Star className={`w-3 h-3 ${
-                        option === 'Critical' ? 'text-red-500' :
-                        option === 'High' ? 'text-orange-500' :
-                        option === 'Medium' ? 'text-yellow-500' : 'text-green-500'
+                        option.label === 'Critical' ? 'text-red-500' :
+                        option.label === 'High' ? 'text-orange-500' :
+                        option.label === 'Medium' ? 'text-yellow-500' : 'text-green-500'
                       }`} />
-                      {option}
+                      {option.label}
                     </div>
                   )}
-                  {field.type !== 'priority' && option}
+                  {field.type !== 'priority' && option.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -369,6 +416,170 @@ export default function IncidentTemplatePreviewPage() {
           </div>
         );
 
+      case 'dropdown':
+        return (
+          <Select value={value} onValueChange={(val) => handleFieldChange(field.id, val)} disabled={disabled}>
+            <SelectTrigger className={`w-full ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}>
+              <SelectValue placeholder={field.placeholder || `Select ${field.label}`} />
+            </SelectTrigger>
+            <SelectContent>
+              {field.options?.map((option: string) => (
+                <SelectItem key={option} value={option.toLowerCase().replace(/\s+/g, '-')}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+
+      case 'radio':
+        return (
+          <div className={`space-y-2 ${disabled ? 'opacity-60' : ''}`}>
+            {field.options?.map((option: string, index: number) => (
+              <div key={index} className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  name={field.id}
+                  value={option}
+                  checked={value === option}
+                  onChange={(e) => handleFieldChange(field.id, e.target.value)}
+                  disabled={disabled}
+                  className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300"
+                />
+                <Label className={`text-sm ${disabled ? 'text-gray-400' : 'text-slate-700'}`}>{option}</Label>
+              </div>
+            ))}
+          </div>
+        );
+
+      case 'checkbox':
+        if (field.options && field.options.length > 0) {
+          // Multiple checkboxes
+          return (
+            <div className={`space-y-2 ${disabled ? 'opacity-60' : ''}`}>
+              {field.options.map((option: string, index: number) => (
+                <div key={index} className="flex items-center space-x-2">
+                  <Checkbox 
+                    id={`${field.id}-${index}`}
+                    checked={Array.isArray(value) && value.includes(option)}
+                    onCheckedChange={(checked) => {
+                      if (disabled) return;
+                      const currentValues = Array.isArray(value) ? value : [];
+                      if (checked) {
+                        handleFieldChange(field.id, [...currentValues, option]);
+                      } else {
+                        handleFieldChange(field.id, currentValues.filter(v => v !== option));
+                      }
+                    }}
+                    disabled={disabled}
+                  />
+                  <Label htmlFor={`${field.id}-${index}`} className={`text-sm ${disabled ? 'text-gray-400' : 'text-slate-700'}`}>{option}</Label>
+                </div>
+              ))}
+            </div>
+          );
+        } else {
+          // Single checkbox
+          return (
+            <div className={`flex items-center space-x-2 ${disabled ? 'opacity-60' : ''}`}>
+              <Checkbox 
+                id={field.id}
+                checked={value === true || value === 'true'}
+                onCheckedChange={(checked) => {
+                  if (disabled) return;
+                  handleFieldChange(field.id, checked);
+                }}
+                disabled={disabled}
+              />
+              <Label htmlFor={field.id} className={`text-sm ${disabled ? 'text-gray-400' : 'text-slate-700'}`}>{field.label}</Label>
+            </div>
+          );
+        }
+
+      case 'url':
+        return (
+          <Input
+            type="url"
+            placeholder={field.placeholder}
+            value={value}
+            onChange={(e) => handleFieldChange(field.id, e.target.value)}
+            disabled={disabled}
+            className={`w-full ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}
+          />
+        );
+
+      case 'datetime':
+      case 'datetime-local':
+        return (
+          <Input
+            type="datetime-local"
+            value={value}
+            onChange={(e) => handleFieldChange(field.id, e.target.value)}
+            disabled={disabled}
+            className={`w-full ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}
+          />
+        );
+
+      case 'image':
+        return (
+          <div className={`border-2 border-dashed ${disabled ? 'border-gray-300 bg-gray-100 opacity-60' : 'border-slate-300 hover:border-slate-400'} rounded-lg p-6 text-center transition-colors ${disabled ? 'cursor-not-allowed' : ''}`}>
+            <Upload className={`w-8 h-8 ${disabled ? 'text-gray-400' : 'text-slate-400'} mx-auto mb-2`} />
+            <p className={`text-sm ${disabled ? 'text-gray-400' : 'text-slate-600'} mb-2`}>
+              {disabled ? 'Image upload disabled' : 'Drop images here or click to browse'}
+            </p>
+            <Button variant="outline" size="sm" disabled={disabled}>
+              Choose Images
+            </Button>
+          </div>
+        );
+
+      case 'category':
+        return (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+            <Badge variant="secondary" className="bg-red-100 text-red-800 border-red-200">
+              Category: {templateData?.category || 'General'}
+            </Badge>
+          </div>
+        );
+
+      case 'request_type':
+        return (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+            <Badge variant="secondary" className="bg-red-100 text-red-800 border-red-200">
+              Request Type: Incident
+            </Badge>
+          </div>
+        );
+
+      case 'user_info':
+        return (
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
+            <div className="space-y-1 text-sm text-gray-600">
+              <div><strong>Name:</strong> [Current User Name]</div>
+              <div><strong>Email:</strong> [Current User Email]</div>
+              <div><strong>Department:</strong> [Current User Department]</div>
+            </div>
+          </div>
+        );
+
+      case 'auto_increment':
+        return (
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
+            <span className="text-sm text-gray-600">
+              Auto-generated: #{field.defaultValue || 'XXXX'}
+            </span>
+          </div>
+        );
+
+      case 'hidden':
+        return (
+          <div className="p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+            <span className="text-xs text-yellow-700">
+              Hidden field: {field.label} (not visible to users)
+            </span>
+          </div>
+        );
+
       default:
         return (
           <Input
@@ -428,12 +639,12 @@ export default function IncidentTemplatePreviewPage() {
         
         .rich-text-editor .ql-toolbar button:hover {
           background-color: #e2e8f0;
-          color: #3b82f6;
+          color: #ef4444;
         }
         
         .rich-text-editor .ql-toolbar button.ql-active {
-          background-color: #dbeafe;
-          color: #3b82f6;
+          background-color: #fef2f2;
+          color: #ef4444;
         }
         
         /* Icon Styling */
@@ -524,14 +735,14 @@ export default function IncidentTemplatePreviewPage() {
               <div className="flex items-center gap-4">
                 <Button
                   variant="ghost"
-                  onClick={() => router.push('/admin/incident-template/template/builder')}
+                  onClick={() => router.push('/admin/catalog-management/incident/template/builder')}
                   className="text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Back to Builder
                 </Button>
                 <div>
-                  <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">Incident Template Preview</h1>
+                  <h1 className="text-xl font-bold bg-gradient-to-r from-red-600 to-orange-600 bg-clip-text text-transparent">Incident Template Preview</h1>
                   <p className="text-xs text-gray-600">{templateData.name}</p>
                 </div>
               </div>
@@ -551,7 +762,7 @@ export default function IncidentTemplatePreviewPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setCurrentView('user')}
-                    className={`px-4 ${currentView === 'user' ? 'bg-blue-500 text-white hover:bg-blue-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}`}
+                    className={`px-4 ${currentView === 'user' ? 'bg-red-500 text-white hover:bg-red-600' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}`}
                   >
                     <User className="w-4 h-4 mr-2" />
                     Requester View
@@ -563,7 +774,7 @@ export default function IncidentTemplatePreviewPage() {
                   onClick={() => {
                     // Save current template data for editing
                     localStorage.setItem('editTemplate', JSON.stringify(templateData));
-                    router.push('/admin/incident-template/template/builder');
+                    router.push('/admin/catalog-management/incident/template/builder');
                   }}
                   className="border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                 >
@@ -605,7 +816,7 @@ export default function IncidentTemplatePreviewPage() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <Badge className={currentView === 'user' ? 'bg-blue-500 text-white' : 'bg-slate-600 text-white'}>
+                  <Badge className={currentView === 'user' ? 'bg-red-500 text-white' : 'bg-slate-600 text-white'}>
                     {currentView === 'user' ? (
                       <>
                         <User className="w-3 h-3 mr-1" />
@@ -686,7 +897,7 @@ export default function IncidentTemplatePreviewPage() {
                               Technician Only
                             </Badge>
                           ) : (
-                            <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700">
+                            <Badge variant="secondary" className="text-xs bg-red-100 text-red-700">
                               User Field
                             </Badge>
                           )}

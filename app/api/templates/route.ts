@@ -190,6 +190,21 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // Automatically create an IncidentCatalogItem for incident templates
+      if (type === 'incident' && categoryId) {
+        await tx.incidentCatalogItem.create({
+          data: {
+            name: name,
+            description: description || `Incident template: ${name}`,
+            categoryId: categoryId,
+            templateId: template.id,
+            isActive: isActive !== undefined ? isActive : false, // Use same status as template
+            createdBy: parseInt(session.user.id),
+            updatedBy: parseInt(session.user.id),
+          },
+        });
+      }
+
       return template;
     });
 
@@ -294,6 +309,25 @@ export async function PUT(req: NextRequest) {
             data: {
               name: name,
               description: description || `Service template: ${name}`,
+              isActive: isActive !== undefined ? isActive : false, // Sync status with template
+              updatedBy: parseInt(session.user.id),
+            },
+          });
+        }
+      }
+
+      // Update corresponding IncidentCatalogItem if it exists for incident templates
+      if (type === 'incident') {
+        const existingCatalogItem = await tx.incidentCatalogItem.findFirst({
+          where: { templateId: parseInt(id) },
+        });
+
+        if (existingCatalogItem) {
+          await tx.incidentCatalogItem.update({
+            where: { id: existingCatalogItem.id },
+            data: {
+              name: name,
+              description: description || `Incident template: ${name}`,
               isActive: isActive !== undefined ? isActive : false, // Sync status with template
               updatedBy: parseInt(session.user.id),
             },

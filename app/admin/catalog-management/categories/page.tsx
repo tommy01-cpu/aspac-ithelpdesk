@@ -588,7 +588,7 @@ export default function ServiceCategoriesTab() {
               </th>
               <th className="text-left p-4 font-medium text-slate-900">Category Name</th>
               <th className="text-left p-4 font-medium text-slate-900">Description</th>
-              <th className="text-left p-4 font-medium text-slate-900">Services</th>
+              <th className="text-left p-4 font-medium text-slate-900">Template Count</th>
               <th className="text-left p-4 font-medium text-slate-900">Status</th>
               <th className="text-left p-4 font-medium text-slate-900">Created</th>
               <th className="text-left p-4 font-medium text-slate-900">Actions</th>

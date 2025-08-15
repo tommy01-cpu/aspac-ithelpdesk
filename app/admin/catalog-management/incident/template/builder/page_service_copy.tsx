@@ -6,7 +6,7 @@ import {
   ArrowLeft, Save, Eye, Settings, Plus, Trash2, Edit3, Edit,
   Type, Hash, Calendar, Clock, FileText, CheckSquare, 
   List, Upload, Users, Mail, Phone, MapPin, Star,
-  ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, X, User, Check, AlertCircle
+  ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, X, User, Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,7 +70,7 @@ const ReactQuill = dynamic(
   }
 );
 
-// Field types for incident templates with predefined options
+// Field types for service templates with predefined options
 const fieldTypes = [
   // Default/System Fields (ordered as they appear in default fields - 13 total)
   { id: 'name_text', name: 'Name/Text Input', icon: Type, description: 'Single line text input', color: 'bg-blue-100 text-blue-600', actualType: 'text' },
@@ -262,7 +262,7 @@ interface SupportGroupAssignment {
   priority: number;
 }
 
-interface IncidentTemplate {
+interface ServiceTemplate {
   id: string;
   name: string;
   description: string;
@@ -275,10 +275,10 @@ interface IncidentTemplate {
 }
 
 // Default template configuration
-const TEMPLATE_PRESETS: Record<string, Partial<IncidentTemplate>> = {
-  'general-incident': {
+const TEMPLATE_PRESETS: Record<string, Partial<ServiceTemplate>> = {
+  'general-service': {
     name: 'Default',
-    description: 'Standard incident report template with common fields',
+    description: 'Standard service request template with common fields',
     category: 'template',
     fields: [
       {
@@ -331,7 +331,7 @@ Top - utmost action needed as classified by Management`,
       technicianOnly: true,
       readonly: true,
       disabled: true,
-      defaultValue: 'Incident'
+      defaultValue: 'Service'
     },
     {
       id: '5',
@@ -434,23 +434,23 @@ Top - utmost action needed as classified by Management`,
   }
 };
 
-export default function IncidentTemplateBuilderPage() {
+export default function ServiceTemplateBuilderPage() {
   const router = useRouter();
   
   // Debug URL parameters at component load
   console.log('Component loaded with URL:', typeof window !== 'undefined' ? window.location.href : 'SSR');
   
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
-  const [templateName, setTemplateName] = useState('New Incident Template');
+  const [templateName, setTemplateName] = useState('New Service Template');
   const [templateDescription, setTemplateDescription] = useState('');
   const [templateIcon, setTemplateIcon] = useState<string>('');
-  const [templateIsActive, setTemplateIsActive] = useState<boolean>(true); // Template active status - default to true for incidents
+  const [templateIsActive, setTemplateIsActive] = useState<boolean>(false); // Template active status
   const [currentView, setCurrentView] = useState<'user' | 'technician'>('technician');
   const [selectedField, setSelectedField] = useState<string | null>(null);
   const [isConfigPanelOpen, setIsConfigPanelOpen] = useState(false);
   
   // Saved templates state
-  const [savedTemplates, setSavedTemplates] = useState<IncidentTemplate[]>([]);
+  const [savedTemplates, setSavedTemplates] = useState<ServiceTemplate[]>([]);
   
   // Dialog states
   const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -708,7 +708,7 @@ Top - utmost action needed as classified by Management`,
       technicianOnly: true,
       readonly: true,
       disabled: true,
-      defaultValue: 'Incident'
+      defaultValue: 'Service'
     },
     {
       id: '5',
@@ -824,7 +824,7 @@ Top - utmost action needed as classified by Management`,
     if (editTemplateData) {
       try {
         const parsedTemplate = JSON.parse(editTemplateData);
-        setTemplateName(parsedTemplate.name || 'New Incident Template');
+        setTemplateName(parsedTemplate.name || 'New Service Template');
         setTemplateDescription(parsedTemplate.description || '');
         setTemplateIcon(parsedTemplate.icon || '');
         setFormFields(parsedTemplate.fields || []);
@@ -1167,7 +1167,7 @@ Top - utmost action needed as classified by Management`,
 
   const createNewTemplate = () => {
     setSelectedTemplate('');
-    setTemplateName('New Incident Template');
+    setTemplateName('New Service Template');
     setTemplateDescription('');
     setTemplateIcon('');
     setTemplateIsActive(false); // Reset to inactive for new templates
@@ -1185,7 +1185,7 @@ Top - utmost action needed as classified by Management`,
         name: templateName,
         description: templateDescription,
         icon: templateIcon,
-        type: 'incident',
+        type: 'service',
         categoryId: selectedCategoryId,
         isActive: templateIsActive, // Use the template's active status from state
         fields: formFields,
@@ -1234,9 +1234,9 @@ Top - utmost action needed as classified by Management`,
           setCurrentTemplateId(result.id);
         }
         
-        // Redirect to incident catalog page after successful save/update
+        // Redirect to service catalog page after successful save/update
         setTimeout(() => {
-          router.push('/admin/catalog-management?tab=incident');
+          router.push('/admin/catalog-management?tab=service');
         }, 1500);
       } else {
         const error = await response.json();
@@ -1251,7 +1251,7 @@ Top - utmost action needed as classified by Management`,
   // Load saved templates from database
   const loadSavedTemplates = async () => {
     try {
-      const response = await fetch('/api/templates?type=incident');
+      const response = await fetch('/api/templates?type=service');
       if (response.ok) {
         const data = await response.json();
         setSavedTemplates(data.templates || []);
@@ -1318,7 +1318,7 @@ Top - utmost action needed as classified by Management`,
     } else if (actualFieldType === 'request_type') {
       defaultOptions = REQUEST_TYPE_OPTIONS;
       defaultPlaceholder = 'Select request type';
-      defaultValue = 'Incident'; // Incident template defaults to Incident
+      defaultValue = 'Service'; // Service template defaults to Service
       fieldLabel = 'Request Type';
     } else if (actualFieldType === 'mode') {
       defaultOptions = MODE_OPTIONS;
@@ -2073,15 +2073,15 @@ Top - utmost action needed as classified by Management` : '',
               <div className="flex items-center gap-4">
                 <Button
                   variant="ghost"
-                  onClick={() => router.push('/admin/catalog-management?tab=incident')}
+                  onClick={() => router.push('/admin/catalog-management?tab=service')}
                   className="text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Back
                 </Button>
                 <div>
-                  <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">Incident Template Builder</h1>
-                  <p className="text-xs text-gray-600">Design incident report forms</p>
+                  <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">Service Template Builder</h1>
+                  <p className="text-xs text-gray-600">Design service request forms</p>
                 </div>
               </div>
               
@@ -2127,8 +2127,8 @@ Top - utmost action needed as classified by Management` : '',
                     // Preserve current URL parameters when going to preview
                     const currentParams = new URLSearchParams(window.location.search);
                     const previewUrl = currentParams.toString() 
-                      ? `/admin/catalog-management/incident/template/preview?${currentParams.toString()}`
-                      : '/admin/catalog-management/incident/template/preview';
+                      ? `/admin/catalog-management/service/template/preview?${currentParams.toString()}`
+                      : '/admin/catalog-management/service/template/preview';
                     
                     router.push(previewUrl);
                   }}
@@ -2528,9 +2528,9 @@ Top - utmost action needed as classified by Management` : '',
                       <label className="text-sm font-medium text-slate-700 mb-2 block">Default Value</label>
                       {selectedFieldData.type === 'request_type' ? (
                         <Input
-                          value={selectedFieldData.defaultValue || 'Incident'}
+                          value={selectedFieldData.defaultValue || 'Service'}
                           disabled={true}
-                          placeholder="Incident (locked for incident templates)"
+                          placeholder="Service (locked for service templates)"
                           className="bg-gray-100 text-gray-600"
                         />
                       ) : selectedFieldData.type === 'category' ? (
@@ -3075,41 +3075,28 @@ Top - utmost action needed as classified by Management` : '',
                 </Card>
               </div>
 
-              {/* Template Configuration - Incident Template Info & Support Groups */}
+              {/* Service Configuration - SLA Assignment & Support Groups */}
               <div className="col-span-12">
                 <Card className="bg-white/90 backdrop-blur-sm shadow-sm border border-slate-200/60">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-lg font-semibold text-slate-700 flex items-center gap-2">
                       <Settings className="w-5 h-5" />
-                      Template Configuration
+                      Service Configuration
                     </CardTitle>
                     <p className="text-sm text-gray-600 mt-1">
-                      Incident template configuration and assignment settings
+                      Configure SLA assignment and support group settings for service templates
                     </p>
                   </CardHeader>
                   
                   <CardContent className="space-y-6">
-                    {/* Incident Template SLA Information */}
-                    <Card className="bg-blue-50 border-blue-200">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-sm font-medium text-blue-700 flex items-center gap-2">
-                          <AlertCircle className="w-4 h-4" />
-                          SLA Assignment for Incident Templates
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-sm text-blue-600 space-y-2">
-                          <p>For incident templates, SLA is automatically determined by the <strong>Priority</strong> field.</p>
-                          <p>Configure priority-based SLA mappings in the SLA management settings to automatically assign SLAs based on incident priority levels (Low, Medium, High, Critical).</p>
-                          <div className="mt-3 p-3 bg-blue-100 rounded-lg">
-                            <p className="text-xs text-blue-700">
-                              <strong>How it works:</strong> When an incident is created with a specific priority, 
-                              the system automatically assigns the corresponding SLA incident configuration based on the priority-to-SLA mappings you've configured.
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    {/* SLA Assignment Section for Service Templates */}
+                    <div>
+                      <SLAAssignment
+                        templateType={templateType}
+                        selectedSLAId={selectedSLAId ?? undefined}
+                        onSLAChange={setSelectedSLAId}
+                      />
+                    </div>
 
                     {/* Support Group Assignment Section */}
                     <div>
@@ -3191,7 +3178,7 @@ Top - utmost action needed as classified by Management` : '',
                         {/* Submit Button */}
                         <div className="pt-6 border-t border-slate-200">
                           <Button className="w-full bg-blue-600 hover:bg-blue-700 py-3 text-base" disabled>
-                            Submit Incident Report
+                            Submit Service Request
                           </Button>
                         </div>
                       </div>

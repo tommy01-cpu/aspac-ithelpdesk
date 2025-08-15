@@ -19,10 +19,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     const { fcr = false, closureCode = '', closureComments = '', attachmentIds = [] } = await request.json().catch(() => ({}));
 
-    // Identify acting technician
+    // Check if user is technician from session (which is based on technicians table)
+    if (!session.user.isTechnician) {
+      return NextResponse.json({ error: 'Only technicians can resolve requests' }, { status: 403 });
+    }
+
+    // Get user details for resolution metadata
     const actor = await prisma.users.findFirst({ where: { emp_email: session.user.email } });
     if (!actor) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    if (!actor.isTechnician) return NextResponse.json({ error: 'Only technicians can resolve requests' }, { status: 403 });
 
     const existing = await prisma.request.findUnique({ where: { id: requestId } });
     if (!existing) return NextResponse.json({ error: 'Request not found' }, { status: 404 });

@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
             id: true,
             name: true,
             type: true,
+            icon: true,
           },
         },
         creator: {
@@ -175,6 +176,7 @@ export async function POST(req: NextRequest) {
             id: true,
             name: true,
             type: true,
+            icon: true,
           },
         },
         creator: {

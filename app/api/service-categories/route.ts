@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '25');
     const search = searchParams.get('search') || '';
+    const type = searchParams.get('type'); // 'service' or 'incident'
     const skip = (page - 1) * limit;
 
     // Build where clause for search
@@ -59,10 +60,25 @@ export async function GET(req: NextRequest) {
     const pages = Math.ceil(total / limit);
 
     return NextResponse.json({
-      categories: categories.map(category => ({
-        ...category,
-        serviceCount: category._count.serviceCatalogItems + category._count.incidentCatalogItems,
-      })),
+      categories: categories.map(category => {
+        if (type === 'incident') {
+          return {
+            ...category,
+            incidentCount: category._count.incidentCatalogItems,
+          };
+        } else if (type === 'service') {
+          return {
+            ...category,
+            serviceCount: category._count.serviceCatalogItems,
+          };
+        } else {
+          // Default: return combined count for backward compatibility
+          return {
+            ...category,
+            serviceCount: category._count.serviceCatalogItems + category._count.incidentCatalogItems,
+          };
+        }
+      }),
       pagination: {
         page,
         limit,

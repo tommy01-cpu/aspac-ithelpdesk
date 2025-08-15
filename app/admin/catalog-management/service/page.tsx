@@ -99,6 +99,7 @@ export default function ServiceCatalogTab() {
       const params = new URLSearchParams({
         page: page.toString(),
         limit: limit.toString(),
+        type: 'service', // Specify that we want service-specific data
         ...(search && { search })
       });
 

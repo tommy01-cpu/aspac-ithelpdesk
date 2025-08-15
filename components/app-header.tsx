@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Search, Bell, Settings, User, LogOut, KeyRound } from "lucide-react";
+import { Search, Bell, Settings, User, LogOut, KeyRound, ChevronDown } from "lucide-react";
 import { cn } from "../lib/utils";
 
 export default function AppHeader() {
@@ -172,18 +172,35 @@ export default function AppHeader() {
                   Home
                 </Button>
               </Link>
-              <Link href="/users?tab=requests">
+              
+              <Link href="/users">
                 <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium">
                   Requests
                 </Button>
               </Link>
+              
               {/* Only show Technician View if user is a technician */}
               {session?.user?.isTechnician && (
-                <Link href="/technician">
-                  <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium">
-                    Technician View
-                  </Button>
-                </Link>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium flex items-center gap-1">
+                      Technician View
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem asChild>
+                      <Link href="/technician/dashboard" className="w-full">
+                        Dashboard
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/technician/requests" className="w-full">
+                        All Requests
+                      </Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               
               {/* Only show Admin View if user is an admin */}
