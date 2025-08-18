@@ -81,6 +81,12 @@ export async function GET(request: NextRequest) {
     const transformedTechnicians = technicians.map(tech => ({
       id: tech.id.toString(),
       userId: tech.user.id,
+      // Add proper display fields for the dropdown
+      displayName: `${tech.user.emp_fname || ''} ${tech.user.emp_lname || ''}`.trim(),
+      employeeId: tech.user.emp_code,
+      department: {
+        name: tech.user.department
+      },
       // Include ALL user information from users table with new fields
       user: {
         id: tech.user.id,
@@ -218,6 +224,12 @@ export async function POST(request: NextRequest) {
       technician: {
         id: technician.id.toString(),
         userId: technician.user.id,
+        // Add proper display fields for the dropdown
+        displayName: `${technician.user.emp_fname || ''} ${technician.user.emp_lname || ''}`.trim(),
+        employeeId: technician.user.emp_code,
+        department: {
+          name: technician.user.department
+        },
         // Include ALL user information from users table
         user: {
           id: technician.user.id,

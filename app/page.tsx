@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Search, AlertCircle, Plus, Lightbulb, Bell, Settings, User, Megaphone, ChevronRight, TrendingUp, Clock, CheckCircle, LogOut } from 'lucide-react';
+import { Search, AlertCircle, Plus, Lightbulb, Bell, Settings, User, Megaphone, ChevronRight, TrendingUp, Clock, CheckCircle, LogOut, CheckSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,6 +23,7 @@ export default function Home() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [imgError, setImgError] = useState(false);
+  const [approvalCount, setApprovalCount] = useState(0);
   const [requestStats, setRequestStats] = useState([
     { 
       title: 'Need Clarification', 
@@ -62,6 +63,7 @@ export default function Home() {
   useEffect(() => {
     if (session?.user) {
       fetchRequestStats();
+      fetchApprovalCount();
     }
   }, [session]);
 
@@ -129,7 +131,20 @@ export default function Home() {
     }
   };
 
-  const quickActions = [
+  const fetchApprovalCount = async () => {
+    try {
+      const response = await fetch('/api/approvals/count');
+      if (response.ok) {
+        const data = await response.json();
+        setApprovalCount(data.count || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching approval count:', error);
+      setApprovalCount(0);
+    }
+  };
+
+  const baseQuickActions = [
     {
       title: 'Request Incident',
       description: 'Submit a technical problem or bug report',
@@ -137,7 +152,7 @@ export default function Home() {
       color: 'from-red-500 to-rose-600',
       bgColor: 'bg-red-500/10 hover:bg-red-500/20',
       iconColor: 'text-red-600',
-      action: () => router.push('/users?tab=incident')
+      action: () => router.push('/users/template?tab=incident')
     },
     {
       title: 'Request a Service',
@@ -146,10 +161,26 @@ export default function Home() {
       color: 'from-blue-500 to-indigo-600',
       bgColor: 'bg-blue-500/10 hover:bg-blue-500/20',
       iconColor: 'text-blue-600',
-      action: () => router.push('/users?tab=service')
-    },
-   
+      action: () => router.push('/users/template?tab=service')
+    }
   ];
+
+  // Conditionally add the "For Approvals" action if user has pending approvals
+  const quickActions = approvalCount > 0 
+    ? [
+        ...baseQuickActions,
+        {
+          title: 'For Approvals',
+          description: `Manage and review ${approvalCount} approval request${approvalCount !== 1 ? 's' : ''}`,
+          icon: CheckSquare,
+          color: 'from-amber-500 to-amber-600',
+          bgColor: 'bg-amber-500/10 hover:bg-amber-500/20',
+          iconColor: 'text-amber-600',
+          action: () => router.push('/users/approvals'),
+          badge: approvalCount
+        }
+      ]
+    : baseQuickActions;
 
   const handleSignOut = () => {
     signOut({ callbackUrl: '/login' });
@@ -203,14 +234,19 @@ export default function Home() {
 
               {/* Quick Actions */}
               <div className="flex justify-center">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+                <div className={`grid grid-cols-1 ${quickActions.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-6 max-w-4xl mx-auto`}>
                   {quickActions.map((action, index) => (
                     <Card 
                       key={index} 
-                      className="bg-white/10 backdrop-blur-xl border-white/20 hover:bg-white/20 transition-all duration-300 cursor-pointer group"
+                      className="bg-white/10 backdrop-blur-xl border-white/20 hover:bg-white/20 transition-all duration-300 cursor-pointer group relative"
                       onClick={action.action}
                     >
                     <CardContent className="p-6">
+                      {action.badge && (
+                        <Badge className="absolute -top-2 -right-2 bg-amber-500 text-white border-2 border-white min-w-[24px] h-6 flex items-center justify-center text-xs font-bold">
+                          {action.badge}
+                        </Badge>
+                      )}
                       <div className={`w-12 h-12 ${action.bgColor} rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300`}>
                         <action.icon className={`h-6 w-6 ${action.iconColor}`} />
                       </div>

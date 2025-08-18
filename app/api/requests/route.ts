@@ -57,6 +57,26 @@ export async function GET(request: Request) {
       where: {
         userId: parseInt(session.user.id),
       },
+      include: {
+        approvals: {
+          orderBy: {
+            level: 'asc'
+          },
+          select: {
+            id: true,
+            level: true,
+            name: true,
+            status: true,
+            approverId: true,
+            approverName: true,
+            approverEmail: true,
+            sentOn: true,
+            actedOn: true,
+            comments: true,
+            isAutoApproval: true
+          }
+        }
+      },
       orderBy: {
         createdAt: 'desc',
       },
@@ -64,9 +84,105 @@ export async function GET(request: Request) {
       skip,
     });
 
+    // Enhance requests with template information and resolve technician/requester details
+    const enhancedRequestsWithTemplates = await Promise.all(
+      requests.map(async (request) => {
+        let templateDetails = null;
+        let assignedTechnician = null;
+        let requesterDetails = null;
+        
+        try {
+          // Fetch template details for tooltip
+          const template = await prisma.template.findUnique({
+            where: { id: parseInt(request.templateId) },
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              fields: true
+            }
+          });
+          
+          if (template) {
+            templateDetails = template;
+          }
+          
+          const formData = request.formData as any;
+          
+          // Resolve assigned technician from assignedTechnicianId only (ignore field 7 as it's requester ID)
+          let technicianUserId = null;
+          if (formData?.assignedTechnicianId) {
+            technicianUserId = parseInt(formData.assignedTechnicianId);
+          }
+          // Note: We don't use field 7 as it contains the requester ID, not technician ID
+          
+          if (technicianUserId && !isNaN(technicianUserId)) {
+            const technician = await prisma.technician.findFirst({
+              where: { userId: technicianUserId },
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    emp_fname: true,
+                    emp_lname: true,
+                    emp_email: true,
+                    department: true
+                  }
+                }
+              }
+            });
+            
+            if (technician) {
+              assignedTechnician = {
+                id: technician.id,
+                userId: technician.userId,
+                displayName: technician.displayName,
+                fullName: `${technician.user.emp_fname} ${technician.user.emp_lname}`,
+                email: technician.user.emp_email,
+                department: technician.user.department
+              };
+            }
+          }
+          
+          // Get requester details from the user who created the request
+          const requesterUser = await prisma.users.findUnique({
+            where: { id: request.userId },
+            select: {
+              id: true,
+              emp_fname: true,
+              emp_lname: true,
+              emp_email: true,
+              department: true,
+              emp_code: true
+            }
+          });
+          
+          if (requesterUser) {
+            requesterDetails = {
+              id: requesterUser.id,
+              fullName: `${requesterUser.emp_fname} ${requesterUser.emp_lname}`,
+              email: requesterUser.emp_email,
+              department: requesterUser.department,
+              employeeCode: requesterUser.emp_code
+            };
+          }
+          
+        } catch (error) {
+          console.error('Error fetching details for request', request.id, error);
+        }
+        
+        return {
+          ...request,
+          template: templateDetails,
+          assignedTechnician,
+          requesterDetails
+        };
+      })
+    );
+
     // Enhance requests with service/template status information
     const enhancedRequests = await Promise.all(
-      requests.map(async (request) => {
+      enhancedRequestsWithTemplates.map(async (request) => {
         let serviceStatus = 'active';
         let templateExists = false;
         
@@ -144,9 +260,20 @@ export async function POST(request: Request) {
     }
 
     const data = await request.json();
-    const { templateId, templateName, type, formData, attachments } = data;
+    const { templateId, templateName, type, formData, attachments, selectedUserId } = data;
 
-    console.log('Creating request with data:', { templateId, templateName, type, formData });
+    console.log('Creating request with data:', { templateId, templateName, type, formData, selectedUserId });
+
+    // Determine the actual user ID for the request
+    // If a technician has selected a specific user, use that; otherwise use the logged-in user
+    let actualUserId = parseInt(session.user.id);
+    
+    if (selectedUserId && session.user.isTechnician) {
+      actualUserId = parseInt(selectedUserId);
+      console.log('Technician creating request for user ID:', actualUserId);
+    } else {
+      console.log('Creating request for logged-in user ID:', actualUserId);
+    }
 
     // Get the proper status and priority from formData, with proper defaults
     // Priority should default to 'low' (not 'medium') and status should default to 'for_approval' (not 'open')
@@ -173,7 +300,7 @@ export async function POST(request: Request) {
 
     // Fetch user details for automatic approver assignment
     const requestUser = await prisma.users.findUnique({
-      where: { id: parseInt(session.user.id) },
+      where: { id: actualUserId }, // Use the determined user ID
       select: {
         id: true,
         emp_fname: true,
@@ -240,7 +367,7 @@ export async function POST(request: Request) {
         type,
         status: requestStatus,
         priority: requestPriority,
-        userId: parseInt(session.user.id),
+        userId: actualUserId, // Use the determined user ID
         formData: formData,
         attachments: attachments || [],
         createdAt: philippineTime,
@@ -252,12 +379,22 @@ export async function POST(request: Request) {
 
     // 📝 STANDARD HISTORY ENTRY 1: Request Created (Priority 1)
     if (requestUser) {
+      let actorName = `${requestUser.emp_fname} ${requestUser.emp_lname}`;
+      let details = `${requestUser.emp_fname} ${requestUser.emp_lname}`;
+      
+      // If technician created on behalf of someone else, update the details
+      if (selectedUserId && session.user.isTechnician && actualUserId !== parseInt(session.user.id)) {
+        const technicianName = session.user.name || 'Technician';
+        details = `${technicianName} created request on behalf of ${requestUser.emp_fname} ${requestUser.emp_lname}`;
+        console.log('Technician submission: Request created by', technicianName, 'for', actorName);
+      }
+      
       await addHistory(prisma as any, {
         requestId: newRequest.id,
         action: "Created",
-        actorName: `${requestUser.emp_fname} ${requestUser.emp_lname}`,
+        actorName: actorName,
         actorType: "user",
-        details: `${requestUser.emp_fname} ${requestUser.emp_lname}`,
+        details: details,
         actorId: requestUser.id,
       });
       console.log('✅ Created history entry: Request Created');

@@ -3014,9 +3014,7 @@ Top - utmost action needed as classified by Management` : '',
                                               >
                                                 <User className="w-4 h-4 text-slate-500" />
                                                 <span className="text-sm font-medium">{appr.name}</span>
-                                                {appr.email && (
-                                                  <span className="text-xs text-slate-500 hidden sm:inline">({appr.email})</span>
-                                                )}
+                                              
                                               </div>
                                             ))}
                                           </div>

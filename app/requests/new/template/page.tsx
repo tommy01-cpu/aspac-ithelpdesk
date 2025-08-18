@@ -15,7 +15,10 @@ import dynamic from 'next/dynamic';
 import 'react-quill/dist/quill.snow.css';
 
 // Dynamically import ReactQuill
-const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
+const ReactQuill = dynamic(
+  () => import('react-quill').then((mod) => mod.default),
+  { ssr: false }
+);
 
 // Quill styles
 const quillStyles = `

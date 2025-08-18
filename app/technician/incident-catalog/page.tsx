@@ -17,7 +17,7 @@ interface IncidentCatalogItem {
   templateId?: number;
   templateName?: string;
   template_icon?: string;
-  priority: 'Low' | 'Medium' | 'High' | 'Critical';
+  priority: 'Low' | 'Medium' | 'High' | 'Top';
   isActive: boolean;
   usageCount: number;
   avgResolutionTime?: string;
@@ -195,7 +195,7 @@ export default function IncidentCatalogTab() {
 
   const handleReportIncident = (incident: IncidentCatalogItem) => {
     if (incident.templateId) {
-      router.push(`/users/request/${incident.templateId}?type=incident&incidentId=${incident.id}`);
+      router.push(`/technician/requests/${incident.templateId}?type=incident&incidentId=${incident.id}`);
     } else {
       alert('This incident type is not available for reporting at the moment.');
     }

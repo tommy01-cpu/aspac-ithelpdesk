@@ -38,8 +38,22 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid request ID' }, { status: 400 });
     }
 
-    // Check if user can access this request (either as owner or approver)
+    // Check if user can access this request (either as owner, approver, admin, or technician)
     const userId = parseInt(session.user.id);
+    const userRoles = session.user.roles || [];
+    
+    // Check if user is admin or technician
+    const isAdmin = userRoles.includes('admin') || session.user.isAdmin;
+    const isTechnician = session.user.isTechnician || false;
+    
+    console.log('🔍 API: User access check:', {
+      userId,
+      userRoles,
+      isAdmin,
+      isTechnician,
+      sessionIsTechnician: session.user.isTechnician,
+      sessionIsAdmin: session.user.isAdmin
+    });
     
     // First check if user is an approver for this request
     const approverCheck = await prisma.requestApproval.findFirst({
@@ -49,19 +63,30 @@ export async function GET(
       }
     });
 
+    // Build access control for the request query
+    let requestWhereClause: any = {
+      id: requestId
+    };
+
+    // If user is not admin or technician, restrict access to own requests or approval requests
+    if (!isAdmin && !isTechnician) {
+      console.log('📋 API: Restricting access - user is not admin or technician');
+      requestWhereClause.OR = [
+        { userId: userId }, // User's own request
+        { 
+          approvals: { 
+            some: { approverId: userId } // User is an approver
+          }
+        }
+      ];
+    } else {
+      console.log('✅ API: Full access granted - user is admin or technician');
+    }
+    // If user is admin or technician, they can view any request (no additional restrictions)
+
     // Fetch the request with comprehensive details
     const requestData = await prisma.request.findFirst({
-      where: {
-        id: requestId,
-        OR: [
-          { userId: userId }, // User's own request
-          { 
-            approvals: { 
-              some: { approverId: userId } // User is an approver
-            } 
-          }
-        ]
-      },
+      where: requestWhereClause,
       include: {
         user: {
           select: {
@@ -104,8 +129,26 @@ export async function GET(
       }
     });
 
+    console.log('🔍 API: Request query clause:', JSON.stringify(requestWhereClause, null, 2));
+
     if (!requestData) {
-      return NextResponse.json({ error: 'Request not found' }, { status: 404 });
+      console.log('❌ API: Request not found with access restrictions');
+      console.log('🔍 API: Checking if request exists at all...');
+      
+      // Check if request exists at all (without access restrictions)
+      const requestExists = await prisma.request.findFirst({
+        where: { id: requestId },
+        select: { id: true, userId: true }
+      });
+      
+      if (requestExists) {
+        console.log(`📋 API: Request ${requestId} exists but user ${userId} doesn't have access`);
+        console.log(`👤 API: Request owner: ${requestExists.userId}, Current user: ${userId}`);
+        return NextResponse.json({ error: 'Access denied to this request' }, { status: 403 });
+      } else {
+        console.log(`📋 API: Request ${requestId} does not exist`);
+        return NextResponse.json({ error: 'Request not found' }, { status: 404 });
+      }
     }
 
     console.log('🕒 Request timestamps:', {

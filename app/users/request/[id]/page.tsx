@@ -76,10 +76,13 @@ import { toast } from '@/hooks/use-toast';
 import { getStatusColor, getPriorityColor } from '@/lib/status-colors';
 
 // Dynamically import ReactQuill to avoid SSR issues
-const ReactQuill = dynamic(() => import('react-quill'), { 
-  ssr: false,
-  loading: () => <div className="h-32 bg-slate-50 rounded border animate-pulse" />
-});
+const ReactQuill = dynamic(
+  () => import('react-quill').then((mod) => mod.default),
+  { 
+    ssr: false,
+    loading: () => <div className="h-32 bg-slate-50 rounded border animate-pulse" />
+  }
+);
 
 // Format a duration in hours or minutes; templateData.slaService fields seem to be in hours.
 function formatDurationFromHours(totalHours: number): string {
@@ -304,19 +307,7 @@ const ApproverTagSelect: React.FC<ApproverTagSelectProps> = ({
           )}
         </div>
         
-        <Button
-          type="button"
-          onClick={() => {
-            if (suggestions.length > 0) {
-              addApprover(suggestions[0]);
-            }
-          }}
-          disabled={disabled || !searchInput.trim()}
-          size="sm"
-          className="bg-slate-600 hover:bg-slate-700 text-white"
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
+     
       </div>
       
       {/* Approver List Below Input */}
@@ -404,10 +395,11 @@ interface SLAData {
   timeUnit: string;
 }
 
-// Enhanced Email Tag Input Component
+// Enhanced Email Tag Input Component with User Selection
 interface EmailTagInputProps {
   emails: string[];
   onChange: (emails: string[]) => void;
+  users: any[];
   placeholder?: string;
   disabled?: boolean;
 }
@@ -415,109 +407,327 @@ interface EmailTagInputProps {
 const EmailTagInput: React.FC<EmailTagInputProps> = ({ 
   emails, 
   onChange, 
-  placeholder = 'Enter email address and press Enter or click +',
+  users,
+  placeholder = 'Enter email address or search users...',
   disabled = false 
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [error, setError] = useState('');
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showAllUsers, setShowAllUsers] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Enhanced email validation
   const validateEmail = useCallback((email: string) => {
-    // Improved regex for email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   }, []);
 
-  const addEmail = useCallback(() => {
-    const email = inputValue.trim();
-    if (!email) return;
+  // Filter user suggestions based on search input
+  useEffect(() => {
+    if (inputValue.trim()) {
+      const filtered = users
+        .filter(user => 
+          user.emp_email && // Only include users with emails
+          !emails.includes(user.emp_email) &&
+          (
+            user.emp_fname?.toLowerCase().includes(inputValue.toLowerCase()) ||
+            user.emp_lname?.toLowerCase().includes(inputValue.toLowerCase()) ||
+            user.emp_email?.toLowerCase().includes(inputValue.toLowerCase()) ||
+            user.name?.toLowerCase().includes(inputValue.toLowerCase())
+          )
+        )
+        .slice(0, 10); // Show more suggestions
+      setSuggestions(filtered);
+      setShowSuggestions(true);
+      setShowAllUsers(false); // Hide all users when searching
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, [inputValue, users, emails]);
+
+  // Get all available users (not already selected)
+  const availableUsers = users.filter(user => 
+    user.emp_email && !emails.includes(user.emp_email)
+  );
+
+  const addEmail = useCallback((email?: string) => {
+    const emailToAdd = email || inputValue.trim();
+    if (!emailToAdd) return;
     
-    if (!validateEmail(email)) {
+    if (!validateEmail(emailToAdd)) {
       setError('Please enter a valid email address');
       return;
     }
 
-    if (emails.includes(email)) {
+    if (emails.includes(emailToAdd)) {
       setError('Email already added');
       return;
     }
 
-    onChange([...emails, email]);
+    onChange([...emails, emailToAdd]);
     setInputValue('');
     setError('');
+    inputRef.current?.focus();
   }, [inputValue, emails, onChange, validateEmail]);
+
+  const addUserEmail = useCallback((user: any) => {
+    if (!user || !user.emp_email) return;
+    addEmail(user.emp_email);
+    setShowSuggestions(false);
+    setShowAllUsers(false);
+  }, [addEmail]);
 
   const handleKeyPress = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      addEmail();
+      if (suggestions.length > 0) {
+        addUserEmail(suggestions[0]);
+      } else {
+        addEmail();
+      }
     }
-  }, [addEmail]);
+  }, [addEmail, addUserEmail, suggestions]);
 
   const removeEmail = useCallback((emailToRemove: string) => {
     onChange(emails.filter(email => email !== emailToRemove));
   }, [emails, onChange]);
 
+  // Handle input focus to show all users dropdown
+  const handleInputFocus = () => {
+    // Show all users with emails when input is focused
+    const usersWithEmails = users.filter(user => user.emp_email);
+    
+    if (usersWithEmails.length > 0) {
+      setShowAllUsers(true);
+      setShowSuggestions(false);
+    }
+  };
+
+  // Handle input blur to hide dropdowns
+  const handleInputBlur = () => {
+    setTimeout(() => {
+      setShowSuggestions(false);
+      setShowAllUsers(false);
+    }, 200);
+  };
+
   return (
     <div className="space-y-3">
       {/* Email Input with + Button */}
       <div className="flex gap-2">
-        <div className="flex-1">
+        <div className="flex-1 relative">
           <Input
+            ref={inputRef}
             value={inputValue}
             onChange={(e) => {
               setInputValue(e.target.value);
-              setError(''); // Clear error when typing
+              setError('');
             }}
             onKeyPress={handleKeyPress}
+            onFocus={handleInputFocus}
+            onBlur={handleInputBlur}
             placeholder={placeholder}
             type="email"
             className="bg-white/70 border-slate-200 focus:border-slate-400"
             disabled={disabled}
           />
+
+          {/* Search Results dropdown */}
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border border-slate-200 max-h-60 overflow-auto">
+              <div className="px-3 py-2 text-xs text-slate-500 bg-slate-50 border-b">
+                Search Results ({suggestions.length})
+              </div>
+              {suggestions.map((user) => (
+                <div
+                  key={user.id}
+                  className="px-4 py-3 hover:bg-slate-50 cursor-pointer flex items-center gap-3 border-b border-slate-100 last:border-b-0"
+                  onMouseDown={() => addUserEmail(user)}
+                >
+                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                    <Mail className="h-4 w-4 text-slate-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-slate-900 truncate">
+                      {user.emp_fname || user.name} {user.emp_lname || ''}
+                    </div>
+                    <div className="text-sm text-slate-500 truncate">
+                      {user.emp_email}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* All Users dropdown */}
+          {showAllUsers && users.filter(user => user.emp_email).length > 0 && (
+            <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border border-slate-200 max-h-60 overflow-auto">
+              <div className="px-3 py-2 text-xs text-slate-500 bg-slate-50 border-b sticky top-0">
+                Select User ({users.filter(user => user.emp_email).length} users)
+              </div>
+              {users.filter(user => user.emp_email).map((user) => (
+                <div
+                  key={user.id}
+                  className={`px-4 py-3 hover:bg-slate-50 cursor-pointer flex items-center gap-3 border-b border-slate-100 last:border-b-0 ${
+                    emails.includes(user.emp_email) ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                  }`}
+                  onMouseDown={() => addUserEmail(user)}
+                >
+                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                    <Mail className="h-4 w-4 text-slate-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-slate-900 truncate">
+                      {user.emp_fname || user.name} {user.emp_lname || ''}
+                    </div>
+                    <div className="text-sm text-slate-500 truncate">
+                      {user.emp_email}
+                    </div>
+                  </div>
+                  {emails.includes(user.emp_email) && (
+                    <div className="text-blue-600 text-xs font-medium">
+                      ✓ Selected
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           {error && (
             <p className="text-red-500 text-xs mt-1">{error}</p>
           )}
         </div>
-        <Button
-          type="button"
-          onClick={addEmail}
-          disabled={disabled || !inputValue.trim()}
-          size="sm"
-          className="bg-slate-600 hover:bg-slate-700 text-white"
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
+        
+        
       </div>
       
       {/* Email List Below Input */}
       {emails.length > 0 && (
         <div className="space-y-2">
-          <p className="text-sm text-slate-600">Additional email addresses to notify about this request</p>
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+         
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 max-h-40 overflow-y-auto">
             <div className="space-y-2">
-              {emails.map((email, index) => (
-                <div 
-                  key={index} 
-                  className="flex items-center justify-between p-2 bg-white border border-gray-200 rounded"
-                >
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-slate-600" />
-                    <span className="text-sm text-slate-700">{email}</span>
+              {emails.map((email, index) => {
+                const user = users.find(u => u.emp_email === email);
+                return (
+                  <div 
+                    key={index} 
+                    className="flex items-center justify-between p-2 bg-white border border-gray-200 rounded"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Mail className="h-4 w-4 text-slate-600" />
+                      <div>
+                        <span className="text-sm text-slate-700">{email}</span>
+                        {user && (
+                          <div className="text-xs text-slate-500">
+                            {user.emp_fname || user.name} {user.emp_lname || ''}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {!disabled && (
+                      <button
+                        type="button"
+                        onClick={() => removeEmail(email)}
+                        className="text-red-500 hover:text-red-700 p-1"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
-                  {!disabled && (
-                    <button
-                      type="button"
-                      onClick={() => removeEmail(email)}
-                      className="text-red-500 hover:text-red-700 p-1"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Editable Name Select Component for Technicians
+const EditableNameSelect: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  onUserSelect?: (userId: number, userName: string) => void; // Add callback for user selection
+  users: any[];
+  disabled?: boolean;
+  required?: boolean;
+  placeholder?: string;
+}> = ({ value, onChange, onUserSelect, users, disabled = false, required = false, placeholder = "Type name or select from dropdown" }) => {
+  const [searchInput, setSearchInput] = useState(value || '');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [filteredUsers, setFilteredUsers] = useState(users);
+  
+  useEffect(() => {
+    if (searchInput) {
+      const filtered = users.filter(user => {
+        const fullName = `${user.emp_fname || ''} ${user.emp_lname || ''}`.trim().toLowerCase();
+        return fullName.includes(searchInput.toLowerCase()) ||
+               (user.emp_email || '').toLowerCase().includes(searchInput.toLowerCase()) ||
+               (user.department || '').toLowerCase().includes(searchInput.toLowerCase());
+      });
+      setFilteredUsers(filtered);
+    } else {
+      setFilteredUsers(users);
+    }
+  }, [searchInput, users]);
+  
+  useEffect(() => {
+    setSearchInput(value || '');
+  }, [value]);
+  
+  return (
+    <div className="relative">
+      <Input
+        placeholder={placeholder}
+        value={searchInput}
+        onChange={(e) => {
+          setSearchInput(e.target.value);
+          onChange(e.target.value);
+        }}
+        onFocus={() => setShowDropdown(true)}
+        onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+        disabled={disabled}
+        required={required}
+        className={`w-full bg-white/70 border-slate-200 focus:border-slate-400 ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}
+      />
+      
+      {showDropdown && !disabled && filteredUsers.length > 0 && (
+        <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border border-slate-200 max-h-60 overflow-auto">
+          {filteredUsers.slice(0, 10).map((user) => (
+            <div
+              key={user.id}
+              className="px-4 py-3 hover:bg-slate-50 cursor-pointer flex items-center gap-3 border-b border-slate-100 last:border-b-0"
+              onMouseDown={() => {
+                const userName = `${user.emp_fname || ''} ${user.emp_lname || ''}`.trim();
+                setSearchInput(userName);
+                onChange(userName);
+                // Notify parent component about user selection with ID
+                if (onUserSelect) {
+                  onUserSelect(user.id, userName);
+                }
+                setShowDropdown(false);
+              }}
+            >
+              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                <User className="h-4 w-4 text-slate-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-slate-900 truncate">
+                  {`${user.emp_fname || ''} ${user.emp_lname || ''}`.trim()}
+                </div>
+                <div className="text-sm text-slate-500 truncate">
+                  {user.department || 'No department'} • {user.emp_email || user.email}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -540,6 +750,7 @@ export default function RequestPage() {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null); // Track selected user ID for technicians
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const templateId = params?.id as string;
@@ -554,6 +765,125 @@ export default function RequestPage() {
       fetchAllUsers();
     }
   }, [templateId, session]);
+
+  // Helper function to check if current user is a technician
+  const isCurrentUserTechnician = () => {
+    console.log('🔍 Checking if user is technician...');
+    console.log('  - Session isTechnician flag:', session?.user?.isTechnician);
+    console.log('  - Session user ID:', session?.user?.id);
+    console.log('  - Session user name:', session?.user?.name);
+    console.log('  - Technicians count:', technicians.length);
+    
+    // First check session flag
+    if (session?.user?.isTechnician) {
+      console.log('✅ User is technician via session flag');
+      return true;
+    }
+    
+    // If no session flag, check if user exists in technicians table by user ID
+    if (session?.user?.id && technicians.length > 0) {
+      const sessionUserId = parseInt(session.user.id);
+      console.log('  - Parsed session user ID:', sessionUserId);
+      
+      // Log all technician records for debugging
+      console.log('  - Available technicians:', technicians.map(tech => ({
+        id: tech.id,
+        userId: tech.userId,
+        displayName: tech.displayName,
+        isActive: tech.isActive
+      })));
+      
+      const foundTechnician = technicians.find((tech: any) => 
+        tech.userId === sessionUserId && tech.isActive
+      );
+      console.log('  - Found technician record:', foundTechnician);
+      
+      if (foundTechnician) {
+        console.log('✅ User is technician via database lookup');
+        return true;
+      }
+    }
+    
+    console.log('❌ User is not a technician');
+    return false;
+  };
+
+  // Get current user technician record
+  const getCurrentUserTechnician = () => {
+    if (session?.user?.id && technicians.length > 0) {
+      const sessionUserId = parseInt(session.user.id);
+      return technicians.find((tech: any) => 
+        tech.userId === sessionUserId
+      );
+    }
+    return null;
+  };
+
+  // Auto-select current user as technician when both templateData and technicians are loaded
+  useEffect(() => {
+    if (templateData && technicians.length > 0 && session?.user?.id) {
+      const currentUserTechnician = getCurrentUserTechnician();
+      const userIsTechnician = isCurrentUserTechnician();
+      
+      console.log('🔧 Auto-select useEffect triggered:');
+      console.log('  - Session user ID:', session?.user?.id);
+      console.log('  - Technicians loaded:', technicians.length);
+      console.log('  - Current user technician record:', currentUserTechnician);
+      console.log('  - User is technician:', userIsTechnician);
+      
+      if (currentUserTechnician || userIsTechnician) {
+        // Find technician fields and auto-populate with current user
+        const technicianFields = templateData.fields?.filter((field: FormField) => field.type === 'technician') || [];
+        if (technicianFields.length > 0) {
+          setFormData(prev => {
+            const updated = { ...prev };
+            let hasUpdates = false;
+            technicianFields.forEach(field => {
+              // For technicians: always set current user, for non-technicians: set if no value exists
+              if (userIsTechnician || !updated[field.id]) {
+                if (currentUserTechnician) {
+                  updated[field.id] = currentUserTechnician.id;
+                  hasUpdates = true;
+                } else if (!userIsTechnician) {
+                  // For non-technicians, just use their name from session
+                  const userName = session?.user?.name;
+                  if (userName) {
+                    updated[field.id] = userName;
+                    hasUpdates = true;
+                  }
+                }
+              }
+            });
+            return hasUpdates ? updated : prev;
+          });
+        }
+      }
+    }
+  }, [templateData, technicians, session?.user?.id]);
+
+  // Auto-populate name fields when session becomes available
+  useEffect(() => {
+    if (templateData && session?.user?.name) {
+      const nameFields = templateData.fields?.filter((field: FormField) => 
+        field.type === 'text' && (field.label.toLowerCase().includes('name') || field.id.toLowerCase().includes('name'))
+      ) || [];
+      
+      if (nameFields.length > 0) {
+        setFormData(prev => {
+          const updated = { ...prev };
+          let hasUpdates = false;
+          
+          nameFields.forEach(field => {
+            // Always set current user's name, even if field already has a value
+            updated[field.id] = session.user.name;
+            hasUpdates = true;
+          });
+          
+          return hasUpdates ? updated : prev;
+        });
+      }
+    }
+  }, [templateData, session?.user?.name]);
 
   const fetchTemplateData = async () => {
     try {
@@ -628,10 +958,27 @@ export default function RequestPage() {
             if (field.type === 'text' && (field.label.toLowerCase().includes('name') || field.id.toLowerCase().includes('name')) && session?.user) {
               const userName = session.user.name || '';
               if (userName) {
+                // Always set the current user's name, overriding any default value
                 initialFormData[field.id] = userName;
               }
             }
           });
+          
+          // Incident-specific logic: Set status to 'open' and fetch SLA based on priority
+          if (requestType === 'incident') {
+            // Find status field and set it to 'open'
+            const statusField = template.fields.find((field: FormField) => field.type === 'status');
+            if (statusField) {
+              initialFormData[statusField.id] = 'open';
+            }
+            
+            // Fetch SLA based on priority from sla_incident table
+            const priorityField = template.fields.find((field: FormField) => field.type === 'priority');
+            if (priorityField && initialFormData[priorityField.id]) {
+              const priority = initialFormData[priorityField.id];
+              fetchIncidentSLA(priority);
+            }
+          }
         }
         setFormData(initialFormData);
       }
@@ -644,6 +991,31 @@ export default function RequestPage() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fetch incident SLA based on priority from sla_incident table
+  const fetchIncidentSLA = async (priority: string) => {
+    try {
+      const response = await fetch(`/api/sla-incident/by-priority?priority=${encodeURIComponent(priority)}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data) {
+          const incidentSla = {
+            id: data.data.id,
+            name: data.data.name,
+            description: data.data.description,
+            resolutionDays: data.data.resolutionDays,
+            resolutionHours: data.data.resolutionHours,
+            resolutionMinutes: data.data.resolutionMinutes,
+            responseTime: data.data.responseHours * 60 + data.data.responseMinutes, // Convert to minutes
+            timeUnit: 'minutes'
+          };
+          setSlaData(incidentSla);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching incident SLA:', error);
     }
   };
 
@@ -664,7 +1036,9 @@ export default function RequestPage() {
       const response = await fetch('/api/technicians?limit=100');
       if (response.ok) {
         const data = await response.json();
-        setTechnicians(data.technicians?.filter((tech: any) => tech.isActive) || []);
+        const activeTechnicians = data.technicians?.filter((tech: any) => tech.isActive) || [];
+        console.log('Fetched technicians:', activeTechnicians); // Debug log
+        setTechnicians(activeTechnicians);
       }
     } catch (error) {
       console.error('Error fetching technicians:', error);
@@ -742,6 +1116,14 @@ export default function RequestPage() {
       ...prev,
       [fieldId]: value
     }));
+
+    // For incident requests, update SLA when priority changes
+    if (requestType === 'incident' && templateData?.fields) {
+      const priorityField = templateData.fields.find((field: FormField) => field.type === 'priority');
+      if (priorityField && fieldId === priorityField.id && value) {
+        fetchIncidentSLA(value);
+      }
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -792,9 +1174,11 @@ export default function RequestPage() {
         type: templateData?.type,
         formData,
         attachments: uploadedFileData.map(f => f.originalName), // Use original file names for linking
+        selectedUserId: selectedUserId, // Include selected user ID for technician submissions
       };
 
       console.log('Submitting request:', requestData);
+      console.log('Selected user ID:', selectedUserId);
       
       // Submit to the API endpoint
       const response = await fetch('/api/requests', {
@@ -817,8 +1201,8 @@ export default function RequestPage() {
         description: `Your ${requestType} request has been submitted with ID: ${result.request?.id || 'N/A'}`,
       });
 
-      // Redirect to the requests tab instead of dashboard
-      router.push('/users?tab=requests');
+      // Redirect to the requests page
+      router.push('/users/requests');
       
     } catch (error) {
       console.error('Error submitting request:', error);
@@ -835,7 +1219,31 @@ export default function RequestPage() {
 
   const renderField = (field: FormField) => {
     const value = formData[field.id] || '';
-    const isDisabled = field.disabled || field.readonly || (field.technicianOnly && session?.user?.roles?.includes('technician') !== true);
+    const userIsTechnician = isCurrentUserTechnician();
+    
+    // Override disabled/readonly for technician fields if user is a technician
+    let isDisabled = field.disabled || field.readonly || (field.technicianOnly && !userIsTechnician);
+    
+    // Special handling for name fields when user is a technician
+    if (field.type === 'text' && 
+        (field.label.toLowerCase().includes('name') || field.id.toLowerCase().includes('name')) && 
+        userIsTechnician) {
+      // For technicians, override readonly/disabled on name fields to allow editing
+      isDisabled = false;
+      console.log('Overriding readonly/disabled for technician name field:', field.label);
+    }
+    
+    // Special handling for technician fields
+    if (field.type === 'technician') {
+      if (userIsTechnician) {
+        // If user is technician, override any readonly/disabled settings
+        isDisabled = false;
+      } else {
+        // If user is not technician, make it readonly
+        isDisabled = true;
+      }
+    }
+    
     const isRequired = field.required && !isDisabled;
 
     // Always use ApproverTagSelect for Select Approvers if type is 'input-list' and label matches
@@ -858,6 +1266,41 @@ export default function RequestPage() {
       case 'text':
       case 'email':
       case 'url':
+        // Special handling for name fields when user is a technician - show as editable Select
+        if (field.type === 'text' && 
+            (field.label.toLowerCase().includes('name') || field.id.toLowerCase().includes('name')) && 
+            userIsTechnician) {
+          console.log('=== TECHNICIAN NAME FIELD DEBUG ===');
+          console.log('Field info:', { 
+            id: field.id, 
+            type: field.type, 
+            label: field.label,
+            readonly: field.readonly,
+            disabled: field.disabled,
+            originalIsDisabled: isDisabled
+          });
+          console.log('User session:', session?.user);
+          console.log('Technicians:', technicians);
+          console.log('Is technician?', userIsTechnician);
+          console.log('===============================');
+          return (
+            <EditableNameSelect
+              value={value}
+              onChange={(val) => handleFieldChange(field.id, val)}
+              onUserSelect={(userId, userName) => {
+                // Store both the display name and user ID
+                handleFieldChange(field.id, userName);
+                setSelectedUserId(userId);
+                console.log('Technician selected user:', { userId, userName });
+              }}
+              users={allUsers}
+              disabled={false} // Always allow editing for technicians
+              required={isRequired}
+              placeholder="Type name or select from dropdown"
+            />
+          );
+        }
+        
         return (
           <Input
             placeholder={field.placeholder}
@@ -1007,6 +1450,7 @@ export default function RequestPage() {
         );
 
       case 'technician':
+        console.log('Rendering technician field, available technicians:', technicians); // Debug log
         return (
           <Select 
             value={value || ""} 
@@ -1027,17 +1471,23 @@ export default function RequestPage() {
                   </div>
                 </div>
               </SelectItem>
-              {technicians.map((tech) => (
-                <SelectItem key={tech.id} value={tech.id}>
-                  <div className="flex items-center gap-2 py-1">
-                    <User className="h-4 w-4 shrink-0 text-gray-600" />
-                    <div className="flex flex-col">
-                      <span className="font-medium leading-tight">{tech.displayName} •  {tech.employeeId} • {tech.department?.name}</span>
+              {technicians.map((tech) => {
+                console.log('Rendering technician option:', tech); // Debug log
+                return (
+                  <SelectItem key={tech.id} value={tech.id}>
+                    <div className="flex items-center gap-2 py-1">
+                      <User className="h-4 w-4 shrink-0 text-gray-600" />
+                      <div className="flex flex-col">
+                        <span className="font-medium leading-tight">
+                          {tech.displayName || `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim() || 'Unknown'} 
+                          {tech.employeeId || tech.user?.emp_code ? ` • ${tech.employeeId || tech.user?.emp_code}` : ''} 
+                          {tech.department?.name || tech.user?.department ? ` • ${tech.department?.name || tech.user?.department}` : ''}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                </SelectItem>
-
-              ))}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         );
@@ -1049,7 +1499,8 @@ export default function RequestPage() {
           <EmailTagInput
             emails={currentEmails}
             onChange={(emails) => handleFieldChange(field.id, emails)}
-            placeholder="Enter email address and press Enter or click +"
+            users={allUsers}
+            placeholder="Enter email address or search users..."
             disabled={isDisabled}
           />
         );
@@ -1129,6 +1580,43 @@ export default function RequestPage() {
             className={`w-full bg-white/70 border-slate-200 focus:border-slate-400 ${isDisabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}
           />
         );
+
+      case 'name':
+      case 'text':
+        // Check if this is a name field (either type 'name' or 'text' with 'name' in label)
+        const isNameField = field.type === 'name' || field.label.toLowerCase().includes('name');
+        
+        console.log('🔧 Rendering text/name field:', {
+          fieldId: field.id,
+          fieldType: field.type,
+          fieldLabel: field.label,
+          isNameField,
+          isTechnician: isCurrentUserTechnician()
+        });
+        
+        if (isNameField && isCurrentUserTechnician()) {
+          return (
+            <EditableNameSelect
+              value={value}
+              onChange={(val) => handleFieldChange(field.id, val)}
+              users={allUsers}
+              disabled={isDisabled}
+              required={isRequired}
+              placeholder={field.placeholder || "Enter name or search users"}
+            />
+          );
+        } else {
+          return (
+            <Input
+              placeholder={field.placeholder || (isNameField ? "Enter your name" : "Enter text")}
+              value={value}
+              onChange={(e) => handleFieldChange(field.id, e.target.value)}
+              disabled={isDisabled}
+              required={isRequired}
+              className={`w-full bg-white/70 border-slate-200 focus:border-slate-400 ${isDisabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}
+            />
+          );
+        }
 
       default:
         return (
@@ -1238,7 +1726,7 @@ export default function RequestPage() {
               <CardHeader className="bg-gradient-to-r from-purple-600 to-blue-600 text-white">
                 <CardTitle className="flex items-center gap-2">
                   <FileText className="h-5 w-5" />
-                  {requestType === 'incident' ? 'Incident Report Details' : 'Service Request Details'}
+                  {requestType === 'incident' ? 'Incident Request Details' : 'Service Request Details'}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6 p-6">
@@ -1368,12 +1856,12 @@ export default function RequestPage() {
                 {submitting ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    {requestType === 'incident' ? 'Submitting Incident Report...' : 'Submitting Service Request...'}
+                    {requestType === 'incident' ? 'Submitting Incident Request...' : 'Submitting Service Request...'}
                   </>
                 ) : (
                   <>
                     <CheckCircle className="h-4 w-4 mr-2" />
-                    {requestType === 'incident' ? 'Submit Incident Report' : 'Submit Service Request'}
+                    {requestType === 'incident' ? 'Submit Incident Request' : 'Submit Service Request'}
                   </>
                 )}
               </Button>

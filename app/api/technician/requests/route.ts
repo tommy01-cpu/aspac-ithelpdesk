@@ -55,6 +55,24 @@ export async function GET(request: Request) {
             emp_code: true,
             post_des: true
           }
+        },
+        approvals: {
+          orderBy: {
+            level: 'asc'
+          },
+          select: {
+            id: true,
+            level: true,
+            name: true,
+            status: true,
+            approverId: true,
+            approverName: true,
+            approverEmail: true,
+            sentOn: true,
+            actedOn: true,
+            comments: true,
+            isAutoApproval: true
+          }
         }
       },
       orderBy: {

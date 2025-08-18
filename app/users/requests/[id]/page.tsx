@@ -145,10 +145,13 @@ function htmlToText(html?: string | null) {
 }
 
 // Dynamically import ReactQuill to avoid SSR issues
-const ReactQuill = dynamic(() => import('react-quill'), { 
-  ssr: false,
-  loading: () => <div className="h-32 bg-slate-50 rounded border animate-pulse" />
-});
+const ReactQuill = dynamic(
+  () => import('react-quill').then((mod) => mod.default),
+  { 
+    ssr: false,
+    loading: () => <div className="h-32 bg-slate-50 rounded border animate-pulse" />
+  }
+);
 
 // Rich Text Editor Component
 interface RichTextEditorProps {
@@ -1197,6 +1200,8 @@ export default function RequestViewPage() {
           title: "Note added",
           description: "Your note has been added successfully",
         });
+    // Redirect to Approvals tab after adding a note
+    handleTabChange('approvals');
       } else {
         throw new Error('Failed to add note');
       }
@@ -1494,7 +1499,7 @@ export default function RequestViewPage() {
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  onClick={() => router.push('/users?tab=requests')} 
+                  onClick={() => router.push('/users/requests')} 
                   className="text-gray-600 hover:text-gray-900"
                 >
                   <ArrowLeft className="h-4 w-4 mr-2" />

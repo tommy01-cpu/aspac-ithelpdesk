@@ -49,10 +49,13 @@ const MODE_OPTIONS = [
 const REQUEST_TYPE_OPTIONS = ['Service', 'Incident'];
 
 // Dynamically import ReactQuill to avoid SSR issues
-const ReactQuill = dynamic(() => import('react-quill'), { 
-  ssr: false,
-  loading: () => <div className="h-32 bg-slate-50 rounded border animate-pulse" />
-});
+const ReactQuill = dynamic(
+  () => import('react-quill').then((mod) => mod.default),
+  { 
+    ssr: false,
+    loading: () => <div className="h-32 bg-slate-50 rounded border animate-pulse" />
+  }
+);
 
 // Rich Text Editor Component
 interface RichTextEditorProps {
