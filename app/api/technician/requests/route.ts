@@ -23,7 +23,7 @@ export async function GET(request: Request) {
         id: true,
         formData: true,
         status: true,
-        templateName: true
+        templateId: true
       }
     });
 

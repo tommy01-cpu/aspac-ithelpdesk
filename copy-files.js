@@ -2,11 +2,11 @@ const fs = require('fs');
 const path = require('path');
 
 // Copy request detail page
-const sourceDetail = 'app/users/requests/[id]/page.tsx';
+const sourceDetail = 'app/requests/view/[id]/page.tsx';
 const targetDetail = 'app/technician/requests/[id]/page.tsx';
 
 // Copy new template page  
-const sourceTemplate = 'app/users/requests/new/template/page.tsx';
+const sourceTemplate = 'app/requests/view/new/template/page.tsx';
 const targetTemplate = 'app/technician/requests/new/template/page.tsx';
 
 try {

@@ -4,7 +4,6 @@ import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth';
 import { getDatabaseTimestamp } from '@/lib/server-time-utils';
 import { addHistory } from '@/lib/history';
-import { calculateSLADueDate } from '@/lib/sla-calculator';
 
 // Define the status enums as constants to match the database enums
 const REQUEST_STATUS = {
@@ -28,60 +27,50 @@ async function findAvailableTechnician(templateId: string) {
   try {
     console.log('🔍 Finding available technician for templateId:', templateId);
     
-    // First, try to find support groups that support this template
-    const templateSupportGroups = await prisma.templateSupportGroup.findMany({
+    // Try to find technicians from template support groups first
+    let availableTechnicians = await prisma.technician.findMany({
       where: {
-        templateId: parseInt(templateId),
-        isActive: true
+        isActive: true,
       },
-      select: {
-        supportGroupId: true
-      }
-    });
-
-    const supportGroupIds = templateSupportGroups.map(tsg => tsg.supportGroupId);
-    console.log('📋 Template support groups:', supportGroupIds);
-
-    let templateTechnicians: any[] = [];
-
-    if (supportGroupIds.length > 0) {
-      // Find technicians in these support groups
-      const technicianMemberships = await prisma.technicianSupportGroup.findMany({
-        where: {
-          supportGroupId: {
-            in: supportGroupIds
+      include: {
+        user: {
+          select: {
+            id: true,
+            emp_fname: true,
+            emp_lname: true,
+            emp_email: true,
           }
         },
-        include: {
-          technician: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  emp_fname: true,
-                  emp_lname: true,
-                  emp_email: true,
+        supportGroups: {
+          include: {
+            supportGroup: {
+              include: {
+                templates: {
+                  where: {
+                    id: parseInt(templateId)
+                  }
                 }
               }
             }
           }
         }
-      });
+      }
+    });
 
-      templateTechnicians = technicianMemberships
-        .map(membership => membership.technician)
-        .filter(tech => tech && tech.isActive);
-    }
+    // Filter technicians who support this template
+    const templateSupportTechnicians = availableTechnicians.filter(tech => 
+      tech.supportGroups.some(sg => sg.supportGroup.templates.length > 0)
+    );
 
-    console.log(`📋 Found ${templateTechnicians.length} technicians supporting template ${templateId}`);
+    console.log(`📋 Found ${templateSupportTechnicians.length} technicians supporting template ${templateId}`);
 
     // If we found template-specific technicians, use them
-    if (templateTechnicians.length > 0) {
+    if (templateSupportTechnicians.length > 0) {
       // Simple round-robin: get the technician with the least assigned open incidents/requests
       let bestTechnician = null;
       let minActiveRequests = Infinity;
 
-      for (const tech of templateTechnicians) {
+      for (const tech of templateSupportTechnicians) {
         // Count active requests assigned to this technician
         const activeRequestsCount = await prisma.request.count({
           where: {
@@ -196,29 +185,6 @@ export async function POST(request: Request) {
       console.log('Creating request for logged-in user ID:', actualUserId);
     }
 
-    // Fetch template to get field information for priority mapping
-    const templateForFields = await prisma.template.findUnique({
-      where: { id: parseInt(templateId) },
-      select: {
-        id: true,
-        fields: true,
-      }
-    });
-
-    // Find priority field ID from template fields
-    let priorityFieldId = null;
-    if (templateForFields?.fields) {
-      try {
-        const fields = Array.isArray(templateForFields.fields) ? templateForFields.fields : JSON.parse(templateForFields.fields as string);
-        const priorityField = fields.find((field: any) => field.type === 'priority');
-        priorityFieldId = priorityField?.id;
-        console.log('🔍 Found priority field:', priorityField, 'ID:', priorityFieldId);
-      } catch (error) {
-        console.error('❌ Error parsing template fields:', error);
-        console.log('Template fields raw:', templateForFields.fields);
-      }
-    }
-
     // Incident-specific logic: Set status to open, auto-approve, and apply SLA
     let requestStatus;
     let requestPriority;
@@ -229,9 +195,7 @@ export async function POST(request: Request) {
       
       // For incidents, set status to 'open' immediately
       requestStatus = REQUEST_STATUS.OPEN;
-      // Extract priority from formData using the field ID
-      requestPriority = priorityFieldId ? formData[priorityFieldId] : formData.priority || 'medium';
-      console.log('🔍 Priority field ID:', priorityFieldId, 'Priority value:', requestPriority);
+      requestPriority = formData.priority || 'medium';
       
       console.log('🔥 Incident request - Status: open, Priority:', requestPriority);
       
@@ -251,9 +215,8 @@ export async function POST(request: Request) {
     } else {
       // For service requests, use normal workflow
       requestStatus = formData.status || REQUEST_STATUS.FOR_APPROVAL;
-      // Extract priority from formData using the field ID
-      requestPriority = priorityFieldId ? formData[priorityFieldId] : formData.priority || 'low';
-      console.log('📋 Service request - Status:', requestStatus, 'Priority (field ID', priorityFieldId + '):', requestPriority);
+      requestPriority = formData.priority || 'low';
+      console.log('📋 Service request - Status:', requestStatus, 'Priority:', requestPriority);
     }
 
     // Fetch template to get approval workflow configuration
@@ -330,78 +293,47 @@ export async function POST(request: Request) {
     });
 
     // Create the request in the database
-    // Get current time - server is already in Philippine timezone
+    // Create Philippine time by manually adjusting UTC
     const now = new Date();
-    const philippineTime = now; // Server is already in Philippine time, no conversion needed
-    console.log('🕐 Current Philippine time:', philippineTime.toString());
-    console.log('🕐 UTC equivalent:', philippineTime.toISOString());
-    
-    // Create consistent timestamp string for SLA display (same format as SLA assignment route)
-    const philippineTimeString = philippineTime.toLocaleString('en-PH', { 
-      timeZone: 'Asia/Manila',
-      year: 'numeric',
-      month: '2-digit', 
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    }).replace(/(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})/, '$3-$1-$2 $4:$5:$6');
-    
-    console.log('🕐 Philippine time string (for SLA):', philippineTimeString);
+    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
     
     // Calculate SLA due dates if incident
     let slaDueDate = null;
-    let slaHours = null;
+    let responseTime = null;
     if (type === 'incident' && slaData) {
-      const resolutionDays = slaData.resolutionDays || 0;
-      const resolutionHours = slaData.resolutionHours || 0;
-      const resolutionMinutes = slaData.resolutionMinutes || 0;
+      const resolutionMinutes = (slaData.resolutionDays || 0) * 24 * 60 + 
+                               (slaData.resolutionHours || 0) * 60 + 
+                               (slaData.resolutionMinutes || 0);
+      slaDueDate = new Date(philippineTime.getTime() + resolutionMinutes * 60 * 1000);
       
-      // Calculate total hours for display
-      const totalMinutes = resolutionDays * 24 * 60 + resolutionHours * 60 + resolutionMinutes;
-      slaHours = Math.round(totalMinutes / 60 * 100) / 100; // Round to 2 decimal places
-      
-      // Use proper SLA calculator with operational hours
-      slaDueDate = await calculateSLADueDate(philippineTime, slaHours, { 
-        useOperationalHours: true 
-      });
-      
-      console.log('⏰ SLA Due Date calculated with operational hours:', slaDueDate, 'SLA Hours:', slaHours);
+      responseTime = (slaData.responseHours || 0) * 60 + (slaData.responseMinutes || 0);
+      console.log('⏰ SLA Due Date calculated:', slaDueDate, 'Response time:', responseTime, 'minutes');
     }
     
     const newRequest = await prisma.request.create({
       data: {
         templateId: String(templateId),
+        templateName,
+        type,
         status: requestStatus,
+        priority: requestPriority,
         userId: actualUserId, // Use the determined user ID
         formData: {
           ...formData,
           ...(slaData && {
             slaId: slaData.id,
             slaName: slaData.name,
-            slaHours: slaHours?.toString(),
-            slaSource: 'incident',
-            slaDueDate: slaDueDate ? new Date(slaDueDate).toLocaleString('en-PH', { 
-              timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
-              hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-            }).replace(/(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})/, '$3-$1-$2 $4:$5:$6') : null,
-            slaStartAt: philippineTimeString,
-            assignedDate: philippineTimeString,
-            slaCalculatedAt: philippineTimeString
+            slaDueDate: slaDueDate?.toISOString(),
+            responseTime: responseTime
           })
         },
         attachments: attachments || [],
         createdAt: philippineTime,
-        updatedAt: philippineTime, // Same time as slaStartAt for perfect sync
+        updatedAt: philippineTime,
       },
     });
 
     console.log('Request created with ID:', newRequest.id);
-    console.log('🔄 Timestamp synchronization:');
-    console.log('  - Database updatedAt (Date):', philippineTime.toString());
-    console.log('  - SLA slaStartAt (String):', philippineTimeString);
-    console.log('  - Both represent the same moment in time');
 
     // 📝 STANDARD HISTORY ENTRY 1: Request Created (Priority 1)
     if (requestUser) {
@@ -468,20 +400,11 @@ export async function POST(request: Request) {
               formData: {
                 ...formData,
                 assignedTechnicianId: availableTechnician.userId,
-                assignedTechnician: availableTechnician.displayName,
-                assignedTechnicianEmail: availableTechnician.user?.emp_email,
                 ...(slaData && {
                   slaId: slaData.id,
                   slaName: slaData.name,
-                  slaHours: slaHours?.toString(),
-                  slaSource: 'incident',
-                  slaDueDate: slaDueDate ? new Date(slaDueDate).toLocaleString('en-PH', { 
-                    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
-                    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-                  }).replace(/(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})/, '$3-$1-$2 $4:$5:$6') : null,
-                  slaStartAt: philippineTimeString,
-                  assignedDate: philippineTimeString,
-                  slaCalculatedAt: philippineTimeString
+                  slaDueDate: slaDueDate?.toISOString(),
+                  responseTime: responseTime
                 })
               },
               updatedAt: philippineTime
@@ -494,7 +417,7 @@ export async function POST(request: Request) {
             action: "Auto-Assigned",
             actorName: "System",
             actorType: "system",
-            details: `Automatically assigned to ${availableTechnician.displayName}`,
+            details: `Automatically assigned to ${availableTechnician.displayName} (${availableTechnician.user.emp_fname} ${availableTechnician.user.emp_lname})`,
           });
           console.log('✅ Created history entry: Auto-Assigned to', availableTechnician.displayName);
         } else {
@@ -991,25 +914,20 @@ export async function GET(request: Request) {
     const userId = searchParams.get('userId');
     const status = searchParams.get('status');
     const type = searchParams.get('type');
-    const myRequests = searchParams.get('myRequests');
 
-    console.log('GET /api/requests - userId:', userId, 'status:', status, 'type:', type, 'myRequests:', myRequests);
+    console.log('GET /api/requests - userId:', userId, 'status:', status, 'type:', type);
 
     // Build where clause for filtering
     let whereClause: any = {};
 
-    // If myRequests=true, always filter by current user only (regardless of technician status)
-    if (myRequests === 'true') {
-      whereClause.userId = parseInt(session.user.id);
-      console.log('Filtering by current user only (myRequests=true):', session.user.id);
-    } else if (userId && session.user.isTechnician) {
-      // If userId is provided and user is technician, filter by that user
+    // If userId is provided and user is technician, filter by that user
+    // Otherwise, filter by the logged-in user's requests
+    if (userId && session.user.isTechnician) {
       whereClause.userId = parseInt(userId);
     } else if (!session.user.isTechnician) {
-      // Non-technicians can only see their own requests
       whereClause.userId = parseInt(session.user.id);
     }
-    // If no userId and user is technician and myRequests is not true, show all requests (no userId filter)
+    // If no userId and user is technician, show all requests (no userId filter)
 
     if (status) {
       whereClause.status = status;
@@ -1030,10 +948,9 @@ export async function GET(request: Request) {
             emp_fname: true,
             emp_lname: true,
             emp_email: true,
-            department: true,
           }
         },
-        approvals: {
+        requestApprovals: {
           include: {
             approver: {
               select: {
@@ -1051,7 +968,7 @@ export async function GET(request: Request) {
         }
       },
       orderBy: {
-        id: 'desc'
+        createdAt: 'desc'
       }
     });
 

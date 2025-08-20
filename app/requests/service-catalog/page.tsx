@@ -101,7 +101,7 @@ export default function ServiceCatalogTab() {
 
   const handleRequestService = (service: ServiceCatalogItem) => {
     if (service.templateId) {
-      router.push(`/technician/requests/${service.templateId}?type=service`);
+      router.push(`/requests/templateid/${service.templateId}?type=service`);
     } else {
       alert('This service is not available for request at the moment.');
     }
@@ -266,15 +266,7 @@ export default function ServiceCatalogTab() {
 
                               {/* Action Buttons */}
                               <div className="flex items-center gap-2 ml-4">
-                                {service.templateId && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => router.push(`/requests/service/preview/${service.templateId}`)}
-                                  >
-                                    Preview
-                                  </Button>
-                                )}
+                               
                                 <Button
                                   size="sm"
                                   className="bg-blue-600 hover:bg-blue-700 text-white"

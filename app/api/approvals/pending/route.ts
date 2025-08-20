@@ -89,22 +89,28 @@ export async function GET(request: NextRequest) {
     }
 
     // Format the approvals for the frontend
-    const formattedApprovals = validApprovals.map(approval => ({
-      id: approval.id,
-      requestId: approval.request.id,
-      requestTitle: approval.request.templateName || `Request #${approval.request.id}`,
-      requestType: approval.request.type || 'Request',
-      requesterName: `${approval.request.user.emp_fname} ${approval.request.user.emp_lname}`,
-      requesterEmail: approval.request.user.emp_email,
-      department: approval.request.user.department || 'Unknown',
-      createdDate: approval.request.createdAt,
-      dueDate: null,
-      priority: approval.request.priority,
-      status: approval.status,
-      level: approval.level,
-      levelName: approval.name || `Level ${approval.level}`,
-      description: (approval.request.formData as any)?.description || ''
-    }));
+    const formattedApprovals = validApprovals.map(approval => {
+      const formData = approval.request.formData as any || {};
+      // Extract priority from formData (field '2' or direct priority field)
+      const priority = formData['2'] || formData.priority || approval.request.priority || 'Medium';
+      
+      return {
+        id: approval.id,
+        requestId: approval.request.id,
+        requestTitle: approval.request.templateName || `Request #${approval.request.id}`,
+        requestType: approval.request.type || 'Request',
+        requesterName: `${approval.request.user.emp_fname} ${approval.request.user.emp_lname}`,
+        requesterEmail: approval.request.user.emp_email,
+        department: approval.request.user.department || 'Unknown',
+        createdDate: approval.request.createdAt,
+        dueDate: null,
+        priority: priority,
+        status: approval.status,
+        level: approval.level,
+        levelName: approval.name || `Level ${approval.level}`,
+        description: formData?.description || formData?.['9'] || ''
+      };
+    });
 
     // Group by requestId to avoid duplicate requests and take the first approval per request
     const uniqueApprovals = [];

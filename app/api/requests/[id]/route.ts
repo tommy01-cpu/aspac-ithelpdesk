@@ -381,7 +381,7 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { status, priority, formData } = body;
+    const { status, formData } = body;
 
     // Check if user owns the request
     const existingRequest = await prisma.request.findFirst({
@@ -404,7 +404,6 @@ export async function PUT(
       where: { id: requestId },
       data: {
         ...(status && { status }),
-        ...(priority && { priority }),
         ...(formData && { formData }),
         updatedAt: philippineTime,
       },

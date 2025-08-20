@@ -173,7 +173,7 @@ export default function AppHeader() {
                 </Button>
               </Link>
               
-              <Link href="/users/requests">
+              <Link href="/requests/view">
                 <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium">
                   Requests
                 </Button>

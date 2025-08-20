@@ -45,7 +45,8 @@ import { SessionWrapper } from '@/components/session-wrapper';
 import { toast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { getStatusColor, getApprovalStatusColor, getPriorityColor, normalizeApprovalStatus } from '@/lib/status-colors';
 import { getApiTimestamp } from '@/lib/time-utils';
 
@@ -129,6 +130,53 @@ function formatDbTimestamp(input?: string | null, opts?: { dateOnly?: boolean; t
   }
   
   return philippineTime;
+}
+
+// Enhanced timestamp formatting with shortFormat support for consistency with approval system
+function formatDbTimestampDisplay(
+  input: string | null | undefined,
+  opts?: { shortFormat?: boolean; dateOnly?: boolean }
+): string {
+  if (!input) return '-';
+  const raw = String(input).trim();
+
+  // Normalize common ISO separators but avoid actual Date parsing to prevent TZ conversion
+  const normalized = raw
+    .replace('T', ' ')
+    .replace(/Z$/, '')
+    // Drop timezone offsets like +08:00 or -0500 if present
+    .replace(/[\+\-]\d{2}:?\d{2}$/i, '');
+
+  const match = normalized.match(/(\d{4})[-\/](\d{2})[-\/](\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!match) {
+    return raw; // Fallback to raw if unknown format
+  }
+
+  const [, yStr, mStr, dStr, hhStr, mmStr] = match;
+  const year = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10); // 1-12
+  const day = parseInt(dStr, 10);
+  const hasTime = hhStr !== undefined && mmStr !== undefined;
+
+  const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthLabel = monthsShort[Math.max(0, Math.min(11, month - 1))];
+
+  const datePart = `${monthLabel} ${day}, ${year}`;
+
+  if (opts?.dateOnly || !hasTime) return datePart;
+
+  // Format time
+  const hour = parseInt(hhStr, 10);
+  const minute = parseInt(mmStr, 10);
+  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const timePart = `${hour12}:${minute.toString().padStart(2, '0')} ${ampm}`;
+
+  if (opts?.shortFormat) {
+    return `${monthLabel} ${day}, ${timePart}`;
+  }
+
+  return `${datePart}, ${timePart}`;
 }
 
 // Convert HTML content to plain text (for compact table cells)
@@ -410,6 +458,43 @@ export default function RequestViewPage() {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [loadingUsers, setLoadingUsers] = useState(false);
 
+  // Edit request states
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({
+    priority: '',
+    status: '',
+    type: '',
+    emailNotify: '',
+    technician: '',
+    template: '',
+    category: ''
+  });
+  const [availableTemplates, setAvailableTemplates] = useState<any[]>([]);
+  const [availableTechnicians, setAvailableTechnicians] = useState<any[]>([]);
+  const [availableCategories, setAvailableCategories] = useState<any[]>([]);
+  const [filteredTemplates, setFilteredTemplates] = useState<any[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
+  
+  // Email notification states (like in creation form)
+  const [emailUsers, setEmailUsers] = useState<any[]>([]);
+  const [emailSearch, setEmailSearch] = useState('');
+  const [emailSearchResults, setEmailSearchResults] = useState<any[]>([]);
+  const [emailInputValue, setEmailInputValue] = useState('');
+  
+  // Technician states (like in creation form)  
+  const [selectedTechnicianId, setSelectedTechnicianId] = useState<string>('');
+  const [technicianSearch, setTechnicianSearch] = useState('');
+  const [technicianResults, setTechnicianResults] = useState<any[]>([]);
+  const [showTechnicianDropdown, setShowTechnicianDropdown] = useState(false);
+  
+  // Template dependency states
+  const [templatePriority, setTemplatePriority] = useState('');
+  const [templateStatus, setTemplateStatus] = useState('');
+  
+  // Approval modal states
+  const [approverSearch, setApproverSearch] = useState('');
+  const [approverResults, setApproverResults] = useState<any[]>([]);
+
   const requestId = params?.id as string;
 
   // Persisted read-state helpers (avoid unread reappearing after refresh)
@@ -558,6 +643,291 @@ export default function RequestViewPage() {
       console.error('Failed to load worklogs', e);
     } finally {
       setLoadingWorkLogs(false);
+    }
+  };
+
+  // Edit functions
+  const loadCategories = async () => {
+    try {
+      const res = await fetch('/api/service-categories');
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableCategories(data.categories || []);
+      }
+    } catch (e) {
+      console.error('Failed to load categories', e);
+    }
+  };
+
+  const loadTemplates = async () => {
+    try {
+      const res = await fetch('/api/templates');
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableTemplates(data.templates || []);
+      }
+    } catch (e) {
+      console.error('Failed to load templates', e);
+    }
+  };
+
+  // Filter templates based on request type and category
+  useEffect(() => {
+    console.log('Filtering templates:', {
+      availableTemplatesCount: availableTemplates.length,
+      selectedType: editForm.type,
+      selectedCategory: editForm.category,
+      templates: availableTemplates.map(t => ({ name: t.name, type: t.type, category: t.category }))
+    });
+    
+    if (!availableTemplates.length) {
+      console.log('No available templates to filter');
+      setFilteredTemplates([]);
+      return;
+    }
+    
+    let filtered = availableTemplates.filter(template => {
+      // Filter by request type (must match) - case insensitive comparison
+      const typeMatch = template.type.toLowerCase() === editForm.type.toLowerCase();
+      console.log(`Template ${template.name}: type ${template.type} vs ${editForm.type} = ${typeMatch}`);
+      
+      // Filter by category if selected
+      let categoryMatch = true;
+      if (editForm.category) {
+        const categoryId = parseInt(editForm.category);
+        categoryMatch = template.category && (
+          template.category.id === categoryId || 
+          template.category === categoryId ||
+          template.categoryId === categoryId
+        );
+        console.log(`Template ${template.name}: category check`, {
+          templateCategory: template.category,
+          templateCategoryId: template.categoryId,
+          selectedCategoryId: categoryId,
+          match: categoryMatch
+        });
+      }
+      
+      const shouldInclude = typeMatch && categoryMatch;
+      console.log(`Template ${template.name}: final decision = ${shouldInclude}`);
+      return shouldInclude;
+    });
+    
+    console.log('Filtered templates result:', filtered.length, filtered.map(t => t.name));
+    setFilteredTemplates(filtered);
+  }, [availableTemplates, editForm.type, editForm.category]);
+
+  const loadTechnicians = async () => {
+    try {
+      const res = await fetch('/api/users/technicians');
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableTechnicians(data.users || []);
+      }
+    } catch (e) {
+      console.error('Failed to load technicians', e);
+    }
+  };
+
+  // Email search functionality (from creation form)
+  const searchEmailUsers = async (searchTerm: string) => {
+    if (!searchTerm || searchTerm.length < 2) {
+      setEmailSearchResults([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/users?search=${encodeURIComponent(searchTerm)}&limit=10`);
+      if (response.ok) {
+        const data = await response.json();
+        setEmailSearchResults(data.users || []);
+      }
+    } catch (error) {
+      console.error('Error searching users:', error);
+      setEmailSearchResults([]);
+    }
+  };
+
+  // Technician search functionality (from creation form)
+  const searchTechnicians = async (searchTerm: string) => {
+    if (!searchTerm || searchTerm.length < 2) {
+      setTechnicianResults([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/users/technicians?search=${encodeURIComponent(searchTerm)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setTechnicianResults(data.users || []);
+      }
+    } catch (error) {
+      console.error('Error searching technicians:', error);
+      setTechnicianResults([]);
+    }
+  };
+
+  // Debounced search effects
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (emailSearch) {
+        searchEmailUsers(emailSearch);
+      }
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [emailSearch]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (technicianSearch) {
+        searchTechnicians(technicianSearch);
+      }
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [technicianSearch]);
+
+  // Update priority and status when template is selected
+  useEffect(() => {
+    if (editForm.template && availableTemplates.length > 0) {
+      const selectedTemplate = availableTemplates.find(t => t.id === parseInt(editForm.template));
+      if (selectedTemplate && selectedTemplate.fields) {
+        // Find priority and status from template fields
+        const priorityField = selectedTemplate.fields.find((f: any) => f.type === 'priority');
+        const statusField = selectedTemplate.fields.find((f: any) => f.type === 'status');
+        
+        if (priorityField && priorityField.defaultValue) {
+          setTemplatePriority(priorityField.defaultValue);
+          setEditForm(prev => ({...prev, priority: priorityField.defaultValue}));
+        }
+        
+        if (statusField && statusField.defaultValue) {
+          setTemplateStatus(statusField.defaultValue);
+          setEditForm(prev => ({...prev, status: statusField.defaultValue}));
+        }
+      }
+    }
+  }, [editForm.template, availableTemplates]);
+
+  const handleEditRequest = () => {
+    // Don't open modal if data isn't loaded yet
+    if (!requestData) {
+      toast({
+        title: "Please wait",
+        description: "Request data is still loading...",
+        variant: "default"
+      });
+      return;
+    }
+
+    console.log('handleEditRequest - requestData:', requestData);
+    console.log('handleEditRequest - templateData:', templateData);
+    
+    // Initialize form with current values
+    const currentPriority = requestData?.formData?.['2'] || requestData?.formData?.priority || 'Medium';
+    
+    // Get request type from multiple possible sources
+    let currentType = 'service'; // default
+    if (requestData?.type) {
+      currentType = requestData.type;
+    } else if (requestData?.formData?.['4']) {
+      currentType = requestData.formData['4'];
+    } else if (requestData?.formData?.type) {
+      currentType = requestData.formData.type;
+    }
+    
+    console.log('handleEditRequest - detected currentType:', currentType);
+    
+    // Get category and template IDs directly from request table data
+    let currentCategory = '';
+    if ((templateData as any)?.categoryId) {
+      currentCategory = String((templateData as any).categoryId);
+    } else {
+      currentCategory = String((requestData as any)?.categoryId || '');
+    }
+    const currentTemplate = String((requestData as any)?.templateId || '');
+    
+    const currentTechnician = requestData?.formData?.assignedTechnician || '';
+    const currentEmails = requestData?.formData?.emailNotify || '';
+    
+    console.log('handleEditRequest - Setting form values:', {
+      priority: currentPriority,
+      status: requestData?.status || 'for_approval',
+      type: currentType,
+      template: currentTemplate,
+      category: currentCategory,
+      technician: currentTechnician,
+      emailNotify: currentEmails
+    });
+    
+    setEditForm({
+      priority: currentPriority,
+      status: requestData?.status || 'for_approval',
+      type: currentType,
+      emailNotify: currentEmails,
+      technician: currentTechnician,
+      template: currentTemplate,
+      category: currentCategory
+    });
+
+    // Initialize email users if they exist
+    if (currentEmails) {
+      const emailArray = currentEmails.split(',').map((email: string) => ({
+        emp_email: email.trim(),
+        emp_fname: email.trim().split('@')[0],
+        emp_lname: ''
+      }));
+      setEmailUsers(emailArray);
+    }
+
+    // Initialize technician selection
+    if (currentTechnician) {
+      setSelectedTechnicianId(currentTechnician);
+    }
+
+    setShowEditModal(true);
+    loadCategories();
+    loadTemplates();
+    loadTechnicians();
+  };
+
+  const handleSaveEdit = async () => {
+    try {
+      setSavingEdit(true);
+      
+      const res = await fetch(`/api/requests/${requestId}/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          priority: editForm.priority,
+          status: editForm.status,
+          type: editForm.type,
+          emailNotify: editForm.emailNotify,
+          technician: editForm.technician,
+          templateId: editForm.template ? parseInt(editForm.template) : null,
+          categoryId: editForm.category ? parseInt(editForm.category) : null
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to save changes');
+      }
+
+      toast({
+        title: 'Success',
+        description: 'Request updated successfully'
+      });
+
+      setShowEditModal(false);
+      await fetchRequestData(); // Refresh data
+    } catch (error) {
+      console.error('Error saving changes:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to save changes',
+        variant: 'destructive'
+      });
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -1200,8 +1570,10 @@ export default function RequestViewPage() {
           title: "Note added",
           description: "Your note has been added successfully",
         });
-    // Redirect to Approvals tab after adding a note
-    handleTabChange('approvals');
+        
+        // Refresh the entire page to ensure all data is up to date
+        // This will reload the page and stay on the current tab
+        window.location.reload();
       } else {
         throw new Error('Failed to add note');
       }
@@ -1526,23 +1898,7 @@ export default function RequestViewPage() {
                 </div>
               </div>
               
-              <div className="flex items-center gap-2">
-                <Badge 
-                  className={`${getStatusColor(requestData.status)} px-3 py-1 text-sm font-medium`}
-                  variant="outline"
-                >
-                  {requestData.status.charAt(0).toUpperCase() + requestData.status.slice(1)}
-                </Badge>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={fetchRequestData}
-                  className="border-gray-300 text-gray-700 hover:bg-gray-50"
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh
-                </Button>
-              </div>
+             
             </div>
           </div>
         </header>
@@ -1584,60 +1940,62 @@ export default function RequestViewPage() {
                       <CardTitle className="text-lg">Description</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="prose max-w-none">
-                        {(() => {
-                          // Try to find description from multiple possible field names and numbered fields
-                          const formData = requestData.formData || {};
-                          let description = null;
-                          
-                          // Check common description field names
-                          const descriptionFields = [
-                            'description', 'Description', 'details', 'Details', 
-                            'content', 'Content', 'notes', 'Notes', 'comments', 'Comments',
-                            'message', 'Message', 'problem', 'Problem', 'issue', 'Issue'
-                          ];
-                          
-                          // First check named fields
-                          for (const field of descriptionFields) {
-                            if (formData[field]) {
-                              description = formData[field];
-                              break;
+                      <div className="border rounded-lg p-4 bg-gray-50">
+                        <div className="prose max-w-none">
+                          {(() => {
+                            // Try to find description from multiple possible field names and numbered fields
+                            const formData = requestData.formData || {};
+                            let description = null;
+                            
+                            // Check common description field names
+                            const descriptionFields = [
+                              'description', 'Description', 'details', 'Details', 
+                              'content', 'Content', 'notes', 'Notes', 'comments', 'Comments',
+                              'message', 'Message', 'problem', 'Problem', 'issue', 'Issue'
+                            ];
+                            
+                            // First check named fields
+                            for (const field of descriptionFields) {
+                              if (formData[field]) {
+                                description = formData[field];
+                                break;
+                              }
                             }
-                          }
-                          
-                          // If not found, check numbered fields (like "2", "3", etc.)
-                          if (!description) {
-                            for (const [key, value] of Object.entries(formData)) {
-                              if (value && typeof value === 'string' && value.length > 10) {
-                                // Check if it's a textarea or richtext field based on content length and structure
-                                if (value.includes('\n') || value.length > 50 || /<[^>]*>/g.test(value)) {
-                                  description = value;
-                                  break;
+                            
+                            // If not found, check numbered fields (like "2", "3", etc.)
+                            if (!description) {
+                              for (const [key, value] of Object.entries(formData)) {
+                                if (value && typeof value === 'string' && value.length > 10) {
+                                  // Check if it's a textarea or richtext field based on content length and structure
+                                  if (value.includes('\n') || value.length > 50 || /<[^>]*>/g.test(value)) {
+                                    description = value;
+                                    break;
+                                  }
                                 }
                               }
                             }
-                          }
-                          
-                          if (description) {
-                            // Check if description contains HTML tags (from Quill editor)
-                            if (/<[^>]*>/g.test(description)) {
-                              return (
-                                <div 
-                                  className="text-gray-700 leading-relaxed"
-                                  dangerouslySetInnerHTML={{ __html: description }}
-                                />
-                              );
-                            } else {
-                              return (
-                                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
-                                  {description}
-                                </p>
-                              );
+                            
+                            if (description) {
+                              // Check if description contains HTML tags (from Quill editor)
+                              if (/<[^>]*>/g.test(description)) {
+                                return (
+                                  <div 
+                                    className="text-gray-700 leading-relaxed"
+                                    dangerouslySetInnerHTML={{ __html: description }}
+                                  />
+                                );
+                              } else {
+                                return (
+                                  <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
+                                    {description}
+                                  </p>
+                                );
+                              }
                             }
-                          }
-                          
-                          return <p className="text-gray-500 italic">No description provided.</p>;
-                        })()}
+                            
+                            return <p className="text-gray-500 italic">No description provided.</p>;
+                          })()}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -1704,81 +2062,83 @@ export default function RequestViewPage() {
                           <>
                             {/* Display conversations from API */}
                             {conversations.map((conversation) => (
-                              <div key={conversation.id} className="flex gap-3">
-                                <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                                  {conversation.type === 'system' ? (
-                                    <Settings className="h-4 w-4 text-gray-600" />
-                                  ) : conversation.type === 'user' ? (
-                                    <User className="h-4 w-4 text-blue-600" />
-                                  ) : (
-                                    <UserCheck className="h-4 w-4 text-green-600" />
-                                  )}
-                                </div>
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 text-sm">
-                                    <span className="font-medium">{conversation.author}</span>
-                                    <span className="text-gray-500">
-                                      {/* Keep relative for main notes which are ISO; no DB conversion applied */}
-                                      {/* If needed to be raw, switch to formatDbTimestamp */}
-                                      {formatDbTimestamp(conversation.timestamp)}
-                                    </span>
+                              <div key={conversation.id} className="border rounded-lg p-4 bg-gray-50">
+                                <div className="flex gap-3">
+                                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
+                                    {conversation.type === 'system' ? (
+                                      <Settings className="h-4 w-4 text-gray-600" />
+                                    ) : conversation.type === 'user' ? (
+                                      <User className="h-4 w-4 text-blue-600" />
+                                    ) : (
+                                      <UserCheck className="h-4 w-4 text-green-600" />
+                                    )}
                                   </div>
-                                  <div className="mt-1">
-                                    {(() => {
-                                      // Check if message contains HTML tags (from rich text editor)
-                                      const isHTML = /<[^>]*>/g.test(conversation.message);
-                                      
-                                      if (isHTML) {
-                                        return (
-                                          <div 
-                                            className="text-sm text-gray-600 prose prose-sm max-w-none"
-                                            dangerouslySetInnerHTML={{ __html: conversation.message }}
-                                          />
-                                        );
-                                      } else {
-                                        return (
-                                          <p className="text-sm text-gray-600 whitespace-pre-wrap">
-                                            {conversation.message}
-                                          </p>
-                                        );
-                                      }
-                                    })()}
-                                    {/* Display attachments if they exist */}
-                                    {conversation.attachments && conversation.attachments.length > 0 && (
-                                      <div className="mt-3 space-y-2">
-                                        <p className="text-xs font-medium text-gray-500 mb-2">Attachments:</p>
-                                        {conversation.attachments.map((attachment, index) => (
-                                          <div key={index} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg border">
-                                            <Paperclip className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                                            <div className="flex-1 min-w-0">
-                                              <p className="text-sm font-medium text-gray-900 truncate">
-                                                {typeof attachment === 'string' ? attachment : attachment.originalName}
-                                              </p>
-                                              {typeof attachment === 'object' && attachment.size && (
-                                                <p className="text-xs text-gray-500">
-                                                  {formatFileSize(attachment.size)}
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 text-sm">
+                                      <span className="font-medium">{conversation.author}</span>
+                                      <span className="text-gray-500">
+                                        {/* Keep relative for main notes which are ISO; no DB conversion applied */}
+                                        {/* If needed to be raw, switch to formatDbTimestamp */}
+                                        {formatDbTimestamp(conversation.timestamp)}
+                                      </span>
+                                    </div>
+                                    <div className="mt-1">
+                                      {(() => {
+                                        // Check if message contains HTML tags (from rich text editor)
+                                        const isHTML = /<[^>]*>/g.test(conversation.message);
+                                        
+                                        if (isHTML) {
+                                          return (
+                                            <div 
+                                              className="text-sm text-gray-600 prose prose-sm max-w-none"
+                                              dangerouslySetInnerHTML={{ __html: conversation.message }}
+                                            />
+                                          );
+                                        } else {
+                                          return (
+                                            <p className="text-sm text-gray-600 whitespace-pre-wrap">
+                                              {conversation.message}
+                                            </p>
+                                          );
+                                        }
+                                      })()}
+                                      {/* Display attachments if they exist */}
+                                      {conversation.attachments && conversation.attachments.length > 0 && (
+                                        <div className="mt-3 space-y-2">
+                                          <p className="text-xs font-medium text-gray-500 mb-2">Attachments:</p>
+                                          {conversation.attachments.map((attachment, index) => (
+                                            <div key={index} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg border">
+                                              <Paperclip className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                              <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-gray-900 truncate">
+                                                  {typeof attachment === 'string' ? attachment : attachment.originalName}
                                                 </p>
+                                                {typeof attachment === 'object' && attachment.size && (
+                                                  <p className="text-xs text-gray-500">
+                                                    {formatFileSize(attachment.size)}
+                                                  </p>
+                                                )}
+                                              </div>
+                                              {typeof attachment === 'object' && attachment.id && (
+                                                <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  onClick={() => handleDownloadAttachment(attachment.id, attachment.originalName)}
+                                                  disabled={downloading === attachment.id}
+                                                  className="h-8 w-8 p-0"
+                                                >
+                                                  {downloading === attachment.id ? (
+                                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600"></div>
+                                                  ) : (
+                                                    <Download className="h-4 w-4" />
+                                                  )}
+                                                </Button>
                                               )}
                                             </div>
-                                            {typeof attachment === 'object' && attachment.id && (
-                                              <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => handleDownloadAttachment(attachment.id, attachment.originalName)}
-                                                disabled={downloading === attachment.id}
-                                                className="h-8 w-8 p-0"
-                                              >
-                                                {downloading === attachment.id ? (
-                                                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600"></div>
-                                                ) : (
-                                                  <Download className="h-4 w-4" />
-                                                )}
-                                              </Button>
-                                            )}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -1794,7 +2154,7 @@ export default function RequestViewPage() {
                     <CardHeader>
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-lg">Properties</CardTitle>
-                        <Button variant="ghost" size="sm">
+                        <Button variant="ghost" size="sm" onClick={handleEditRequest}>
                           <Edit className="h-4 w-4" />
                           Edit
                         </Button>
@@ -1822,10 +2182,6 @@ export default function RequestViewPage() {
                             <span className="text-sm text-gray-600">-</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Asset(s)</span>
-                            <span className="text-sm text-gray-600">-</span>
-                          </div>
-                          <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Department</span>
                             <span className="text-sm text-gray-600">{requestData.user.department}</span>
                           </div>
@@ -1838,20 +2194,22 @@ export default function RequestViewPage() {
                             <span className="text-sm text-gray-600">{formatDbTimestamp(requestData.createdAt)}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Scheduled End Time</span>
-                            <span className="text-sm text-gray-600">-</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Response DueBy Time</span>
-                            <span className="text-sm text-gray-600">-</span>
+                            <span className="text-sm font-medium text-gray-700">Resolution Date</span>
+                            <span className="text-sm text-gray-600">
+                              {requestData.formData?.resolution?.resolvedAt
+                                ? formatDbTimestamp(String(requestData.formData.resolution.resolvedAt))
+                                : '-'}
+                            </span>
                           </div>
                         </div>
                         
                         <div className="space-y-4">
                           <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Status</span>
+                            <span className="text-sm font-medium text-gray-700">Request Status</span>
                             <Badge className={getStatusColor(requestData.status)} variant="outline">
-                              {requestData.status.charAt(0).toUpperCase() + requestData.status.slice(1)}
+                              {requestData.status === 'for_approval' 
+                                ? 'For Approval' 
+                                : requestData.status.charAt(0).toUpperCase() + requestData.status.slice(1)}
                             </Badge>
                           </div>
                           <div className="flex justify-between">
@@ -1882,26 +2240,12 @@ export default function RequestViewPage() {
                             <span className="text-sm font-medium text-gray-700">Template</span>
                             <span className="text-sm text-gray-600">{templateData?.name || 'Unknown Template'}</span>
                           </div>
-                          {/* SLA metadata */}
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">SLA Source</span>
-                            <span className="text-sm text-gray-600">
-                              {requestData.formData?.slaSource
-                                ? String(requestData.formData.slaSource)
-                                    .replace(/_/g, ' ')
-                                    .replace(/\b\w/g, c => c.toUpperCase())
-                                : '-'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Scheduled Start Time</span>
-                            <span className="text-sm text-gray-600">-</span>
-                          </div>
+                          
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">SLA Start Time</span>
                             <span className="text-sm text-gray-600">
-                              {requestData.formData.slaStartAt
-                                ? formatDbTimestamp(requestData.formData.slaStartAt)
+                              {requestData.formData?.slaStartAt
+                                ? formatDbTimestampDisplay(String(requestData.formData.slaStartAt), { shortFormat: true })
                                 : '-'}
                             </span>
                           </div>
@@ -1909,13 +2253,15 @@ export default function RequestViewPage() {
                             <span className="text-sm font-medium text-gray-700">DueBy Date</span>
                             <span className="text-sm text-gray-600">
                               {requestData.formData?.slaDueDate
-                                ? formatDbTimestamp(String(requestData.formData.slaDueDate))
+                                ? formatDbTimestampDisplay(String(requestData.formData.slaDueDate), { shortFormat: true })
                                 : '-'}
                             </span>
                           </div>
                           {/* <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Last Update Time</span>
-                            <span className="text-sm text-gray-600">{formatDbTimestamp(requestData.updatedAt)}</span>
+                            <span className="text-sm text-gray-600">
+                              { formatDbTimestamp(requestData.updatedAt)}
+                            </span>s
                           </div> */}
                         </div>
                       </div>
@@ -2821,14 +3167,26 @@ export default function RequestViewPage() {
                 <CardContent>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Status</span>
+                      <span className="text-sm text-gray-600">Request Status</span>
                       <Badge className={getStatusColor(requestData.status)} variant="outline">
-                        {requestData.status.charAt(0).toUpperCase() + requestData.status.slice(1)}
+                        {requestData.status === 'for_approval' 
+                          ? 'For Approval' 
+                          : requestData.status.charAt(0).toUpperCase() + requestData.status.slice(1)}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">Approval Status</span>
                       {(() => {
+                        // For incident templates, show N/A
+                        if (templateData?.type === 'incident') {
+                          return (
+                            <Badge className="bg-gray-100 text-gray-800 border-gray-200" variant="outline">
+                              N/A
+                            </Badge>
+                          );
+                        }
+                        
+                        // For service templates, show actual approval status
                         const rawApprovalStatus = requestData.formData?.['5'] || 'pending approval';
                         const { normalized, display } = normalizeApprovalStatus(rawApprovalStatus);
                         
@@ -3062,16 +3420,7 @@ export default function RequestViewPage() {
                 )}
               </div>
 
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" className="rounded" />
-                  <span>Show this note to Requester</span>
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" className="rounded" />
-                  <span>Consider notes addition as first response</span>
-                </label>
-              </div>
+           
             </div>
 
             <DialogFooter>
@@ -3424,6 +3773,368 @@ export default function RequestViewPage() {
                     setSavingResolve(false);
                   }
                 }} disabled={savingResolve}>{savingResolve ? 'Saving...' : 'Resolve'}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Edit Request Modal */}
+        {showEditModal && (
+          <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Edit Request</DialogTitle>
+                <DialogDescription>
+                  Update request properties. Changes will update the request and add history entries.
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-6">
+                {/* Request Type - TOP PRIORITY */}
+                <div className="border rounded p-4 bg-blue-50">
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">Request Type</label>
+                  <select
+                    className="w-full border rounded px-3 py-2 text-sm font-medium bg-white border-blue-200"
+                    value={editForm.type}
+                    onChange={e => setEditForm(prev => ({...prev, type: e.target.value, template: '', category: ''}))}
+                  >
+                    <option value="service">Service</option>
+                    <option value="incident">Incident</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Category Selection */}
+                  <div>
+                    <label className="text-sm text-gray-700 mb-2 block">Category</label>
+                    <select
+                      className="w-full border rounded px-2 py-2 text-sm"
+                      value={editForm.category}
+                      onChange={e => setEditForm(prev => ({...prev, category: e.target.value, template: ''}))}
+                    >
+                      <option value="">Select Category</option>
+                      {availableCategories.map((category: any) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Template Selection */}
+                  <div>
+                    <label className="text-sm text-gray-700 mb-2 block">Template</label>
+                    <select
+                      className="w-full border rounded px-2 py-2 text-sm"
+                      value={editForm.template}
+                      onChange={e => setEditForm(prev => ({...prev, template: e.target.value}))}
+                    >
+                      <option value="">Select Template</option>
+                      {filteredTemplates.map((template: any) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name}
+                        </option>
+                      ))}
+                    </select>
+                    {editForm.type && editForm.category && filteredTemplates.length === 0 && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        No templates found for {editForm.type} requests in selected category
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Add Approver Section - Only for Service Requests */}
+                {editForm.type === 'service' && (
+                  <div className="border rounded p-4 bg-green-50">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-medium text-gray-700">Approval Workflow</h3>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowAddApprovalModal(true)}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Approver
+                      </Button>
+                    </div>
+                    <div className="text-xs text-gray-600 space-y-1">
+                      <p>Service requests require approval. Current approvers include:</p>
+                      {requestData?.user?.reportingTo && (
+                        <p>• Reporting To: {requestData.user.reportingTo.emp_fname} {requestData.user.reportingTo.emp_lname}</p>
+                      )}
+                      {requestData?.user?.departmentHead && (
+                        <p>• Department Head: {requestData.user.departmentHead.emp_fname} {requestData.user.departmentHead.emp_lname}</p>
+                      )}
+                      {templateData?.approvalWorkflow && (
+                        <p>• Template Approvers: {JSON.stringify(templateData.approvalWorkflow)}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Technician Assignment with Search */}
+                <div>
+                  <label className="text-sm text-gray-700 mb-2 block">Assigned Technician</label>
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      placeholder="Search technicians..."
+                      value={technicianSearch}
+                      onChange={(e) => {
+                        setTechnicianSearch(e.target.value);
+                        setShowTechnicianDropdown(true);
+                      }}
+                      onFocus={() => setShowTechnicianDropdown(true)}
+                      className="pr-10"
+                    />
+                    {selectedTechnicianId && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                        onClick={() => {
+                          setSelectedTechnicianId('');
+                          setTechnicianSearch('');
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                    
+                    {/* Technician Dropdown */}
+                    {showTechnicianDropdown && (technicianResults.length > 0 || availableTechnicians.length > 0) && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        {technicianSearch ? (
+                          technicianResults.map((tech: any) => (
+                            <div
+                              key={tech.id}
+                              className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                              onClick={() => {
+                                setSelectedTechnicianId(tech.id);
+                                setTechnicianSearch(`${tech.emp_fname} ${tech.emp_lname}`);
+                                setEditForm(prev => ({...prev, technician: `${tech.emp_fname} ${tech.emp_lname}`}));
+                                setShowTechnicianDropdown(false);
+                              }}
+                            >
+                              <div className="font-medium">{tech.emp_fname} {tech.emp_lname}</div>
+                              <div className="text-gray-500">{tech.emp_email}</div>
+                            </div>
+                          ))
+                        ) : (
+                          availableTechnicians.slice(0, 10).map((tech: any) => (
+                            <div
+                              key={tech.id}
+                              className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                              onClick={() => {
+                                setSelectedTechnicianId(tech.id);
+                                setTechnicianSearch(`${tech.emp_fname} ${tech.emp_lname}`);
+                                setEditForm(prev => ({...prev, technician: `${tech.emp_fname} ${tech.emp_lname}`}));
+                                setShowTechnicianDropdown(false);
+                              }}
+                            >
+                              <div className="font-medium">{tech.emp_fname} {tech.emp_lname}</div>
+                              <div className="text-gray-500">{tech.emp_email}</div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Email Notifications with Search */}
+                <div>
+                  <label className="text-sm text-gray-700 mb-2 block">E-mail ID(s) To Notify</label>
+                  
+                  {/* Selected Email Users */}
+                  {emailUsers.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      {emailUsers.map((user: any, index: number) => (
+                        <div key={index} className="flex items-center bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                          <span>{user.emp_email}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="ml-1 h-4 w-4 p-0"
+                            onClick={() => {
+                              const updated = emailUsers.filter((_, i) => i !== index);
+                              setEmailUsers(updated);
+                              setEditForm(prev => ({...prev, emailNotify: updated.map(u => u.emp_email).join(', ')}));
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Email Search Input */}
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      placeholder="Search users by name or email, or type email directly..."
+                      value={emailSearch}
+                      onChange={(e) => setEmailSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const emailValue = emailSearch.trim();
+                          if (emailValue && emailValue.includes('@')) {
+                            // Add as direct email
+                            const newUser = {
+                              emp_email: emailValue,
+                              emp_fname: emailValue.split('@')[0],
+                              emp_lname: ''
+                            };
+                            const updated = [...emailUsers, newUser];
+                            setEmailUsers(updated);
+                            setEditForm(prev => ({...prev, emailNotify: updated.map(u => u.emp_email).join(', ')}));
+                            setEmailSearch('');
+                            setEmailSearchResults([]);
+                          }
+                        }
+                      }}
+                    />
+                    
+                    {/* Email Search Results */}
+                    {emailSearchResults.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        {emailSearchResults.map((user: any) => (
+                          <div
+                            key={user.id}
+                            className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                            onClick={() => {
+                              if (!emailUsers.find(u => u.emp_email === user.emp_email)) {
+                                const updated = [...emailUsers, user];
+                                setEmailUsers(updated);
+                                setEditForm(prev => ({...prev, emailNotify: updated.map(u => u.emp_email).join(', ')}));
+                              }
+                              setEmailSearch('');
+                              setEmailSearchResults([]);
+                            }}
+                          >
+                            <div className="font-medium">{user.emp_fname} {user.emp_lname}</div>
+                            <div className="text-gray-500">{user.emp_email}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Priority - Depends on Template */}
+                  <div>
+                    <label className="text-sm text-gray-700 mb-2 block">Priority</label>
+                    <select
+                      className="w-full border rounded px-2 py-2 text-sm"
+                      value={editForm.priority}
+                      onChange={e => setEditForm(prev => ({...prev, priority: e.target.value}))}
+                      disabled={!!templatePriority}
+                    >
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                      <option value="Top">Top</option>
+                    </select>
+                    {templatePriority && (
+                      <p className="text-xs text-gray-500 mt-1">Priority set by template</p>
+                    )}
+                  </div>
+                  
+                  {/* Status - Depends on Template */}
+                  <div>
+                    <label className="text-sm text-gray-700 mb-2 block">Status</label>
+                    <select
+                      className="w-full border rounded px-2 py-2 text-sm"
+                      value={editForm.status}
+                      onChange={e => setEditForm(prev => ({...prev, status: e.target.value}))}
+                      disabled={!!templateStatus}
+                    >
+                      <option value="for_approval">For Approval</option>
+                      <option value="open">Open</option>
+                      <option value="on_hold">On Hold</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="cancelled">Cancelled</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                    {templateStatus && (
+                      <p className="text-xs text-gray-500 mt-1">Status set by template</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-xs text-gray-500 mt-4">
+                <strong>Note:</strong> Changing template or request type will remove current approvals and add a history entry with change details.
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowEditModal(false)}>Cancel</Button>
+                <Button onClick={handleSaveEdit} disabled={savingEdit}>
+                  {savingEdit ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Add Approval Modal */}
+        {showAddApprovalModal && (
+          <Dialog open={showAddApprovalModal} onOpenChange={setShowAddApprovalModal}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Add Approver</DialogTitle>
+                <DialogDescription>
+                  Add new approvers to the request workflow.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm text-gray-700">Search Users</label>
+                  <input
+                    type="text"
+                    className="w-full border rounded px-2 py-2 mt-1 text-sm"
+                    value={userSearchTerm}
+                    onChange={e => setUserSearchTerm(e.target.value)}
+                    placeholder="Search by name, email..."
+                  />
+                </div>
+                
+                {/* Selected Users */}
+                {selectedUsers.length > 0 && (
+                  <div>
+                    <label className="text-sm text-gray-700">Selected Approvers:</label>
+                    <div className="mt-2 space-y-2">
+                      {selectedUsers.map((user: any) => (
+                        <div key={user.id} className="flex items-center justify-between bg-blue-50 p-2 rounded">
+                          <span className="text-sm">{user.emp_fname} {user.emp_lname}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedUsers(prev => prev.filter(u => u.id !== user.id))}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowAddApprovalModal(false)}>
+                  Cancel
+                </Button>
+                <Button disabled={selectedUsers.length === 0}>
+                  Add Approvers
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

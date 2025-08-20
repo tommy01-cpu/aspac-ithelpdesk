@@ -50,7 +50,6 @@ interface RequestData {
   subject?: string;
   description?: string;
   requester?: string;
-  requesterName?: string;
   dueDate?: string;
   category?: string;
   subCategory?: string;
@@ -70,15 +69,13 @@ interface RequestData {
     email?: string;
     department?: string;
   };
-  // User details from API (includes requester info)
-  user?: {
+  // Requester details
+  requesterDetails?: {
     id: number;
-    emp_fname: string;
-    emp_lname: string;
-    emp_email: string;
-    department: string;
-    emp_code?: string;
-    post_des?: string;
+    fullName: string;
+    email?: string;
+    department?: string;
+    employeeCode?: string;
   };
 }
 
@@ -273,7 +270,8 @@ export default function MyRequestsPage() {
   const fetchRequests = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/technician/requests?page=${currentPage}&limit=10`);
+      // Always filter by current user's requests only
+      const response = await fetch(`/api/requests?page=${currentPage}&limit=10&userId=${session?.user?.id}&myRequests=true`);
       
       if (!response.ok) {
         throw new Error('Failed to fetch requests');
@@ -296,7 +294,7 @@ export default function MyRequestsPage() {
 
   const filteredRequests = requests.filter(request => {
     const matchesSearch = searchTerm === '' || 
-      request.templateName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (request.templateName && request.templateName.toLowerCase().includes(searchTerm.toLowerCase())) ||
       request.id.toString().includes(searchTerm) ||
       (request.subject && request.subject.toLowerCase().includes(searchTerm.toLowerCase()));
     
@@ -364,14 +362,14 @@ export default function MyRequestsPage() {
               <div className="flex items-center gap-4">
                 <div>
                   <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-                    All Requests
+                    My Requests
                   </h1>
                   <p className="text-sm text-slate-600">View and manage your service requests</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <Button
-                  onClick={() => router.push('/technician/catalogs?tab=service')}
+                  onClick={() => router.push('/requests/template?tab=service')}
                   className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
                 >
                   <Plus className="h-4 w-4 mr-2" />
@@ -505,7 +503,7 @@ export default function MyRequestsPage() {
                                         "60px 2fr 1.5fr 1fr 1fr 1fr 1.5fr 1.5fr 1.5fr",
                                     }}
                                     onClick={() =>
-                                      router.push(`/technician/requests/${request.id}`)
+                                      router.push(`/requests/view/${request.id}`)
                                     }
                                     title="Click to view request details"
                                   >
@@ -540,7 +538,6 @@ export default function MyRequestsPage() {
                                       <p className="font-medium text-sm truncate">
                                         {request.user ? 
                                           `${request.user.emp_fname} ${request.user.emp_lname}` :
-                                          request.requesterName ||
                                           request.formData?.["1"] ||
                                           "-"}
                                       </p>

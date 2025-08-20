@@ -102,19 +102,13 @@ export async function POST(request: NextRequest) {
             const minutes = slaService.resolutionMinutes ?? 0;
             
             if (days > 0 || hours > 0 || minutes > 0) {
-              // Use operational hours if enabled for this SLA
-              if (slaService.operationalHours) {
-                const oh = await getOperationalHours();
-                if (oh && oh.workingTimeType !== 'round-clock') {
-                  slaHours = componentsToWorkingHours(days, hours, minutes, oh);
-                  useOperationalHours = true;
-                } else {
-                  // No operational hours config or round-clock, use calendar time
-                  slaHours = (days * 24) + hours + (minutes / 60);
-                  useOperationalHours = false;
-                }
+              // Always use operational hours for service SLA calculation
+              const oh = await getOperationalHours();
+              if (oh && oh.workingTimeType !== 'round-clock') {
+                slaHours = componentsToWorkingHours(days, hours, minutes, oh);
+                useOperationalHours = true;
               } else {
-                // SLA configured for calendar time
+                // No operational hours config or round-clock, use calendar time
                 slaHours = (days * 24) + hours + (minutes / 60);
                 useOperationalHours = false;
               }
@@ -142,18 +136,16 @@ export async function POST(request: NextRequest) {
                 const rHours = parseInt(String(inc.resolutionHours || '0')) || 0;
                 const rMinutes = parseInt(String(inc.resolutionMinutes || '0')) || 0;
                 let totalHours: number;
-                if (inc.operationalHoursEnabled) {
-                  const oh = await getOperationalHours();
-                  if (oh) {
-                    totalHours = componentsToWorkingHours(rDays, rHours, rMinutes, oh);
-                    useOperationalHours = true;
-                  } else {
-                    // No operational-hours config found; fallback to 24h days
-                    totalHours = (rDays * 24) + rHours + (rMinutes / 60);
-                    useOperationalHours = undefined; // let calculator fallback
-                  }
+                
+                // Always use operational hours for SLA calculation
+                const oh = await getOperationalHours();
+                if (oh && oh.workingTimeType !== 'round-clock') {
+                  totalHours = componentsToWorkingHours(rDays, rHours, rMinutes, oh);
+                  useOperationalHours = true;
                 } else {
+                  // No operational-hours config found; fallback to 24h days
                   totalHours = (rDays * 24) + rHours + (rMinutes / 60);
+                  useOperationalHours = false;
                 }
                 if (totalHours > 0) {
                   slaHours = totalHours;
@@ -176,27 +168,20 @@ export async function POST(request: NextRequest) {
         switch (requestDetails.priority?.toLowerCase()) {
           case 'high':
             slaHours = 8; // 8 hours for high priority
+            useOperationalHours = true; // Always use operational hours
             break;
           case 'top':
             slaHours = 4; // 4 hours for top priority
+            useOperationalHours = true; // Always use operational hours
             break;
           case 'medium':
             slaHours = 16; // 16 hours for medium priority
+            useOperationalHours = true; // Always use operational hours
             break;
           case 'low':
           default:
-            // Default to 4 working days if unclear (user expectation)
-            try {
-              const oh = await getOperationalHours();
-              if (oh && oh.workingTimeType !== 'round-clock') {
-                slaHours = componentsToWorkingHours(4, 0, 0, oh);
-                useOperationalHours = true;
-              } else {
-                slaHours = 4 * 24; // 24h days if round-clock or no config
-              }
-            } catch (e) {
-              slaHours = 4 * 24;
-            }
+            slaHours = 16; // 16 hours for low priority
+            useOperationalHours = true; // Always use operational hours
             break;
         }
         slaSource = 'fallback';
@@ -208,17 +193,30 @@ export async function POST(request: NextRequest) {
         slaHours = 48;
       }
 
-      // SLA should start at the time when SLA calculation happens (same as slaCalculatedAt)
-      // This ensures both slaStartAt and slaCalculatedAt have the same timestamp
-      const slaStartAt: Date = new Date();
-      const slaCalculationTime = new Date(); // Same time for both fields
+      // For service requests, SLA should start when approvals are completed (which is now)
+      // For incidents, SLA starts when they become "open" (which is now)
+      let slaStartAt: Date;
       
-      console.log('📅 SLA Start Date:', slaStartAt.toISOString());
+      if (requestDetails.type === 'service') {
+        // Service requests: Use the updatedAt time from when status was changed to "open" by approval action
+        // This ensures perfect synchronization between updatedAt and slaStartAt
+        slaStartAt = new Date(requestDetails.updatedAt);
+        console.log('📅 Service request - SLA starts from approval completion time (updatedAt):', slaStartAt.toISOString());
+      } else {
+        // Incident requests: SLA starts now (when becoming "open")
+        slaStartAt = new Date();
+        console.log('📅 Incident request - SLA starts now:', slaStartAt.toISOString());
+      }
+      
+      const slaCalculationTime = new Date(); // Time when calculation was performed
+      
       console.log('⏰ SLA Hours:', slaHours);
       console.log('🔧 Use Operational Hours:', useOperationalHours);
       
-      // Calculate due date using SLA calculator
-  const dueDate = await calculateSLADueDate(slaStartAt, slaHours, { useOperationalHours });
+      // Calculate due date using SLA calculator with proper operational hours setting
+      const dueDate = await calculateSLADueDate(slaStartAt, slaHours, { 
+        useOperationalHours: useOperationalHours ?? true // Use operational hours by default
+      });
       
       // Validate dueDate
       if (!dueDate || isNaN(dueDate.getTime())) {
@@ -227,8 +225,9 @@ export async function POST(request: NextRequest) {
       
       console.log('✅ Due Date calculated:', dueDate.toISOString());
       
-      // Convert all dates to Philippine time format without Z
-      const slaStartAtPH = new Date(slaCalculationTime).toLocaleString('en-PH', { 
+      // Convert all dates to Philippine time format WITHOUT Z suffix for formData storage
+      // Use the exact same timestamp for both slaStartAt display and database updatedAt
+      const slaStartAtPH = new Date(slaStartAt).toLocaleString('en-PH', { 
         timeZone: 'Asia/Manila',
         year: 'numeric',
         month: '2-digit', 
@@ -238,6 +237,9 @@ export async function POST(request: NextRequest) {
         second: '2-digit',
         hour12: false
       }).replace(/(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})/, '$3-$1-$2 $4:$5:$6');
+
+      console.log('🕐 SLA Start Time (ISO):', slaStartAt.toISOString());
+      console.log('🕐 SLA Start Time (PH String):', slaStartAtPH);
 
       const slaDueDatePH = new Date(dueDate).toLocaleString('en-PH', { 
         timeZone: 'Asia/Manila',
@@ -272,15 +274,18 @@ export async function POST(request: NextRequest) {
 
       // Update request with due date
       console.log('💾 Updating database with SLA data...');
+      console.log('🕐 SLA Start Time (UTC):', slaStartAt.toISOString());
+      console.log('🕐 FormData slaStartAt (PH String - no Z):', slaStartAtPH);
       
-      // Create Philippine time by manually adjusting UTC (same as history.ts)
-      const now = new Date();
-      const currentTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+      // Create Philippine time for database updatedAt (same approach as approval action)
+      const slaStartAtForDB = new Date(slaStartAt.getTime() + (8 * 60 * 60 * 1000));
+      console.log('🕐 Database updatedAt (PH):', slaStartAtForDB.toISOString());
       
+      // Update updatedAt to Philippine time to match the formData slaStartAt time
       const updateResult = await prisma.request.update({
         where: { id: requestId },
         data: {
-          updatedAt: currentTime, // Use same Philippine time as history
+          updatedAt: slaStartAtForDB, // Use Philippine time (UTC + 8) to match formData
           formData: {
             ...(requestDetails.formData as any || {}),
             slaHours: slaHours.toString(),
@@ -295,6 +300,16 @@ export async function POST(request: NextRequest) {
       
       console.log('✅ Database update successful:', updateResult?.id);
       console.log('📋 Updated formData keys:', Object.keys(updateResult?.formData as any || {}));
+      console.log('🕐 Final updatedAt in database:', updateResult?.updatedAt.toISOString());
+      console.log('🕐 Expected updatedAt (PH):', slaStartAtForDB.toISOString());
+      
+      // Verify the update by reading the record back
+      const verifyRecord = await prisma.request.findUnique({
+        where: { id: requestId },
+        select: { updatedAt: true, formData: true }
+      });
+      console.log('🔍 Verification - Database updatedAt:', verifyRecord?.updatedAt.toISOString());
+      console.log('🔍 Verification - FormData slaStartAt:', (verifyRecord?.formData as any)?.slaStartAt);
 
       // Add SLA history entry (PH-local timestamp)
       await addHistory(prisma as any, {
@@ -337,6 +352,13 @@ export async function POST(request: NextRequest) {
         console.log('No technician currently assigned, attempting auto-assignment...');
         
   const assignmentResult = await autoAssignTechnician(requestId, templateId, { writeHistory: false });
+        
+        console.log('🔍 After auto-assignment - checking updatedAt...');
+        const postAssignmentRecord = await prisma.request.findUnique({
+          where: { id: requestId },
+          select: { updatedAt: true }
+        });
+        console.log('🕐 Post-assignment updatedAt:', postAssignmentRecord?.updatedAt.toISOString());
         
         if (assignmentResult.success) {
           results.assignment = {
@@ -390,7 +412,7 @@ export async function POST(request: NextRequest) {
             await prisma.request.update({
               where: { id: requestId },
               data: {
-                updatedAt: assignmentTime, // Use same Philippine time as history
+                // Don't update updatedAt here - keep the SLA synchronization time
                 formData: {
                   ...currentFormData,
                   assignedDate: assignedDatePH,

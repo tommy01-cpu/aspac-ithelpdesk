@@ -152,7 +152,7 @@ export default function Home() {
       color: 'from-red-500 to-rose-600',
       bgColor: 'bg-red-500/10 hover:bg-red-500/20',
       iconColor: 'text-red-600',
-      action: () => router.push('/users/template?tab=incident')
+      action: () => router.push('/requests/template?tab=incident')
     },
     {
       title: 'Request a Service',
@@ -161,7 +161,7 @@ export default function Home() {
       color: 'from-blue-500 to-indigo-600',
       bgColor: 'bg-blue-500/10 hover:bg-blue-500/20',
       iconColor: 'text-blue-600',
-      action: () => router.push('/users/template?tab=service')
+      action: () => router.push('/requests/template?tab=service')
     }
   ];
 
@@ -176,7 +176,7 @@ export default function Home() {
           color: 'from-amber-500 to-amber-600',
           bgColor: 'bg-amber-500/10 hover:bg-amber-500/20',
           iconColor: 'text-amber-600',
-          action: () => router.push('/users/approvals'),
+          action: () => router.push('/requests/approvals'),
           badge: approvalCount
         }
       ]

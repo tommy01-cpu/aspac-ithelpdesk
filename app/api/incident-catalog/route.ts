@@ -202,3 +202,87 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+// DELETE /api/incident-catalog - Delete incident catalog item
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const incidentId = searchParams.get('id');
+
+    if (!incidentId) {
+      return NextResponse.json(
+        { error: 'Incident ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const incidentIdInt = parseInt(incidentId);
+
+    // Check if incident catalog item exists
+    const incidentCatalogItem = await prisma.incidentCatalogItem.findUnique({
+      where: { id: incidentIdInt },
+      include: {
+        template: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!incidentCatalogItem) {
+      return NextResponse.json(
+        { error: 'Incident catalog item not found' },
+        { status: 404 }
+      );
+    }
+
+    // Check if there are any requests using this template - block deletion if any exist
+    if (incidentCatalogItem.templateId) {
+      const totalRequests = await prisma.request.count({
+        where: {
+          templateId: String(incidentCatalogItem.templateId)
+        }
+      });
+
+      if (totalRequests > 0) {
+        return NextResponse.json(
+          { error: `Cannot delete incident "${incidentCatalogItem.name}" because it has ${totalRequests} request(s) associated with it. Deletion is not allowed once a template has been used.` },
+          { status: 409 }
+        );
+      }
+
+      // Delete the associated template if it exists (only reached if no requests exist)
+      try {
+        await prisma.template.delete({
+          where: { id: incidentCatalogItem.templateId }
+        });
+      } catch (error) {
+        console.error('Error deleting template:', error);
+        // Continue with incident deletion even if template deletion fails
+      }
+    }
+
+    // Delete the incident catalog item
+    await prisma.incidentCatalogItem.delete({
+      where: { id: incidentIdInt }
+    });
+
+    return NextResponse.json(
+      { message: 'Incident catalog item deleted successfully' },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error('Error deleting incident catalog item:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete incident catalog item' },
+      { status: 500 }
+    );
+  }
+}

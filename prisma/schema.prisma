@@ -448,14 +448,11 @@ model ServiceCatalogItem {
 model Request {
   id              Int               @id @default(autoincrement())
   templateId      String
-  templateName    String
-  type            String            @db.VarChar(50)
-  priority        String            @default("medium") @db.VarChar(50)
   userId          Int
   formData        Json
   attachments     String[]
   createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  updatedAt       DateTime
   status          RequestStatus     @default(for_approval)
   attachmentFiles Attachment[]
   approvals       RequestApproval[]

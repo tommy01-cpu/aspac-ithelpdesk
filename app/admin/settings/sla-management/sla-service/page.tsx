@@ -679,19 +679,22 @@ export default function ServiceSLAPage() {
     return parts.join(' ');
   };
 
-  const formatResolutionTimeForTable = (totalHours: number | string) => {
-    const hours = typeof totalHours === 'string' ? parseFloat(totalHours) : totalHours;
-    if (!hours || hours === 0) return 'Not set';
+  const formatResolutionTimeForTable = (sla: any) => {
+    // Handle both database field names (snake_case) and Prisma field names (camelCase)
+    const days = sla.resolution_days || sla.resolutionDays || 0;
+    const hours = sla.resolution_hours || sla.resolutionHours || 0;
+    const minutes = sla.resolution_minutes || sla.resolutionMinutes || 0;
     
-    const days = Math.floor(hours / 24);
-    const remainingHours = hours % 24;
-    const minutes = 0; // Since API stores in hours, we don't have minute precision
+    console.log('SLA resolution data:', { days, hours, minutes, slaName: sla.name }); // Debug log
+    
+    if (days === 0 && hours === 0 && minutes === 0) return 'Not set';
     
     const parts = [];
     if (days > 0) parts.push(`${days} day${days === 1 ? '' : 's'}`);
-    if (remainingHours > 0) parts.push(`${remainingHours} hour${remainingHours === 1 ? '' : 's'}`);
-    if (parts.length === 0) parts.push('Less than 1 hour');
+    if (hours > 0) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
+    if (minutes > 0) parts.push(`${minutes} min${minutes === 1 ? '' : 's'}`);
     
+    if (parts.length === 0) parts.push('Less than 1 min');
     return parts.join(' ');
   };
 
@@ -896,7 +899,7 @@ export default function ServiceSLAPage() {
                       <TableCell className="text-gray-600">{sla.description}</TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="font-mono text-xs">
-                          {formatResolutionTimeForTable(sla.resolutionTime)}
+                          {formatResolutionTimeForTable(sla)}
                         </Badge>
                       </TableCell>
                       <TableCell>

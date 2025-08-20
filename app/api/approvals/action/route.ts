@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
       data: {
         status: newApprovalStatus,
         actedOn: philippineTime,
-        updatedAt: philippineTime,
+        updatedAt: new Date(now.getTime() + (8 * 60 * 60 * 1000)), // Philippine time (+8 hours)
         comments: comments ? `Request ${action}d by ${user.emp_fname} ${user.emp_lname} on ${philippineTimeString}${comments ? '. Comments: ' + comments : ''}` : `Request ${action}d by ${user.emp_fname} ${user.emp_lname} on ${philippineTimeString}`
       }
     });
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
           where: { id: approval.requestId },
           data: { 
             status: RequestStatus.closed,
-            updatedAt: philippineTime // Use same Philippine time as history
+            updatedAt: philippineTime // Use UTC time for database
           }
         });      await addHistory(prisma, {
         requestId: approval.requestId,
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
           where: { id: approval.requestId },
           data: {
             status: RequestStatus.open,
-            updatedAt: philippineTime, // Use same Philippine time as history
+            updatedAt: philippineTime, // Use Philippine time (already UTC+8)
             formData: {
               ...(approval.request.formData as any || {}),
               '5': 'approved',
@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
             
             // SLA should start from approval time, not request creation time
             const currentTime = new Date(); // Same time for both slaStartAt and slaCalculatedAt
-            const computedDue = await calculateSLADueDate(currentTime, slaHours);
+            const computedDue = await calculateSLADueDate(currentTime, slaHours, { useOperationalHours: true });
             
             // Convert dates to Philippine time format without Z
             const computedDuePH = formatPhilippineTime(computedDue);
@@ -394,7 +394,7 @@ export async function POST(request: NextRequest) {
                     where: { id: approval.requestId },
                     data: {
                       status: RequestStatus.open,
-                      updatedAt: philippineTime, // Use same Philippine time as history
+                      updatedAt: philippineTime, // Use Philippine time (+8 hours)
                       formData: {
                         ...(approval.request.formData as any || {}),
                         '5': 'approved'
@@ -446,7 +446,7 @@ export async function POST(request: NextRequest) {
                       
                       // SLA should start from approval time, not request creation time
                       const currentTime = new Date(); // Same time for both slaStartAt and slaCalculatedAt
-                      const computedDue = await calculateSLADueDate(currentTime, slaHours);
+                      const computedDue = await calculateSLADueDate(currentTime, slaHours, { useOperationalHours: true });
                       
                       // Convert dates to Philippine time format without Z
                       const computedDuePH = formatPhilippineTime(computedDue);
@@ -510,7 +510,7 @@ export async function POST(request: NextRequest) {
               where: { id: approval.requestId },
               data: { 
                 status: RequestStatus.open,
-                updatedAt: philippineTime, // Use same Philippine time as history
+                updatedAt: philippineTime, // Use Philippine time
                 formData: {
                   ...(approval.request.formData as any || {}),
                   '5': 'approved' // Update the approval status field
@@ -605,7 +605,7 @@ export async function POST(request: NextRequest) {
 
                   // SLA should start from approval time, not request creation time
                   const currentTime = new Date(); // Same time for both slaStartAt and slaCalculatedAt
-                  const computedDue = await calculateSLADueDate(currentTime, slaHours);
+                  const computedDue = await calculateSLADueDate(currentTime, slaHours, { useOperationalHours: true });
 
                   // Convert dates to Philippine time format without Z
                   const computedDuePH = formatPhilippineTime(computedDue);
@@ -691,7 +691,7 @@ export async function POST(request: NextRequest) {
 
                 // SLA should start from approval time, not request creation time
                 const currentTime = new Date(); // Same time for both slaStartAt and slaCalculatedAt
-                const computedDue = await calculateSLADueDate(currentTime, slaHours);
+                const computedDue = await calculateSLADueDate(currentTime, slaHours, { useOperationalHours: true });
 
                 // Convert dates to Philippine time format without Z
                 const computedDuePH = formatPhilippineTime(computedDue);

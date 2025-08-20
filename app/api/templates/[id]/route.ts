@@ -36,6 +36,14 @@ export async function GET(
             emp_lname: true,
           },
         },
+        category: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            icon: true,
+          },
+        },
         slaService: {
           select: {
             id: true,

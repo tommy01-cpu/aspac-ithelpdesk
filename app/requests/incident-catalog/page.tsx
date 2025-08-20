@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { FolderOpen, Tags, ChevronDown, ChevronUp, Search, Clock, Star } from 'lucide-react';
+import { AlertTriangle, Tags, ChevronDown, ChevronUp, Search, Clock, AlertCircle, Bug, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { getPriorityColor } from '@/lib/status-colors';
 
-interface ServiceCatalogItem {
+interface IncidentCatalogItem {
   id: number;
   name: string;
   description?: string;
@@ -15,12 +16,15 @@ interface ServiceCatalogItem {
   categoryName: string;
   templateId?: number;
   templateName?: string;
-  template_icon?: string;
+  template?: {
+    id: number;
+    name: string;
+    type: string;
+    icon?: string;
+  };
   isActive: boolean;
-  requestCount: number;
-  rating?: number;
-  estimatedTime?: string;
-  isPopular?: boolean;
+  usageCount: number;
+  avgResolutionTime?: string;
 }
 
 interface ServiceCategory {
@@ -29,23 +33,16 @@ interface ServiceCategory {
   description?: string;
   icon?: string;
   isActive: boolean;
-  serviceCount: number;
+  incidentCount: number;
 }
 
-interface PaginationData {
-  page: number;
-  limit: number;
-  total: number;
-  pages: number;
-}
-
-export default function ServiceCatalogTab() {
+export default function IncidentCatalogTab() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [expandedCategory, setExpandedCategory] = useState<number | null>(null);
-  const [categoryServices, setCategoryServices] = useState<{ [key: number]: ServiceCatalogItem[] }>({});
+  const [categoryIncidents, setCategoryIncidents] = useState<{ [key: number]: IncidentCatalogItem[] }>({});
 
   // Fetch categories on component mount
   useEffect(() => {
@@ -58,12 +55,15 @@ export default function ServiceCatalogTab() {
       const params = new URLSearchParams({
         page: '1',
         limit: '100',
+        type: 'incident', // Add this to get incident-specific counts
         ...(search && { search })
       });
 
       const response = await fetch(`/api/service-categories?${params}`);
       if (response.ok) {
         const data = await response.json();
+        console.log('Categories with incident counts:', data); // Debug log
+        // For incident catalog, we'll use the same categories but fetch incident items
         setCategories(data.categories || []);
       }
     } catch (error) {
@@ -73,37 +73,52 @@ export default function ServiceCatalogTab() {
     }
   };
 
-  const fetchCategoryServices = async (categoryId: number) => {
+  const fetchCategoryIncidents = async (categoryId: number) => {
     try {
-      const response = await fetch(`/api/service-catalog?categoryId=${categoryId}`);
+      const response = await fetch(`/api/incident-catalog?categoryId=${categoryId}`);
       if (response.ok) {
         const data = await response.json();
-        setCategoryServices(prev => ({
+        console.log('API Response:', data); // Debug log
+        setCategoryIncidents(prev => ({
           ...prev,
-          [categoryId]: data.services || []
+          [categoryId]: data.incidentCatalogItems || []
         }));
-      } 
+      } else {
+        console.error('API Error:', response.status, response.statusText);
+        // Set empty array if API fails
+        setCategoryIncidents(prev => ({
+          ...prev,
+          [categoryId]: []
+        }));
+      }
     } catch (error) {
-      console.error('Error fetching category services:', error);
+      console.error('Error fetching category incidents:', error);
+      // Set empty array if there's an error
+      setCategoryIncidents(prev => ({
+        ...prev,
+        [categoryId]: []
+      }));
     }
   };
 
   const handleToggleCategory = async (categoryId: number) => {
+    console.log('Toggling category:', categoryId); // Debug log
     if (expandedCategory === categoryId) {
       setExpandedCategory(null);
     } else {
       setExpandedCategory(categoryId);
-      if (!categoryServices[categoryId]) {
-        await fetchCategoryServices(categoryId);
+      if (!categoryIncidents[categoryId]) {
+        console.log('Fetching incidents for category:', categoryId); // Debug log
+        await fetchCategoryIncidents(categoryId);
       }
     }
   };
 
-  const handleRequestService = (service: ServiceCatalogItem) => {
-    if (service.templateId) {
-      router.push(`/technician/requests/${service.templateId}?type=service`);
+  const handleReportIncident = (incident: IncidentCatalogItem) => {
+    if (incident.templateId) {
+      router.push(`/requests/templateid/${incident.templateId}?type=incident&incidentId=${incident.id}`);
     } else {
-      alert('This service is not available for request at the moment.');
+      alert('This incident type is not available for reporting at the moment.');
     }
   };
 
@@ -112,21 +127,12 @@ export default function ServiceCatalogTab() {
     category.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const renderStars = (rating: number) => {
-    return Array.from({ length: 5 }, (_, i) => (
-      <Star
-        key={i}
-        className={`w-3 h-3 ${i < rating ? 'text-yellow-400 fill-current' : 'text-gray-300'}`}
-      />
-    ));
-  };
-
   return (
     <div className="p-6">
       {/* Header Section */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">Service Catalog</h1>
-        <p className="text-slate-600 mb-6">Browse and request available services</p>
+        <h1 className="text-2xl font-bold text-slate-900 mb-2">Incident Catalog</h1>
+        <p className="text-slate-600 mb-6">Browse and request available Incident</p>
         
         {/* Search */}
         <div className="flex items-center gap-4 mb-4">
@@ -134,7 +140,7 @@ export default function ServiceCatalogTab() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
               <Input
-                placeholder="Search services and categories..."
+                placeholder="Search incident types and categories..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -153,7 +159,7 @@ export default function ServiceCatalogTab() {
         ) : filteredCategories.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg border border-slate-200">
             <FolderOpen className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-            <h3 className="text-lg font-medium text-slate-900 mb-2">No service categories found</h3>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">No incident categories found</h3>
             <p className="text-slate-500">Try adjusting your search terms</p>
           </div>
         ) : (
@@ -173,14 +179,14 @@ export default function ServiceCatalogTab() {
                         className="w-full h-full object-contain"
                       />
                     ) : (
-                      <Tags className="w-6 h-6 text-blue-600" />
+                      <AlertTriangle className="w-6 h-6 text-blue-600" />
                     )}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-1">
                       <h3 className="text-lg font-semibold text-slate-900">{category.name}</h3>
                       <Badge variant="outline" className="text-xs">
-                        {category.serviceCount} {category.serviceCount === 1 ? 'service' : 'services'}
+                        {category.incidentCount || 0} {category.incidentCount === 1 ? 'incident type' : 'incident types'}
                       </Badge>
                       {category.isActive && (
                         <Badge className="bg-green-100 text-green-800 text-xs status-badge">Active</Badge>
@@ -198,90 +204,69 @@ export default function ServiceCatalogTab() {
                 </div>
               </button>
 
-              {/* Expanded Services */}
+              {/* Expanded Incidents */}
               {expandedCategory === category.id && (
                 <div className="border-t border-slate-200 bg-slate-50">
                   <div className="p-6">
                     <h4 className="font-medium text-slate-900 mb-4">
-                      Available Services ({categoryServices[category.id]?.length || 0})
+                      Available Incident Types ({categoryIncidents[category.id]?.length || 0})
                     </h4>
                     
-                    {categoryServices[category.id]?.length > 0 ? (
+                    {categoryIncidents[category.id]?.length > 0 ? (
                       <div className="space-y-3">
-                        {categoryServices[category.id].map((service) => (
-                          <div key={service.id} className="bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50 transition-colors">
+                        {categoryIncidents[category.id].map((incident) => (
+                          <div key={incident.id} className="bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50 transition-colors">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-4 flex-1">
-                                {/* Service Icon */}
-                                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                  {service.template_icon ? (
+                                {/* Incident Icon */}
+                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                  {incident.template?.icon ? (
                                     <img 
-                                      src={`/serviceicons/${service.template_icon}`} 
-                                      alt={service.name} 
+                                      src={`/serviceicons/${incident.template.icon}`} 
+                                      alt={incident.name} 
                                       className="w-full h-full object-contain"
                                     />
                                   ) : (
-                                    <FolderOpen className="w-5 h-5 text-blue-600" />
+                                    <Tags className="w-5 h-5 text-blue-600" />
                                   )}
                                 </div>
 
-                                {/* Service Details */}
+                                {/* Incident Details */}
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-1">
-                                    <h5 className="font-medium text-slate-900">{service.name}</h5>
-                                    {service.isPopular && (
-                                      <Badge className="bg-orange-100 text-orange-800 text-xs">Popular</Badge>
-                                    )}
-                                    {!service.isActive && (
+                                    <h5 className="font-medium text-slate-900">{incident.name}</h5>
+                                    {!incident.isActive && (
                                       <Badge variant="outline" className="text-xs text-slate-500">
                                         Unavailable
                                       </Badge>
                                     )}
                                   </div>
                                   <p className="text-sm text-slate-600 mb-2">
-                                    {service.description || 'No description available'}
+                                    {incident.description || 'No description available'}
                                   </p>
                                   
-                                  {/* Service Metadata */}
+                                  {/* Incident Metadata */}
                                   <div className="flex items-center gap-4 text-xs text-slate-500">
-                                    {service.rating && (
-                                      <div className="flex items-center gap-1">
-                                        <div className="flex items-center">
-                                          {renderStars(Math.round(service.rating))}
-                                        </div>
-                                        <span>{service.rating.toFixed(1)} rating</span>
-                                      </div>
-                                    )}
-                                    
-                                    {service.estimatedTime && (
+                                    {incident.avgResolutionTime && (
                                       <div className="flex items-center gap-1">
                                         <Clock className="w-3 h-3" />
-                                        <span>Est. {service.estimatedTime}</span>
+                                        <span>Avg. resolution: {incident.avgResolutionTime}</span>
                                       </div>
                                     )}
-
+                                    <span>{incident.usageCount} reports submitted</span>
                                   </div>
                                 </div>
                               </div>
 
                               {/* Action Buttons */}
                               <div className="flex items-center gap-2 ml-4">
-                                {service.templateId && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => router.push(`/requests/service/preview/${service.templateId}`)}
-                                  >
-                                    Preview
-                                  </Button>
-                                )}
                                 <Button
                                   size="sm"
                                   className="bg-blue-600 hover:bg-blue-700 text-white"
-                                  onClick={() => handleRequestService(service)}
-                                  disabled={!service.isActive}
+                                  onClick={() => handleReportIncident(incident)}
+                                  disabled={!incident.isActive}
                                 >
-                                  Request Service
+                                  Request Incident
                                 </Button>
                               </div>
                             </div>
@@ -291,7 +276,7 @@ export default function ServiceCatalogTab() {
                     ) : (
                       <div className="text-center py-8 text-slate-500">
                         <FolderOpen className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                        <p>No services available in this category</p>
+                        <p>No incident types available in this category</p>
                       </div>
                     )}
                   </div>
