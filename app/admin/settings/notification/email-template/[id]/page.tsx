@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import RichTextEditor from '@/components/ui/rich-text-editor';
 import Link from 'next/link';
 import { SessionWrapper } from '@/components/session-wrapper';
 
@@ -32,6 +31,14 @@ interface EmailTemplateData {
   updatedAt: string;
 }
 
+interface EmailVariable {
+  name: string;
+  description: string;
+  displayName: string;
+  category: string;
+  exampleValue: string;
+}
+
 export default function EmailTemplateEditorPage() {
   const router = useRouter();
   const params = useParams();
@@ -45,29 +52,54 @@ export default function EmailTemplateEditorPage() {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showVariableDropdown, setShowVariableDropdown] = useState(false);
   const [variableDropdownPosition, setVariableDropdownPosition] = useState({ x: 0, y: 0 });
+  const [currentSelection, setCurrentSelection] = useState<Range | null>(null);
+  const [showSubjectVariableDropdown, setShowSubjectVariableDropdown] = useState(false);
+  const [subjectVariableDropdownPosition, setSubjectVariableDropdownPosition] = useState({ x: 0, y: 0 });
+  const [subjectInputRef, setSubjectInputRef] = useState<HTMLInputElement | null>(null);
+  const [subjectCursorPosition, setSubjectCursorPosition] = useState<number>(0);
+  const [availableVariables, setAvailableVariables] = useState<EmailVariable[]>([]);
+  const [filteredVariables, setFilteredVariables] = useState<EmailVariable[]>([]);
+  const [searchText, setSearchText] = useState<string>('');
   const previewRef = useRef<HTMLDivElement>(null);
 
-  // Available template variables
-  const availableVariables = [
-    { name: 'Request_ID', description: 'Request ID number' },
-    { name: 'Requester_Name', description: 'Full name of the person who created the request' },
-    { name: 'Requester_Email', description: 'Email address of the requester' },
-    { name: 'Request_Subject', description: 'Subject/title of the request' },
-    { name: 'Request_Description', description: 'Detailed description of the request' },
-    { name: 'Request_Status', description: 'Current status of the request' },
-    { name: 'Request_Title', description: 'Title of the request' },
-    { name: 'Technician_Name', description: 'Name of the assigned technician' },
-    { name: 'Request_Approval_Status', description: 'Approval status (APPROVED/REJECTED)' },
-    { name: 'Request_Approval_Comment', description: 'Approval comment from approver' },
-    { name: 'Resolution_Description', description: 'Description of the resolution' },
-    { name: 'Due_By_Date', description: 'SLA due date for the request' },
-    { name: 'Base_URL', description: 'Base URL of the application' },
-    { name: 'Close_Request_Link', description: 'Direct link to close the request' },
-    { name: 'Encoded_Request_URL', description: 'Encoded URL to view the request' },
-    { name: 'LoginName', description: 'Login username' },
-    { name: 'PasswordResetLink', description: 'Password reset link' },
-    { name: 'ServerAliasURL', description: 'Server alias URL' }
-  ];
+  // Load available variables from database
+  useEffect(() => {
+    const fetchVariables = async () => {
+      try {
+        const response = await fetch('/api/admin/email-template-variables');
+        if (response.ok) {
+          const variables = await response.json();
+          setAvailableVariables(variables);
+          setFilteredVariables(variables); // Initialize filtered variables
+        } else {
+          console.error('Failed to fetch email template variables');
+          // Fallback to empty array if API fails
+          setAvailableVariables([]);
+          setFilteredVariables([]);
+        }
+      } catch (error) {
+        console.error('Error fetching email template variables:', error);
+        setAvailableVariables([]);
+        setFilteredVariables([]);
+      }
+    };
+
+    fetchVariables();
+  }, []);
+
+  // Filter variables based on search text
+  useEffect(() => {
+    if (!searchText.trim()) {
+      setFilteredVariables(availableVariables);
+    } else {
+      const filtered = availableVariables.filter(variable => 
+        variable.name.toLowerCase().includes(searchText.toLowerCase()) ||
+        variable.displayName.toLowerCase().includes(searchText.toLowerCase()) ||
+        variable.description.toLowerCase().includes(searchText.toLowerCase())
+      );
+      setFilteredVariables(filtered);
+    }
+  }, [searchText, availableVariables]);
 
   // Load template data from database
   useEffect(() => {
@@ -84,11 +116,11 @@ export default function EmailTemplateEditorPage() {
             title: data.name,
             description: data.type,
             subject: data.subject,
-            toField: '',
-            ccField: '',
-            headerHtml: '',
+            toField: data.to_field || '',
+            ccField: data.cc_field || '',
+            headerHtml: '', // Not used anymore
             contentHtml: data.content || '',
-            footerHtml: '',
+            footerHtml: '', // Not used anymore
             isActive: data.status === 'active',
             createdAt: data.lastModified,
             updatedAt: data.lastModified
@@ -126,11 +158,17 @@ export default function EmailTemplateEditorPage() {
       if (showColorPicker && !(event.target as Element).closest('.color-picker-container')) {
         setShowColorPicker(false);
       }
+      if (showVariableDropdown && !(event.target as Element).closest('.variable-dropdown-container')) {
+        setShowVariableDropdown(false);
+      }
+      if (showSubjectVariableDropdown && !(event.target as Element).closest('.subject-variable-dropdown-container')) {
+        setShowSubjectVariableDropdown(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showColorPicker]);
+  }, [showColorPicker, showVariableDropdown, showSubjectVariableDropdown]);
 
   const handleSave = async () => {
     if (!templateData) return;
@@ -138,11 +176,6 @@ export default function EmailTemplateEditorPage() {
     try {
       // Get current content from the editor
       const currentContent = previewRef.current?.innerHTML || '';
-      
-      // Prepare the HTML content for saving with proper structure
-      const headerHtml = `<div style="background: linear-gradient(135deg, #374151, #1f2937); color: white; padding: 24px; text-align: center; font-size: 24px; font-weight: bold;">Aspac IT Help Desk</div>`;
-      const footerHtml = `<div style="background: linear-gradient(135deg, #374151, #1f2937); color: #60a5fa; padding: 16px; text-align: center; font-size: 16px; font-weight: bold;">Keep Calm & Use the IT Help Desk!</div>`;
-      const contentHtml = `<div style="padding: 32px; background: white; font-family: system-ui, -apple-system, sans-serif; line-height: 1.6; font-size: 14px;">${currentContent}</div>`;
 
       const response = await fetch(`/api/admin/email-templates/${templateId}`, {
         method: 'PUT',
@@ -334,6 +367,214 @@ export default function EmailTemplateEditorPage() {
     }
   };
 
+  // Variable insertion functions
+  const insertVariable = (variableName: string) => {
+    if (!previewRef.current) return;
+
+    // Focus the editor
+    previewRef.current.focus();
+
+    // Get current selection
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    const range = selection.getRangeAt(0);
+    
+    // Get the text node and its content
+    const textNode = range.startContainer;
+    if (textNode.nodeType !== Node.TEXT_NODE) return;
+    
+    const textContent = textNode.textContent || '';
+    const cursorPos = range.startOffset;
+    
+    // Find the last $ before the cursor
+    let dollarPos = -1;
+    for (let i = cursorPos - 1; i >= 0; i--) {
+      if (textContent[i] === '$') {
+        dollarPos = i;
+        break;
+      }
+    }
+    
+    if (dollarPos === -1) return;
+    
+    // Create range from $ to current cursor position
+    const newRange = document.createRange();
+    newRange.setStart(textNode, dollarPos);
+    newRange.setEnd(textNode, cursorPos);
+    
+    // Select and replace
+    selection.removeAllRanges();
+    selection.addRange(newRange);
+
+    // Insert the variable with bold and black styling
+    const variableText = `\${${variableName}}`;
+    const variableHtml = `<strong style="color: black;">${variableText}</strong>`;
+    document.execCommand('insertHTML', false, variableHtml);
+
+    // Hide dropdown and clear search
+    setShowVariableDropdown(false);
+    setCurrentSelection(null);
+    setSearchText('');
+
+    // Sync content
+    syncPreviewToEditor();
+  };
+
+  // Subject field variable insertion functions
+  const insertSubjectVariable = (variableName: string) => {
+    if (!subjectInputRef || !templateData) return;
+
+    const variableText = `\${${variableName}}`;
+    const currentSubject = templateData.subject || '';
+    
+    // Get current cursor position
+    const cursorPos = subjectInputRef.selectionStart || 0;
+    
+    // Find the $ character position by looking backwards from cursor
+    let dollarPos = -1;
+    for (let i = cursorPos - 1; i >= 0; i--) {
+      if (currentSubject[i] === '$') {
+        dollarPos = i;
+        break;
+      }
+    }
+    
+    if (dollarPos === -1) {
+      // If no $ found, just insert at cursor
+      const beforeCursor = currentSubject.substring(0, cursorPos);
+      const afterCursor = currentSubject.substring(cursorPos);
+      const newSubject = beforeCursor + variableText + afterCursor;
+      setTemplateData(prev => prev ? { ...prev, subject: newSubject } : prev);
+    } else {
+      // Replace from $ position to current cursor position
+      const beforeDollar = currentSubject.substring(0, dollarPos);
+      const afterCursor = currentSubject.substring(cursorPos);
+      const newSubject = beforeDollar + variableText + afterCursor;
+      setTemplateData(prev => prev ? { ...prev, subject: newSubject } : prev);
+    }
+
+    // Hide dropdown and clear search
+    setShowSubjectVariableDropdown(false);
+    setSearchText('');
+
+    // Focus back to input and set cursor position
+    setTimeout(() => {
+      if (subjectInputRef) {
+        subjectInputRef.focus();
+        const newCursorPos = (dollarPos === -1 ? cursorPos : dollarPos) + variableText.length;
+        subjectInputRef.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 0);
+  };
+
+  const handleSubjectKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const target = e.currentTarget;
+    
+    // Handle $ key to show variable dropdown
+    if (e.key === '$') {
+      // Don't prevent default, let the $ character be typed
+      setSearchText('');
+      
+      setTimeout(() => {
+        // Get current cursor position for dropdown positioning
+        const cursorPosition = target.selectionStart || 0;
+        setSubjectCursorPosition(cursorPosition);
+        
+        // Calculate dropdown position
+        const rect = target.getBoundingClientRect();
+        
+        // Create a temporary span to measure text width up to cursor
+        const tempSpan = document.createElement('span');
+        tempSpan.style.font = window.getComputedStyle(target).font;
+        tempSpan.style.visibility = 'hidden';
+        tempSpan.style.position = 'absolute';
+        tempSpan.textContent = target.value.substring(0, cursorPosition);
+        document.body.appendChild(tempSpan);
+        
+        const textWidth = tempSpan.offsetWidth;
+        document.body.removeChild(tempSpan);
+        
+        setSubjectVariableDropdownPosition({
+          x: Math.min(textWidth + 12, rect.width - 320), // 12px padding, 320px dropdown width
+          y: rect.height + 5
+        });
+        
+        setShowSubjectVariableDropdown(true);
+      }, 0);
+    } else if (showSubjectVariableDropdown && e.key.length === 1 && e.key !== ' ') {
+      // User is typing after $, update search filter
+      const newSearchText = searchText + e.key;
+      setSearchText(newSearchText);
+    } else if (showSubjectVariableDropdown && e.key === 'Backspace') {
+      // Handle backspace in search
+      setTimeout(() => {
+        if (searchText.length > 0) {
+          setSearchText(searchText.slice(0, -1));
+        } else {
+          // If no search text and backspace, hide dropdown
+          setShowSubjectVariableDropdown(false);
+        }
+      }, 0);
+    } else if (e.key === 'Escape' && showSubjectVariableDropdown) {
+      setShowSubjectVariableDropdown(false);
+      setSearchText('');
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    const target = e.currentTarget as HTMLDivElement;
+    
+    // Handle $ key to show variable dropdown
+    if (e.key === '$') {
+      e.preventDefault();
+      
+      // Insert $ character first
+      document.execCommand('insertText', false, '$');
+      
+      // Clear search text and show all variables
+      setSearchText('');
+      
+      // Get current cursor position for dropdown positioning
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        setCurrentSelection(range.cloneRange());
+        
+        // Calculate dropdown position
+        const rect = target.getBoundingClientRect();
+        const cursorRect = range.getBoundingClientRect();
+        
+        setVariableDropdownPosition({
+          x: cursorRect.left - rect.left,
+          y: cursorRect.bottom - rect.top + 5
+        });
+        
+        setShowVariableDropdown(true);
+      }
+    } else if (showVariableDropdown && e.key.length === 1 && e.key !== ' ') {
+      // User is typing after $, update search filter
+      const newSearchText = searchText + e.key;
+      setSearchText(newSearchText);
+    } else if (showVariableDropdown && e.key === 'Backspace') {
+      // Handle backspace in search
+      if (searchText.length > 0) {
+        setSearchText(searchText.slice(0, -1));
+      } else {
+        // If no search text and backspace, hide dropdown and remove $
+        setShowVariableDropdown(false);
+        setCurrentSelection(null);
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      document.execCommand('insertHTML', false, '<br><br>');
+    } else if (e.key === 'Escape' && showVariableDropdown) {
+      setShowVariableDropdown(false);
+      setCurrentSelection(null);
+      setSearchText('');
+    }
+  };
+
   // Utility functions to save and restore cursor position
   const saveCursorPosition = () => {
     const selection = window.getSelection();
@@ -433,17 +674,60 @@ export default function EmailTemplateEditorPage() {
               </CardHeader>
               <CardContent className="p-6 space-y-6">
               {/* Subject */}
-              <div>
+              <div className="relative subject-variable-dropdown-container">
                 <Label htmlFor="subject" className="text-sm font-medium text-slate-700 mb-2 block">
                   Subject
                 </Label>
+              
                 <Input
                   id="subject"
+                  ref={setSubjectInputRef}
                   value={templateData?.subject || ''}
                   onChange={(e) => setTemplateData(prev => prev ? { ...prev, subject: e.target.value } : prev)}
+                  onKeyDown={handleSubjectKeyDown}
                   className="w-full border-slate-300 focus:border-indigo-500 focus:ring-indigo-500"
                   placeholder="Email subject line"
                 />
+                
+                {/* Subject Variable Dropdown */}
+                {showSubjectVariableDropdown && (
+                  <div 
+                    className="absolute z-50 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto w-80"
+                    style={{
+                      left: subjectVariableDropdownPosition.x,
+                      top: subjectVariableDropdownPosition.y + 40 // Add input height
+                    }}
+                  >
+                    <div className="p-2">
+                      <div className="text-xs font-medium text-gray-500 mb-2 px-2">
+                        {searchText ? `Searching for: "${searchText}"` : 'Select a variable to insert:'}
+                      </div>
+                      {filteredVariables.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-gray-500 italic">
+                          {availableVariables.length === 0 ? 'Loading variables...' : 'No variables found'}
+                        </div>
+                      ) : (
+                        filteredVariables.map((variable) => (
+                          <button
+                            key={variable.name}
+                            onClick={() => insertSubjectVariable(variable.name)}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 hover:text-blue-700 rounded flex flex-col gap-1"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-blue-600">
+                                ${variable.name}
+                              </span>
+                           
+                            </div>
+                            <span className="text-gray-500 text-xs">
+                              {variable.description}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Professional Email Editor */}
@@ -683,71 +967,70 @@ export default function EmailTemplateEditorPage() {
 
                   {/* Email Preview Container */}
                   <div className="bg-gray-50 p-4">
-                    {/* Email Template */}
-                    <div className="max-w-2xl mx-auto bg-gradient-to-r from-slate-600 to-slate-700 rounded-lg overflow-hidden">
-                      {/* Header */}
-                      <div 
-                        className="bg-gradient-to-r from-slate-700 to-slate-800 text-white p-6 text-center cursor-text"
-                        contentEditable
-                        suppressContentEditableWarning={true}
-                        onBlur={(e) => setTemplateData(prev => prev ? {...prev, title: e.currentTarget.textContent || ''} : prev)}
-                        style={{ 
-                          outline: 'none',
-                          fontSize: '24px',
-                          fontWeight: 'bold',
-                          lineHeight: '1.2'
-                        }}
-                      >
-                        {templateData?.title || 'Aspac IT Help Desk'}
-                      </div>
-
-                      {/* Main Content with White Background */}
-                      <div className="bg-white">
-                        <div className="p-4">
+                    {/* Email Template - Content Only */}
+                    <div className="max-w-2xl mx-auto bg-white rounded-lg border border-gray-300 overflow-hidden">
+                      {/* Main Content */}
+                      <div className="p-6 relative variable-dropdown-container">
+                        <div 
+                          ref={previewRef}
+                          contentEditable
+                          suppressContentEditableWarning={true}
+                          className="min-h-[200px] cursor-text focus:outline-none"
+                          onInput={(e) => {
+                            const cursorPosition = saveCursorPosition();
+                            syncPreviewToEditor();
+                            setTimeout(() => {
+                              restoreCursorPosition(cursorPosition);
+                            }, 0);
+                          }}
+                          onBlur={syncPreviewToEditor}
+                          onKeyDown={handleKeyDown}
+                          style={{
+                            lineHeight: '1.6',
+                            fontSize: '14px',
+                            fontFamily: 'system-ui, -apple-system, sans-serif'
+                          }}
+                        />
                         
+                        {/* Variable Dropdown */}
+                        {showVariableDropdown && (
                           <div 
-                            ref={previewRef}
-                            contentEditable
-                            suppressContentEditableWarning={true}
-                            className="min-h-[80px] cursor-text focus:outline-none"
-                            onInput={(e) => {
-                              const cursorPosition = saveCursorPosition();
-                              syncPreviewToEditor();
-                              setTimeout(() => {
-                                restoreCursorPosition(cursorPosition);
-                              }, 0);
-                            }}
-                            onBlur={syncPreviewToEditor}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                document.execCommand('insertHTML', false, '<br><br>');
-                              }
-                            }}
+                            className="absolute z-50 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto w-80"
                             style={{
-                              lineHeight: '1.6',
-                              fontSize: '14px',
-                              fontFamily: 'system-ui, -apple-system, sans-serif'
+                              left: variableDropdownPosition.x,
+                              top: variableDropdownPosition.y
                             }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Footer */}
-                      <div 
-                        className="bg-gradient-to-r from-slate-700 to-slate-800 text-blue-400 p-4 text-center cursor-text"
-                        contentEditable
-                        suppressContentEditableWarning={true}
-                        onBlur={(e) => {
-                          // Footer is static, no need to update state
-                        }}
-                        style={{ 
-                          outline: 'none',
-                          fontSize: '16px',
-                          fontWeight: 'bold'
-                        }}
-                      >
-                        Keep Calm & Use the IT Help Desk!
+                          >
+                            <div className="p-2">
+                              <div className="text-xs font-medium text-gray-500 mb-2 px-2">
+                                {searchText ? `Searching for: "${searchText}"` : 'Select a variable to insert:'}
+                              </div>
+                              {filteredVariables.length === 0 ? (
+                                <div className="px-3 py-2 text-sm text-gray-500 italic">
+                                  {availableVariables.length === 0 ? 'Loading variables...' : 'No variables found'}
+                                </div>
+                              ) : (
+                                filteredVariables.map((variable) => (
+                                  <button
+                                    key={variable.name}
+                                    onClick={() => insertVariable(variable.name)}
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 hover:text-blue-700 rounded flex flex-col gap-1"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-medium text-blue-600">
+                                        ${variable.name}
+                                      </span>
+                                      
+                                    </div>
+                                    <span className="text-gray-500 text-xs">
+                                      {variable.description}
+                                    </span>
+                                  </button> 
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

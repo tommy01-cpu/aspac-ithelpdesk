@@ -9,6 +9,16 @@ import {
   sendRequestResolvedEmail,
   sendSLAEscalationEmail 
 } from '@/lib/email';
+import { processImagesForEmailAuto } from './email-image-processor-enhanced';
+
+// Helper function to ensure all email variables have string values
+const sanitizeEmailVariables = (variables: any): Record<string, string> => {
+  const sanitized: Record<string, string> = {};
+  Object.keys(variables).forEach(key => {
+    sanitized[key] = variables[key]?.toString() || '';
+  });
+  return sanitized;
+};
 
 export type NotificationType = 
   | 'REQUEST_CREATED'
@@ -30,24 +40,13 @@ export interface NotificationData {
   data?: any;
 }
 
-export interface RequestEmailVariables {
+export interface RequestEmailVariables extends Record<string, string> {
   Request_ID: string;
   Request_Status: string;
   Request_Subject: string;
   Request_Description: string;
   Requester_Name: string;
   Requester_Email: string;
-  Request_Title?: string;
-  Request_Approval_Status?: string;
-  Request_Approval_Comment?: string;
-  Technician_Name?: string;
-  Technician_Email?: string;
-  Due_By_Date?: string;
-  Resolution_Description?: string;
-  Request_Resolution?: string;
-  Close_Request_Link?: string;
-  Clarification?: string;
-  Emails_To_Notify?: string[];
 }
 
 // Create in-app notification
@@ -135,7 +134,11 @@ export const notifyRequestCreated = async (requestData: any, templateData: any) 
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requesterEmail = requestData.user.emp_email;
     const requestSubject = templateData?.name || 'IT Helpdesk Request';
-    const requestDescription = requestData.formData?.['9'] || 'No description provided';
+    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    
+    // Process images in the description for email compatibility
+    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    
     const emailsToNotify = requestData.formData?.emailNotify ? 
       requestData.formData.emailNotify.split(',').map((email: string) => email.trim()).filter((email: string) => email) : [];
 
@@ -152,15 +155,15 @@ export const notifyRequestCreated = async (requestData: any, templateData: any) 
 
     // Send email to requester (4.1.1)
     if (requesterEmail) {
-      await sendRequestCreatedEmail(requesterEmail, emailVariables);
+      await sendRequestCreatedEmail(requesterEmail, sanitizeEmailVariables(emailVariables));
     }
 
     // Send email to CC users (4.1.2)
     if (emailsToNotify.length > 0) {
-      await sendRequestCreatedCCEmail(emailsToNotify, {
+      await sendRequestCreatedCCEmail(emailsToNotify, sanitizeEmailVariables({
         ...emailVariables,
-        Emails_To_Notify: emailsToNotify,
-      });
+        Emails_To_Notify: emailsToNotify.join(', '),
+      }));
     }
 
     // Create in-app notification for requester
@@ -203,7 +206,11 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requestSubject = templateData?.name || 'IT Helpdesk Request';
-    const requestDescription = requestData.formData?.['9'] || 'No description provided';
+    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    
+    // Process images in the description for email compatibility
+    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    
     const approverEmail = approverData.emp_email;
 
     // Email variables
@@ -218,7 +225,7 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
 
     // Send email to approver
     if (approverEmail) {
-      await sendApprovalRequiredEmail(approverEmail, emailVariables);
+      await sendApprovalRequiredEmail(approverEmail, sanitizeEmailVariables(emailVariables));
     }
 
     // Create in-app notification for approver
@@ -254,7 +261,10 @@ export const notifyRequestApprovedRejected = async (
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requesterEmail = requestData.user.emp_email;
     const requestSubject = templateData?.name || 'IT Helpdesk Request';
-    const requestDescription = requestData.formData?.['9'] || 'No description provided';
+    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    
+    // Process images in the description for email compatibility
+    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
 
     // Email variables
     const emailVariables: RequestEmailVariables = {
@@ -271,7 +281,7 @@ export const notifyRequestApprovedRejected = async (
 
     // Send email to requester
     if (requesterEmail) {
-      await sendRequestApprovedRejectedEmail(requesterEmail, emailVariables);
+      await sendRequestApprovedRejectedEmail(requesterEmail, sanitizeEmailVariables(emailVariables));
     }
 
     // Create in-app notification for requester
@@ -300,7 +310,11 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requesterEmail = requestData.user.emp_email;
     const requestSubject = templateData?.name || 'IT Helpdesk Request';
-    const requestDescription = requestData.formData?.['9'] || 'No description provided';
+    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    
+    // Process images in the description for email compatibility
+    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    
     const technicianName = `${technicianData.emp_fname} ${technicianData.emp_lname}`.trim();
     const technicianEmail = technicianData.emp_email;
     const dueDate = requestData.formData?.slaDueDate || 'Not specified';
@@ -332,12 +346,12 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
 
     // Send email to requester (4.1.8)
     if (requesterEmail) {
-      await sendRequestAssignedRequesterEmail(requesterEmail, requesterEmailVariables);
+      await sendRequestAssignedRequesterEmail(requesterEmail, sanitizeEmailVariables(requesterEmailVariables));
     }
 
     // Send email to technician (4.1.9)
     if (technicianEmail) {
-      await sendRequestAssignedTechnicianEmail(technicianEmail, technicianEmailVariables);
+      await sendRequestAssignedTechnicianEmail(technicianEmail, sanitizeEmailVariables(technicianEmailVariables));
     }
 
     // Create in-app notification for requester
@@ -376,7 +390,11 @@ export const notifyRequestResolved = async (
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requesterEmail = requestData.user.emp_email;
     const requestSubject = templateData?.name || 'IT Helpdesk Request';
-    const requestDescription = requestData.formData?.['9'] || 'No description provided';
+    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    
+    // Process images in the description for email compatibility
+    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    
     const emailsToNotify = requestData.formData?.emailNotify ? 
       requestData.formData.emailNotify.split(',').map((email: string) => email.trim()).filter((email: string) => email) : [];
     const closeRequestLink = `http://192.168.1.85:3000/requests/view/${requestId}`;
@@ -396,7 +414,7 @@ export const notifyRequestResolved = async (
 
     // Send email to requester (4.1.11)
     if (requesterEmail) {
-      await sendRequestResolvedEmail(requesterEmail, emailVariables);
+      await sendRequestResolvedEmail(requesterEmail, sanitizeEmailVariables(emailVariables));
     }
 
     // Send email to CC users (4.1.12)
@@ -409,7 +427,7 @@ export const notifyRequestResolved = async (
         to: emailsToNotify,
         subject: template.subject,
         message: template.template,
-        variables: emailVariables
+        variables: sanitizeEmailVariables(emailVariables)
       });
     }
 
@@ -453,7 +471,11 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requestSubject = templateData?.name || 'IT Helpdesk Request';
-    const requestDescription = requestData.formData?.['9'] || 'No description provided';
+    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    
+    // Process images in the description for email compatibility
+    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    
     const technicianName = `${technicianData.emp_fname} ${technicianData.emp_lname}`.trim();
     const technicianEmail = technicianData.emp_email;
     const dueDate = requestData.formData?.slaDueDate || 'Not specified';
@@ -473,7 +495,7 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
 
     // Send email to technician
     if (technicianEmail) {
-      await sendSLAEscalationEmail(technicianEmail, emailVariables);
+      await sendSLAEscalationEmail(technicianEmail, sanitizeEmailVariables(emailVariables));
     }
 
     // Create in-app notification for technician

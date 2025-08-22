@@ -19,6 +19,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [error, setError] = useState('');
   const [showForceChangePassword, setShowForceChangePassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -31,7 +32,29 @@ export default function LoginPage() {
   const { toast } = useToast();
 
   // Get callback URL from query params
-  const callbackUrl = searchParams.get('callbackUrl') || '/';
+  const callbackUrl = searchParams?.get('callbackUrl') || '/';
+
+  // Check if user is already authenticated and redirect them
+  useEffect(() => {
+    const checkAuthAndRedirect = async () => {
+      try {
+        const session = await getSession();
+        if (session) {
+          console.log('User already authenticated, redirecting to:', callbackUrl);
+          // Don't show toast, just redirect silently for better UX
+          router.push(callbackUrl);
+          return; // Don't set isCheckingAuth to false if redirecting
+        }
+      } catch (error) {
+        console.error('Error checking authentication:', error);
+      }
+      
+      // Only show login form if user is not authenticated
+      setIsCheckingAuth(false);
+    };
+
+    checkAuthAndRedirect();
+  }, [callbackUrl, router]);
 
   // Password validation function
   const validatePassword = (password: string) => {
@@ -214,8 +237,21 @@ export default function LoginPage() {
 
   return (
     <>
-      {/* Force Password Change Modal */}
-      <Dialog open={showForceChangePassword} onOpenChange={handleCloseForceChangePassword}>
+      {/* Show loading state while checking authentication */}
+      {isCheckingAuth && (
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center p-4">
+          <div className="text-center">
+            <div className="w-8 h-8 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-slate-600">Checking authentication...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Only show login form if not checking auth and user is not authenticated */}
+      {!isCheckingAuth && (
+        <>
+          {/* Force Password Change Modal */}
+          <Dialog open={showForceChangePassword} onOpenChange={handleCloseForceChangePassword}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
@@ -536,6 +572,8 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
+        </>
+      )}
     </>
   );
 }

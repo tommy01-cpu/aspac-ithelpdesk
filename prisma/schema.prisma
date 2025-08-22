@@ -23,56 +23,58 @@ model user_roles {
 }
 
 model users {
-  id                        Int                    @id @default(autoincrement())
-  emp_fname                 String                 @map("first_name") @db.VarChar(100)
-  emp_mid                   String?                @map("middle_name") @db.VarChar(100)
-  emp_lname                 String                 @map("last_name") @db.VarChar(100)
-  emp_suffix                String?                @map("suffix") @db.VarChar(20)
-  emp_code                  String?                @unique @map("employee_id") @db.VarChar(50)
-  post_des                  String?                @map("job_title") @db.VarChar(100)
-  emp_email                 String?                @map("corporate_email") @db.VarChar(150)
-  emp_cell                  String?                @map("corporate_mobile_no") @db.VarChar(20)
-  password                  String
-  emp_status                String?                @default("active") @map("status") @db.VarChar(20)
-  created_at                DateTime?              @default(now()) @db.Timestamp(6)
-  profile_image             String?                @db.VarChar(255)
-  department                String?
-  reportingToId             Int?
-  departmentHeadId          Int?
-  isServiceApprover         Boolean                @default(false)
-  isTechnician              Boolean                @default(false)
-  description               String?
-  landline_no               String?                @db.VarChar(20)
-  local_no                  String?                @db.VarChar(20)
-  requester_view_permission String?                @default("own_requests") @db.VarChar(50)
-  departmentId              Int?
-  requiresPasswordChange    Boolean                @default(false)
-  approvalConversations     ApprovalConversation[] @relation("ApprovalConversations")
-  attachments               Attachment[]
-  departmentsManaged        Department[]           @relation("DepartmentHeadUser")
-  incidentCatalogCreated    IncidentCatalogItem[]  @relation("IncidentCatalogCreatedBy")
-  incidentCatalogUpdated    IncidentCatalogItem[]  @relation("IncidentCatalogUpdatedBy")
-  requestApprovals          RequestApproval[]      @relation("RequestApprovals")
-  requestHistory            RequestHistory[]       @relation("RequestHistory")
-  requests                  Request[]
-  serviceCatalogCreated     ServiceCatalogItem[]   @relation("ServiceCatalogCreatedBy")
-  serviceCatalogUpdated     ServiceCatalogItem[]   @relation("ServiceCatalogUpdatedBy")
-  serviceCategoriesCreated  ServiceCategory[]      @relation("ServiceCategoryCreatedBy")
-  serviceCategoriesUpdated  ServiceCategory[]      @relation("ServiceCategoryUpdatedBy")
-  slaIncidentsCreated       SLAIncident[]          @relation("SLAIncidentCreatedBy")
-  slaIncidentsUpdated       SLAIncident[]          @relation("SLAIncidentUpdatedBy")
-  slaServicesCreated        SLAService[]           @relation("SLAServiceCreatedBy")
-  slaServicesUpdated        SLAService[]           @relation("SLAServiceUpdatedBy")
-  technician                Technician?
-  templatesCreated          Template[]             @relation("TemplateCreatedBy")
-  templatesUpdated          Template[]             @relation("TemplateUpdatedBy")
-  notifications             Notification[]         @relation("UserNotifications")
-  user_roles                user_roles[]
-  departmentHead            users?                 @relation("DepartmentHead", fields: [departmentHeadId], references: [id])
-  departmentMembers         users[]                @relation("DepartmentHead")
-  userDepartment            Department?            @relation("DepartmentMembers", fields: [departmentId], references: [id])
-  reportingTo               users?                 @relation("UserReporting", fields: [reportingToId], references: [id])
-  directReports             users[]                @relation("UserReporting")
+  id                                                Int                    @id @default(autoincrement())
+  emp_fname                                         String                 @map("first_name") @db.VarChar(100)
+  emp_mid                                           String?                @map("middle_name") @db.VarChar(100)
+  emp_lname                                         String                 @map("last_name") @db.VarChar(100)
+  emp_suffix                                        String?                @map("suffix") @db.VarChar(20)
+  emp_code                                          String?                @unique @map("employee_id") @db.VarChar(50)
+  post_des                                          String?                @map("job_title") @db.VarChar(100)
+  emp_email                                         String?                @map("corporate_email") @db.VarChar(150)
+  emp_cell                                          String?                @map("corporate_mobile_no") @db.VarChar(20)
+  password                                          String
+  emp_status                                        String?                @default("active") @map("status") @db.VarChar(20)
+  created_at                                        DateTime?              @default(now()) @db.Timestamp(6)
+  profile_image                                     String?                @db.VarChar(255)
+  department                                        String?
+  reportingToId                                     Int?
+  departmentHeadId                                  Int?
+  isServiceApprover                                 Boolean                @default(false)
+  isTechnician                                      Boolean                @default(false)
+  description                                       String?
+  landline_no                                       String?                @db.VarChar(20)
+  local_no                                          String?                @db.VarChar(20)
+  requester_view_permission                         String?                @default("own_requests") @db.VarChar(50)
+  departmentId                                      Int?
+  requiresPasswordChange                            Boolean                @default(false)
+  approvalConversations                             ApprovalConversation[] @relation("ApprovalConversations")
+  attachments                                       Attachment[]
+  departmentsManaged                                Department[]           @relation("DepartmentHeadUser")
+  email_templates_email_templates_created_byTousers email_templates[]      @relation("email_templates_created_byTousers")
+  email_templates_email_templates_updated_byTousers email_templates[]      @relation("email_templates_updated_byTousers")
+  incidentCatalogCreated                            IncidentCatalogItem[]  @relation("IncidentCatalogCreatedBy")
+  incidentCatalogUpdated                            IncidentCatalogItem[]  @relation("IncidentCatalogUpdatedBy")
+  notifications                                     Notification[]         @relation("UserNotifications")
+  requestApprovals                                  RequestApproval[]      @relation("RequestApprovals")
+  requestHistory                                    RequestHistory[]       @relation("RequestHistory")
+  requests                                          Request[]
+  serviceCatalogCreated                             ServiceCatalogItem[]   @relation("ServiceCatalogCreatedBy")
+  serviceCatalogUpdated                             ServiceCatalogItem[]   @relation("ServiceCatalogUpdatedBy")
+  serviceCategoriesCreated                          ServiceCategory[]      @relation("ServiceCategoryCreatedBy")
+  serviceCategoriesUpdated                          ServiceCategory[]      @relation("ServiceCategoryUpdatedBy")
+  slaIncidentsCreated                               SLAIncident[]          @relation("SLAIncidentCreatedBy")
+  slaIncidentsUpdated                               SLAIncident[]          @relation("SLAIncidentUpdatedBy")
+  slaServicesCreated                                SLAService[]           @relation("SLAServiceCreatedBy")
+  slaServicesUpdated                                SLAService[]           @relation("SLAServiceUpdatedBy")
+  technician                                        Technician?
+  templatesCreated                                  Template[]             @relation("TemplateCreatedBy")
+  templatesUpdated                                  Template[]             @relation("TemplateUpdatedBy")
+  user_roles                                        user_roles[]
+  departmentHead                                    users?                 @relation("DepartmentHead", fields: [departmentHeadId], references: [id])
+  departmentMembers                                 users[]                @relation("DepartmentHead")
+  userDepartment                                    Department?            @relation("DepartmentMembers", fields: [departmentId], references: [id])
+  reportingTo                                       users?                 @relation("UserReporting", fields: [reportingToId], references: [id])
+  directReports                                     users[]                @relation("UserReporting")
 }
 
 model Department {
@@ -570,6 +572,100 @@ model IncidentCatalogItem {
   @@map("incident_catalog_item")
 }
 
+model Notification {
+  id        String           @id @default(cuid())
+  userId    Int
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      users            @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model EmailConfig {
+  id              Int       @id @default(autoincrement())
+  serverName      String    @map("server_name") @db.VarChar(255)
+  alternateServer String?   @map("alternate_server") @db.VarChar(255)
+  port            Int
+  protocol        String?   @default("SMTP") @db.VarChar(50)
+  senderName      String    @map("sender_name") @db.VarChar(255)
+  replyTo         String    @map("reply_to") @db.VarChar(255)
+  username        String?   @db.VarChar(255)
+  password        String?   @db.VarChar(255)
+  isActive        Boolean?  @default(true) @map("is_active")
+  createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@map("email_config")
+}
+
+model email_configuration {
+  id               Int       @id @default(autoincrement())
+  server_name      String    @db.VarChar(255)
+  alternate_server String?   @db.VarChar(255)
+  port             Int       @default(587)
+  protocol         String    @default("SMTP") @db.VarChar(50)
+  sender_name      String    @db.VarChar(255)
+  reply_to         String    @db.VarChar(255)
+  username         String?   @db.VarChar(255)
+  password         String?   @db.VarChar(255)
+  is_active        Boolean?  @default(true)
+  created_at       DateTime? @default(now()) @db.Timestamp(6)
+  updated_at       DateTime? @default(now()) @db.Timestamp(6)
+}
+
+model EmailTemplateVariables {
+  id            Int       @id @default(autoincrement())
+  variableKey   String    @unique @db.VarChar(100) @map("variable_key")
+  displayName   String    @db.VarChar(255) @map("display_name")
+  description   String?   @default("")
+  category      String?   @default("General") @db.VarChar(50)
+  defaultValue  String?   @default("") @map("default_value")
+  exampleValue  String?   @default("") @map("example_value")
+  isActive      Boolean?  @default(true) @map("is_active")
+  createdAt     DateTime? @default(now()) @db.Timestamp(6) @map("created_at")
+  updatedAt     DateTime? @default(now()) @db.Timestamp(6) @map("updated_at")
+
+  @@index([isActive], map: "idx_email_template_variables_active")
+  @@index([category], map: "idx_email_template_variables_category")
+  @@index([variableKey], map: "idx_email_template_variables_key")
+  @@map("email_template_variables")
+}
+
+model email_templates {
+  id                                      Int       @id @default(autoincrement())
+  template_key                            String    @unique @db.VarChar(100)
+  title                                   String    @db.VarChar(255)
+  description                             String?   @default("")
+  subject                                 String    @db.VarChar(500)
+  header_html                             String?   @default("")
+  content_html                            String
+  footer_html                             String?   @default("")
+  to_field                                String?   @default("") @db.VarChar(500)
+  cc_field                                String?   @default("") @db.VarChar(500)
+  bcc_field                               String?   @default("") @db.VarChar(500)
+  is_active                               Boolean?  @default(true)
+  created_at                              DateTime? @default(now()) @db.Timestamp(6)
+  updated_at                              DateTime? @default(now()) @db.Timestamp(6)
+  created_by                              Int?
+  updated_by                              Int?
+  users_email_templates_created_byTousers users?    @relation("email_templates_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_email_templates_updated_byTousers users?    @relation("email_templates_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([is_active], map: "idx_email_templates_active")
+  @@index([template_key], map: "idx_email_templates_key")
+  @@map("email_templates")
+}
+
 enum Priority {
   Low
   Medium
@@ -593,25 +689,6 @@ enum RequestStatus {
   closed
 }
 
-model Notification {
-  id          String            @id @default(cuid())
-  userId      Int
-  type        NotificationType
-  title       String
-  message     String
-  data        Json?
-  isRead      Boolean           @default(false)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  user        users             @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([type])
-  @@index([isRead])
-  @@index([createdAt])
-  @@map("notifications")
-}
-
 enum NotificationType {
   REQUEST_CREATED
   REQUEST_APPROVED
@@ -623,38 +700,4 @@ enum NotificationType {
   CLARIFICATION_REQUIRED
   SLA_WARNING
   SLA_ESCALATION
-}
-
-model MailServerSettings {
-  id             Int       @id @default(autoincrement())
-  serverName     String    @map("server_name")
-  alternateServer String? @map("alternate_server")
-  port           Int
-  protocol       String    @default("SMTP")
-  senderName     String    @map("sender_name")
-  replyTo        String    @map("reply_to")
-  username       String?
-  password       String?
-  isActive       Boolean   @default(true) @map("is_active")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-
-  @@map("mail_server_settings")
-}
-
-model EmailConfig {
-  id             Int       @id @default(autoincrement())
-  serverName     String    @map("server_name")
-  alternateServer String? @map("alternate_server")
-  port           Int
-  protocol       String    @default("SMTP")
-  senderName     String    @map("sender_name")
-  replyTo        String    @map("reply_to")
-  username       String?
-  password       String?
-  isActive       Boolean   @default(true) @map("is_active")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-
-  @@map("email_config")
 }

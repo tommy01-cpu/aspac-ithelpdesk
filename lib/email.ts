@@ -441,10 +441,14 @@ export const sendRequestCreatedEmail = async (requesterEmail: string, variables:
     const requestUrl = `${baseUrl}/requests/view/${variables.Request_ID}`;
     const encodedRequestUrl = encodeURIComponent(requestUrl);
     
+    // Create login callback URL - redirects to request after login
+    const loginCallbackUrl = `${baseUrl}/login?callbackUrl=${encodeURIComponent(`/requests/view/${variables.Request_ID}`)}`;
+    
     const enhancedVariables = {
       ...variables,
       Base_URL: baseUrl,
-      Encoded_Request_URL: encodedRequestUrl
+      Encoded_Request_URL: encodedRequestUrl,
+      Request_Link: loginCallbackUrl
     };
     
     console.log('Enhanced variables:', enhancedVariables);
@@ -467,10 +471,14 @@ export const sendRequestCreatedEmail = async (requesterEmail: string, variables:
     const requestUrl = `${baseUrl}/requests/view/${variables.Request_ID}`;
     const encodedRequestUrl = encodeURIComponent(requestUrl);
     
+    // Create login callback URL - redirects to request after login
+    const loginCallbackUrl = `${baseUrl}/login?callbackUrl=${encodeURIComponent(`/requests/view/${variables.Request_ID}`)}`;
+    
     const enhancedVariables = {
       ...variables,
       Base_URL: baseUrl,
-      Encoded_Request_URL: encodedRequestUrl
+      Encoded_Request_URL: encodedRequestUrl,
+      Request_Link: loginCallbackUrl
     };
     
     return sendEmail({
@@ -499,9 +507,14 @@ export const sendRequestCreatedCCEmail = async (ccEmails: string[], variables: R
     }
     
     const baseUrl = getBaseUrl();
+    
+    // Create login callback URL - redirects to request after login
+    const loginCallbackUrl = `${baseUrl}/login?callbackUrl=${encodeURIComponent(`/requests/view/${variables.Request_ID}`)}`;
+    
     const enhancedVariables = {
       ...variables,
-      Base_URL: baseUrl
+      Base_URL: baseUrl,
+      Request_Link: loginCallbackUrl
     };
     
     // Convert database template to email format WITH VARIABLES
@@ -547,10 +560,14 @@ export const sendApprovalRequiredEmail = async (approverEmail: string, variables
     const approvalUrl = `${baseUrl}/requests/approvals/${variables.Request_ID}`;
     const encodedApprovalUrl = encodeURIComponent(approvalUrl);
     
+    // Create login callback URL for request viewing
+    const loginCallbackUrl = `${baseUrl}/login?callbackUrl=${encodeURIComponent(`/requests/view/${variables.Request_ID}`)}`;
+    
     const enhancedVariables = {
       ...variables,
       Base_URL: baseUrl,
-      Encoded_Approval_URL: encodedApprovalUrl
+      Encoded_Approval_URL: encodedApprovalUrl,
+      Request_Link: loginCallbackUrl
     };
     
     console.log('Enhanced variables for approval:', enhancedVariables);
@@ -602,18 +619,22 @@ export const sendRequestApprovedRejectedEmail = async (requesterEmail: string, v
       throw new Error('Database email template not found');
     }
     
-    // Convert database template to email format
-    const template = convertDatabaseTemplateToEmail(dbTemplate);
-    
     const baseUrl = getBaseUrl();
     const requestUrl = `${baseUrl}/requests/view/${variables.Request_ID}`;
     const encodedRequestUrl = encodeURIComponent(requestUrl);
     
+    // Create login callback URL - redirects to request after login
+    const loginCallbackUrl = `${baseUrl}/login?callbackUrl=${encodeURIComponent(`/requests/view/${variables.Request_ID}`)}`;
+    
     const enhancedVariables = {
       ...variables,
       Base_URL: baseUrl,
-      Encoded_Request_URL: encodedRequestUrl
+      Encoded_Request_URL: encodedRequestUrl,
+      Request_Link: loginCallbackUrl
     };
+    
+    // Convert database template to email format WITH VARIABLES
+    const template = convertDatabaseTemplateToEmail(dbTemplate, enhancedVariables);
     
     return sendEmail({
       to: requesterEmail,
@@ -659,9 +680,6 @@ export const sendRequestAssignedRequesterEmail = async (requesterEmail: string, 
       throw new Error('Database email template not found');
     }
     
-    // Convert database template to email format
-    const template = convertDatabaseTemplateToEmail(dbTemplate);
-    
     const baseUrl = getBaseUrl();
     const requestUrl = `${baseUrl}/requests/view/${variables.Request_ID}`;
     const encodedRequestUrl = encodeURIComponent(requestUrl);
@@ -671,6 +689,9 @@ export const sendRequestAssignedRequesterEmail = async (requesterEmail: string, 
       Base_URL: baseUrl,
       Encoded_Request_URL: encodedRequestUrl
     };
+    
+    // Convert database template to email format WITH VARIABLES
+    const template = convertDatabaseTemplateToEmail(dbTemplate, enhancedVariables);
     
     return sendEmail({
       to: requesterEmail,
@@ -715,9 +736,6 @@ export const sendRequestAssignedTechnicianEmail = async (technicianEmail: string
       throw new Error('Database email template not found');
     }
     
-    // Convert database template to email format
-    const template = convertDatabaseTemplateToEmail(dbTemplate);
-    
     const baseUrl = getBaseUrl();
     const technicianUrl = `${baseUrl}/technician/requests/${variables.Request_ID}`;
     const encodedTechnicianUrl = encodeURIComponent(technicianUrl);
@@ -727,6 +745,9 @@ export const sendRequestAssignedTechnicianEmail = async (technicianEmail: string
       Base_URL: baseUrl,
       Encoded_Technician_URL: encodedTechnicianUrl
     };
+    
+    // Convert database template to email format WITH VARIABLES
+    const template = convertDatabaseTemplateToEmail(dbTemplate, enhancedVariables);
     
     return sendEmail({
       to: technicianEmail,
@@ -771,8 +792,8 @@ export const sendRequestResolvedEmail = async (requesterEmail: string, variables
       throw new Error('Database email template not found');
     }
     
-    // Convert database template to email format
-    const template = convertDatabaseTemplateToEmail(dbTemplate);
+    // Convert database template to email format WITH VARIABLES
+    const template = convertDatabaseTemplateToEmail(dbTemplate, variables);
     
     return sendEmail({
       to: requesterEmail,
@@ -807,9 +828,6 @@ export const sendSLAEscalationEmail = async (technicianEmail: string, variables:
       throw new Error('Database email template not found');
     }
     
-    // Convert database template to email format
-    const template = convertDatabaseTemplateToEmail(dbTemplate);
-    
     const baseUrl = getBaseUrl();
     const technicianUrl = `${baseUrl}/technician/requests/${variables.Request_ID}`;
     const encodedTechnicianUrl = encodeURIComponent(technicianUrl);
@@ -819,6 +837,9 @@ export const sendSLAEscalationEmail = async (technicianEmail: string, variables:
       Base_URL: baseUrl,
       Encoded_Technician_URL: encodedTechnicianUrl
     };
+    
+    // Convert database template to email format WITH VARIABLES
+    const template = convertDatabaseTemplateToEmail(dbTemplate, enhancedVariables);
     
     return sendEmail({
       to: technicianEmail,
@@ -864,9 +885,6 @@ export const sendApprovalReminderEmail = async (approverEmail: string, variables
       throw new Error('Database email template not found');
     }
     
-    // Convert database template to email format
-    const template = convertDatabaseTemplateToEmail(dbTemplate);
-    
     const baseUrl = getBaseUrl();
     const approvalsUrl = `${baseUrl}/requests/approvals`;
     const encodedApprovalsUrl = encodeURIComponent(approvalsUrl);
@@ -876,6 +894,9 @@ export const sendApprovalReminderEmail = async (approverEmail: string, variables
       Base_URL: baseUrl,
       Encoded_Approvals_URL: encodedApprovalsUrl
     };
+    
+    // Convert database template to email format WITH VARIABLES
+    const template = convertDatabaseTemplateToEmail(dbTemplate, enhancedVariables);
     
     return sendEmail({
       to: approverEmail,
@@ -920,9 +941,6 @@ export const sendClarificationReminderEmail = async (requesterEmail: string, var
       throw new Error('Database email template not found');
     }
     
-    // Convert database template to email format
-    const template = convertDatabaseTemplateToEmail(dbTemplate);
-    
     const baseUrl = getBaseUrl();
     const dashboardUrl = `${baseUrl}/dashboard`;
     const encodedDashboardUrl = encodeURIComponent(dashboardUrl);
@@ -932,6 +950,9 @@ export const sendClarificationReminderEmail = async (requesterEmail: string, var
       Base_URL: baseUrl,
       Encoded_Dashboard_URL: encodedDashboardUrl
     };
+    
+    // Convert database template to email format WITH VARIABLES
+    const template = convertDatabaseTemplateToEmail(dbTemplate, enhancedVariables);
     
     return sendEmail({
       to: requesterEmail,

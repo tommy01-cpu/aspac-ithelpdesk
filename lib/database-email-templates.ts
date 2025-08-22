@@ -32,15 +32,15 @@ export type TemplateType = keyof typeof TEMPLATE_ID_MAPPING;
 
 interface DatabaseEmailTemplate {
   id: number;
-  templateKey: string;
+  template_key: string;
   title: string;
   subject: string;
-  headerHtml: string;
-  contentHtml: string;
-  footerHtml: string;
-  toField: string;
-  ccField?: string;
-  isActive: boolean;
+  header_html: string;
+  content_html: string;
+  footer_html: string;
+  to_field: string;
+  cc_field?: string;
+  is_active: boolean;
 }
 
 // Cache for email templates to avoid database calls on every email send
@@ -78,25 +78,34 @@ export const getEmailTemplateById = async (templateId: number): Promise<Database
     // Fetch from database
     console.log(`Fetching email template from database with ID: ${templateId}`);
     
-    const template = await prisma.emailTemplates.findUnique({
+    // Debug: Check if prisma is available
+    if (!prisma) {
+      console.error('❌ Prisma client is not available');
+      return null;
+    }
+    
+    console.log('✅ Prisma client is available');
+    
+    // @ts-ignore - email_templates model exists but TypeScript cache issue
+    const template = await prisma.email_templates.findUnique({
       where: { 
         id: templateId
       },
       select: {
         id: true,
-        templateKey: true,
+        template_key: true,
         title: true,
         subject: true,
-        headerHtml: true,
-        contentHtml: true,
-        footerHtml: true,
-        toField: true,
-        ccField: true,
-        isActive: true
+        header_html: true,
+        content_html: true,
+        footer_html: true,
+        to_field: true,
+        cc_field: true,
+        is_active: true
       }
     });
 
-    if (template && template.isActive) {
+    if (template && template.is_active) {
       console.log(`Found database template: ${template.title}`);
       templateCache.set(templateId, template);
       if (templateCache.size === 1) {
@@ -129,8 +138,8 @@ export const convertDatabaseTemplateToEmail = (dbTemplate: DatabaseEmailTemplate
     
     console.log('Subject after variable replacement:', subject);
 
-    // Extract content from contentHtml (remove the wrapper div)
-    let content = dbTemplate.contentHtml;
+    // Extract content from content_html (remove the wrapper div)
+    let content = dbTemplate.content_html;
     
     // Server-safe content extraction using regex
     const contentMatch = content.match(/<div[^>]*style="[^"]*padding:\s*32px[^"]*"[^>]*>([\s\S]*?)<\/div>/);
@@ -152,31 +161,8 @@ export const convertDatabaseTemplateToEmail = (dbTemplate: DatabaseEmailTemplate
     
     console.log('Content after variable replacement (first 200 chars):', content.substring(0, 200));
 
-    // Construct full HTML email
-    let htmlContent = '';
-    
-    // Add header if exists
-    if (dbTemplate.headerHtml) {
-      let header = dbTemplate.headerHtml;
-      Object.entries(variables).forEach(([key, value]) => {
-        const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
-        header = header.replace(regex, value || '');
-      });
-      htmlContent += header;
-    }
-    
-    // Add content
-    htmlContent += content;
-    
-    // Add footer if exists
-    if (dbTemplate.footerHtml) {
-      let footer = dbTemplate.footerHtml;
-      Object.entries(variables).forEach(([key, value]) => {
-        const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
-        footer = footer.replace(regex, value || '');
-      });
-      htmlContent += footer;
-    }
+    // Use only the content (no header or footer)
+    let htmlContent = content;
 
     // Convert HTML to plain text (simple conversion)
     const textContent = htmlContent
@@ -201,7 +187,7 @@ export const convertDatabaseTemplateToEmail = (dbTemplate: DatabaseEmailTemplate
     
     // Fallback to basic conversion
     let subject = dbTemplate.subject;
-    let content = dbTemplate.contentHtml;
+    let content = dbTemplate.content_html;
     
     Object.entries(variables).forEach(([key, value]) => {
       const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
@@ -250,7 +236,7 @@ export const sendEmailWithTemplateId = async (
     const emailContent = convertDatabaseTemplateToEmail(template, variables);
     
     // Determine recipient
-    let toField = template.toField;
+    let toField = template.to_field;
     Object.entries(variables).forEach(([key, value]) => {
       const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
       toField = toField.replace(regex, value || '');
@@ -260,8 +246,8 @@ export const sendEmailWithTemplateId = async (
     
     // Handle CC field if present
     let ccField = '';
-    if (template.ccField) {
-      ccField = template.ccField;
+    if (template.cc_field) {
+      ccField = template.cc_field;
       Object.entries(variables).forEach(([key, value]) => {
         const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
         ccField = ccField.replace(regex, value || '');
