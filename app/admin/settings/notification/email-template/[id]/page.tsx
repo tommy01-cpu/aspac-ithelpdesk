@@ -664,7 +664,7 @@ export default function EmailTemplateEditorPage() {
         </div>
 
         <div className="w-full px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-7xl mx-auto">
             <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-lg">
               <CardHeader className="border-b border-slate-200">
                 <CardTitle className="flex items-center gap-2 text-slate-800">
@@ -965,17 +965,17 @@ export default function EmailTemplateEditorPage() {
                     </div>
                   </div>
 
-                  {/* Email Preview Container */}
+                  {/* Email Preview Container - Maximized */}
                   <div className="bg-gray-50 p-4">
-                    {/* Email Template - Content Only */}
-                    <div className="max-w-2xl mx-auto bg-white rounded-lg border border-gray-300 overflow-hidden">
+                    {/* Email Template - Full Width */}
+                    <div className="w-full bg-white rounded-lg border border-gray-300 overflow-hidden">
                       {/* Main Content */}
                       <div className="p-6 relative variable-dropdown-container">
                         <div 
                           ref={previewRef}
                           contentEditable
                           suppressContentEditableWarning={true}
-                          className="min-h-[200px] cursor-text focus:outline-none"
+                          className="min-h-[600px] w-full cursor-text focus:outline-none"
                           onInput={(e) => {
                             const cursorPosition = saveCursorPosition();
                             syncPreviewToEditor();
@@ -988,7 +988,8 @@ export default function EmailTemplateEditorPage() {
                           style={{
                             lineHeight: '1.6',
                             fontSize: '14px',
-                            fontFamily: 'system-ui, -apple-system, sans-serif'
+                            fontFamily: 'system-ui, -apple-system, sans-serif',
+                            overflow: 'auto'
                           }}
                         />
                         

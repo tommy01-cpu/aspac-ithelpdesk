@@ -285,6 +285,32 @@ export async function POST(request: NextRequest) {
             details: `Level ${approval.level + 1} approvals activated`,
           });
 
+          // Send email notification to next level approvers
+          try {
+            console.log(`📧 Sending email notification to next level (${approval.level + 1}) approvers...`);
+            
+            const origin = new URL(request.url).origin;
+            const emailResponse = await fetch(`${origin}/api/notifications/send-email`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                requestId: approval.requestId,
+                templateKey: 'notify-approver-approval'
+              })
+            });
+
+            if (emailResponse.ok) {
+              const emailResult = await emailResponse.json();
+              console.log('✅ Next level approver notification sent successfully:', emailResult);
+            } else {
+              const emailError = await emailResponse.json();
+              console.error('❌ Failed to send next level approver notification:', emailError);
+            }
+          } catch (emailError) {
+            console.error('❌ Error sending next level approver notification:', emailError);
+            // Don't fail the approval process for email issues
+          }
+
           // Server-side auto-approve ONLY the immediate next level duplicates:
           // If an approver in the next level already approved in any previous level, auto-approve their entry.
           try {
@@ -384,6 +410,32 @@ export async function POST(request: NextRequest) {
                   actorType: 'system',
                   details: `Level ${approval.level + 2} approvals activated`,
                 });
+
+                // Send email notification to level+2 approvers
+                try {
+                  console.log(`📧 Sending email notification to level ${approval.level + 2} approvers...`);
+                  
+                  const origin = new URL(request.url).origin;
+                  const emailResponse = await fetch(`${origin}/api/notifications/send-email`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      requestId: approval.requestId,
+                      templateKey: 'notify-approver-approval'
+                    })
+                  });
+
+                  if (emailResponse.ok) {
+                    const emailResult = await emailResponse.json();
+                    console.log(`✅ Level ${approval.level + 2} approver notification sent successfully:`, emailResult);
+                  } else {
+                    const emailError = await emailResponse.json();
+                    console.error(`❌ Failed to send level ${approval.level + 2} approver notification:`, emailError);
+                  }
+                } catch (emailError) {
+                  console.error(`❌ Error sending level ${approval.level + 2} approver notification:`, emailError);
+                  // Don't fail the approval process for email issues
+                }
               } else {
                 // No further levels; if ALL approvals are approved, finalize: set request OPEN and write Image 1 entries
                 const allApprovalsNow = await prisma.requestApproval.findMany({ where: { requestId: approval.requestId } });

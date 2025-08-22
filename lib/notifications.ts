@@ -47,6 +47,8 @@ export interface RequestEmailVariables extends Record<string, string> {
   Request_Description: string;
   Requester_Name: string;
   Requester_Email: string;
+  Approver_Name?: string;
+  Approver_Email?: string;
 }
 
 // Create in-app notification
@@ -212,6 +214,7 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
     
     const approverEmail = approverData.emp_email;
+    const approverName = `${approverData.emp_fname} ${approverData.emp_lname}`.trim();
 
     // Email variables
     const emailVariables: RequestEmailVariables = {
@@ -221,6 +224,8 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
       Request_Description: requestDescription,
       Requester_Name: requesterName,
       Requester_Email: requestData.user.emp_email,
+      Approver_Name: approverName,
+      Approver_Email: approverEmail,
     };
 
     // Send email to approver

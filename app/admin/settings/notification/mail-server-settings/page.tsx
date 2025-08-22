@@ -168,7 +168,7 @@ export default function MailServerSettings() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Mail className="w-5 h-5" />
-                Outgoing Mail Configuration
+                Mail Server Settings
               </CardTitle>
               <CardDescription>
                 Configure SMTP settings for sending email notifications

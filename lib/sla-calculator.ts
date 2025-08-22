@@ -561,6 +561,7 @@ function getRemainingWorkingHoursInDayPHT(
 
 /**
  * Add working hours to a specific time (Philippine time), accounting for breaks
+ * Business rule: Breaks do NOT extend SLA time - SLA time continues through breaks
  */
 function addWorkingHoursToTimePHT(
   phtDate: Date,
@@ -581,44 +582,9 @@ function addWorkingHoursToTimePHT(
   let minutesToAdd = hoursToAdd * 60;
   let currentPHT = new Date(phtDate);
   
-  // Add minutes while accounting for breaks
-  const breaks = workingDay.breakHours || [];
-  
-  while (minutesToAdd > 0) {
-    const currentTimeStr = currentPHT.toTimeString().slice(0, 5);
-    
-    // Check if we're about to hit a break
-    let nextBreak = null;
-    for (const b of breaks) {
-      if (currentTimeStr < b.startTime) {
-        if (!nextBreak || b.startTime < nextBreak.startTime) {
-          nextBreak = b;
-        }
-      }
-    }
-    
-    if (nextBreak) {
-      // Calculate minutes until break starts
-      const [ch, cm] = currentTimeStr.split(':').map(n => parseInt(n, 10));
-      const [bh, bm] = nextBreak.startTime.split(':').map(n => parseInt(n, 10));
-      const minutesUntilBreak = (bh * 60 + bm) - (ch * 60 + cm);
-      
-      if (minutesToAdd <= minutesUntilBreak) {
-        // We'll finish before the break
-        currentPHT.setMinutes(currentPHT.getMinutes() + minutesToAdd);
-        minutesToAdd = 0;
-      } else {
-        // We'll hit the break, skip over it
-        const [beh, bem] = nextBreak.endTime.split(':').map(n => parseInt(n, 10));
-        currentPHT.setHours(beh, bem, 0, 0);
-        minutesToAdd -= minutesUntilBreak;
-      }
-    } else {
-      // No more breaks, just add the remaining minutes
-      currentPHT.setMinutes(currentPHT.getMinutes() + minutesToAdd);
-      minutesToAdd = 0;
-    }
-  }
+  // Simply add the minutes - breaks don't extend SLA time
+  // The SLA clock keeps ticking through lunch breaks
+  currentPHT.setMinutes(currentPHT.getMinutes() + minutesToAdd);
   
   return currentPHT;
 }

@@ -1221,6 +1221,79 @@ export default function RequestPage() {
       const result = await response.json();
       console.log('Request submitted successfully:', result);
 
+      // Send CC notification emails if field 10 (email_to_notify) has values
+      if (result.request?.id && formData['10']) {
+        try {
+          const emailNotifyField = formData['10'];
+          console.log('Email notify field value:', emailNotifyField);
+          
+          // Handle both string and array formats
+          let emailList = [];
+          if (typeof emailNotifyField === 'string') {
+            emailList = emailNotifyField.split(',').map(email => email.trim()).filter(email => email);
+          } else if (Array.isArray(emailNotifyField)) {
+            emailList = emailNotifyField;
+          }
+          
+          if (emailList.length > 0) {
+            console.log('Sending CC notification emails to:', emailList);
+            
+            const emailData = {
+              requestId: result.request.id,
+              templateKey: 'acknowledge-cc-new-request'
+            };
+
+            const emailResponse = await fetch('/api/notifications/send-email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(emailData)
+            });
+
+            if (emailResponse.ok) {
+              const emailResult = await emailResponse.json();
+              console.log('CC notification emails sent successfully:', emailResult);
+            } else {
+              const emailError = await emailResponse.json();
+              console.error('Failed to send CC notification emails:', emailError);
+              // Don't fail the whole request submission for email issues
+            }
+          }
+        } catch (emailError) {
+          console.error('Error sending CC notification emails:', emailError);
+          // Don't fail the whole request submission for email issues
+        }
+      }
+
+      // Send approver notification email (send to current level approver)
+      if (result.request?.id && templateData?.requiresApproval) {
+        try {
+          console.log('Sending approver notification email...');
+          
+          const approverEmailData = {
+            requestId: result.request.id,
+            templateKey: 'notify-approver-approval'
+          };
+
+          const approverEmailResponse = await fetch('/api/notifications/send-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(approverEmailData)
+          });
+
+          if (approverEmailResponse.ok) {
+            const approverEmailResult = await approverEmailResponse.json();
+            console.log('Approver notification email sent successfully:', approverEmailResult);
+          } else {
+            const approverEmailError = await approverEmailResponse.json();
+            console.error('Failed to send approver notification email:', approverEmailError);
+            // Don't fail the whole request submission for email issues
+          }
+        } catch (emailError) {
+          console.error('Error sending approver notification email:', emailError);
+          // Don't fail the whole request submission for email issues
+        }
+      }
+
       toast({
         title: "Request Submitted Successfully",
         description: `Your ${requestType} request has been submitted with ID: ${result.request?.id || 'N/A'}`,

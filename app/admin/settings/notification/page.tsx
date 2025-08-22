@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import Link from 'next/link';
 import { SessionWrapper } from '@/components/session-wrapper';
+import dynamic from 'next/dynamic';
 
 interface TabItem {
   id: string;
@@ -15,61 +16,130 @@ interface TabItem {
   path: string;
 }
 
-// Overview Component
-const OverviewTab = () => (
-  <div className="p-6">
-    <h2 className="text-2xl font-bold text-slate-800 mb-6">Notification Settings</h2>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <FileText className="w-5 h-5 text-blue-600" />
-            <h3 className="font-semibold text-slate-700">Email Templates</h3>
+// Dynamically import the components to avoid SSR issues
+const MailServerSettings = dynamic(() => import('./mail-server-settings/page'), { ssr: false });
+
+// Create a simplified version of the email template list for embedding
+const EmailTemplatesList = () => {
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const router = useRouter();
+
+  useEffect(() => {
+    fetchTemplates();
+  }, []);
+
+  const fetchTemplates = async () => {
+    try {
+      const response = await fetch('/api/admin/email-templates');
+      if (response.ok) {
+        const data = await response.json();
+        setTemplates(data);
+      } else {
+        console.error('Failed to fetch templates:', response.statusText);
+      }
+    } catch (error) {
+      console.error('Error fetching templates:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredTemplates = templates
+    .filter(template =>
+      template.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      template.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      template.type?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .sort((a, b) => a.id - b.id);
+
+  const handleEdit = (templateId: number) => {
+    router.push(`/admin/settings/notification/email-template/${templateId}`);
+  };
+
+  if (loading) {
+    return (
+      <div className="text-center py-12">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+        <p className="text-slate-600">Loading email templates...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Search and Actions */}
+      <div className="flex items-center justify-between">
+        <div className="flex-1 max-w-md">
+          <input
+            type="text"
+            placeholder="Search templates..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+     
+      </div>
+
+      {/* Templates Table */}
+      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Template Name
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {filteredTemplates.map((template, index) => (
+                <tr key={template.id} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <FileText className="w-4 h-4 text-slate-400 mr-3" />
+                      <div>
+                        <div className="text-sm font-medium text-slate-900">{template.name}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleEdit(template.id)}
+                      className="text-blue-600 hover:text-blue-700 border-blue-200 hover:bg-blue-50"
+                    >
+                      Customize
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        
+        {filteredTemplates.length === 0 && !loading && (
+          <div className="text-center py-12">
+            <FileText className="w-16 h-16 mx-auto text-slate-400 mb-4" />
+            <h3 className="text-lg font-semibold text-slate-800 mb-2">No templates found</h3>
+            <p className="text-slate-600">
+              {searchQuery ? 'Try adjusting your search query' : 'Create your first email template to get started'}
+            </p>
           </div>
-          <div className="text-lg font-bold text-blue-600">12</div>
-          <p className="text-slate-600 text-sm">templates configured</p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <Server className="w-5 h-5 text-green-600" />
-            <h3 className="font-semibold text-slate-700">Mail Server</h3>
-          </div>
-          <div className="text-lg font-bold text-green-600">Connected</div>
-          <p className="text-slate-600 text-sm">SMTP configured</p>
-        </CardContent>
-      </Card>
-    </div>
-    
-    <div className="mt-8">
-      <h3 className="text-lg font-semibold text-slate-800 mb-4">Quick Actions</h3>
-      <div className="flex gap-4">
-        <Link href="/admin/settings/notification?tab=email-template">
-          <Button variant="outline" className="flex items-center gap-2">
-            <FileText className="w-4 h-4" />
-            Manage Email Templates
-          </Button>
-        </Link>
-        <Link href="/admin/settings/notification?tab=mail-server-settings">
-          <Button variant="outline" className="flex items-center gap-2">
-            <Server className="w-4 h-4" />
-            Configure Mail Server
-          </Button>
-        </Link>
+        )}
       </div>
     </div>
-  </div>
-);
+  );
+};
 
-// Tab configuration - these will redirect to the actual sub-pages
+// Tab configuration
 const notificationTabs: TabItem[] = [
-  {
-    id: 'overview',
-    label: 'Overview',
-    icon: Bell,
-    path: '/admin/settings/notification'
-  },
   {
     id: 'email-template',
     label: 'Email Templates',
@@ -87,27 +157,68 @@ const notificationTabs: TabItem[] = [
 export default function NotificationSettingsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('email-template');
 
   useEffect(() => {
     const tab = searchParams?.get('tab');
     if (tab && notificationTabs.find(t => t.id === tab)) {
       setActiveTab(tab);
-      // Redirect to the actual page for non-overview tabs
-      if (tab !== 'overview') {
-        const tabData = notificationTabs.find(t => t.id === tab);
-        if (tabData) {
-          router.push(tabData.path);
-        }
-      }
     }
-  }, [searchParams, router]);
+  }, [searchParams]);
 
   const handleTabChange = (tabId: string) => {
     const tab = notificationTabs.find(t => t.id === tabId);
     if (tab) {
       setActiveTab(tabId);
-      router.push(tabId === 'overview' ? '/admin/settings/notification' : tab.path);
+      // Update URL with tab parameter for both tabs to maintain the side panel
+      router.push(`/admin/settings/notification?tab=${tabId}`);
+    }
+  };
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'email-template':
+        return (
+          <div className="p-6">
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Email Templates</h2>
+            <EmailTemplatesList />
+          </div>
+        );
+      case 'mail-server-settings':
+        return (
+          <div className="p-6">
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Mail Server Settings</h2>
+            <MailServerSettings />
+          </div>
+        );
+      default:
+        return (
+          <div className="p-6">
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Notification Settings</h2>
+            <div className="text-center py-12">
+              <Bell className="w-16 h-16 mx-auto text-indigo-600 mb-4" />
+              <h3 className="text-xl font-semibold text-slate-800 mb-2">Select a Setting</h3>
+              <p className="text-slate-600 mb-6">Choose a setting category from the sidebar to get started</p>
+              <div className="flex gap-4 justify-center">
+                <Button 
+                  onClick={() => handleTabChange('email-template')}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+                >
+                  <FileText className="w-4 h-4" />
+                  Email Templates
+                </Button>
+                <Button 
+                  onClick={() => handleTabChange('mail-server-settings')}
+                  variant="outline"
+                  className="flex items-center gap-2"
+                >
+                  <Server className="w-4 h-4" />
+                  Mail Server Settings
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
     }
   };
 
@@ -140,21 +251,21 @@ export default function NotificationSettingsPage() {
           <div className="flex gap-6 min-h-screen">
             {/* Side Panel */}
             <div className="w-80 flex-shrink-0">
-              <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-lg sticky top-40 z-30 max-h-[calc(100vh-12rem)] overflow-y-auto">
+              <Card className="bg-white border border-slate-200 shadow-sm sticky top-40 z-30 max-h-[calc(100vh-12rem)] overflow-y-auto">
                 <CardContent className="p-0">
-                  <div className="p-4 border-b border-slate-200">
+                  <div className="p-6 border-b border-slate-200">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center">
-                        <Bell className="w-5 h-5 text-indigo-600" />
+                      <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                        <Bell className="w-5 h-5 text-blue-600" />
                       </div>
                       <div>
-                        <h3 className="font-semibold text-slate-800">Notifications</h3>
+                        <h3 className="font-semibold text-slate-800">Notification</h3>
                         <p className="text-xs text-slate-600">Configuration</p>
                       </div>
                     </div>
                   </div>
                   
-                  <nav className="p-2">
+                  <nav className="p-4">
                     {notificationTabs.map((tab) => {
                       const IconComponent = tab.icon;
                       const isActive = activeTab === tab.id;
@@ -163,14 +274,14 @@ export default function NotificationSettingsPage() {
                         <button
                           key={tab.id}
                           onClick={() => handleTabChange(tab.id)}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-all duration-200 mb-2 ${
                             isActive
-                              ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
                           }`}
                         >
-                          <IconComponent className={`w-4 h-4 ${isActive ? 'text-indigo-600' : 'text-slate-500'}`} />
-                          <span className="text-left">{tab.label}</span>
+                          <IconComponent className={`w-5 h-5 ${isActive ? 'text-blue-600' : 'text-slate-500'}`} />
+                          <span className="text-left font-normal">{tab.label}</span>
                         </button>
                       );
                     })}
@@ -183,7 +294,7 @@ export default function NotificationSettingsPage() {
             <div className="flex-1 min-w-0">
               <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-lg">
                 <CardContent className="p-0">
-                  <OverviewTab />
+                  {renderTabContent()}
                 </CardContent>
               </Card>
             </div>

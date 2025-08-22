@@ -331,11 +331,11 @@ export async function POST(request: Request) {
     });
 
     // Create the request in the database
-    // Get current time - server is already in Philippine timezone
+    // Create Philippine time that will be stored correctly in UTC database
     const now = new Date();
-    const philippineTime = now; // Server is already in Philippine time, no conversion needed
+    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // Add 8 hours to store as Philippine time in UTC
     console.log('🕐 Current Philippine time:', philippineTime.toString());
-    console.log('🕐 UTC equivalent:', philippineTime.toISOString());
+    console.log('🕐 UTC equivalent (will be stored):', philippineTime.toISOString());
     
     // Create consistent timestamp string for SLA display (same format as SLA assignment route)
     const philippineTimeString = philippineTime.toLocaleString('en-PH', { 
@@ -588,6 +588,8 @@ export async function POST(request: Request) {
                       level: levelNumber,
                       name: level.displayName || `Level ${levelNumber}`,
                       approverId: actualApproverId,
+                      approverName: approverName, // ✅ Add approver name 
+                      approverEmail: templateApprover?.emp_email, // ✅ Add approver email
                       status: APPROVAL_STATUS.APPROVED,
                       isAutoApproval: true,
                       comments: 'Automatically approved for incident request',
@@ -736,9 +738,19 @@ export async function POST(request: Request) {
                   
                   // Create the approval record if we have a valid approver ID
                   if (actualApproverId) {
-                    // Create Philippine time by manually adjusting UTC
+                    // Create Philippine time (server is already in Philippine timezone)
                     const now = new Date();
-                    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+                    const philippineTime = now; // No conversion needed - server is already GMT+8
+                    
+                    // Get approver email for the database record
+                    const approverUser = await prisma.users.findUnique({
+                      where: { id: actualApproverId },
+                      select: {
+                        emp_email: true,
+                        emp_fname: true,
+                        emp_lname: true,
+                      }
+                    });
                     
                     const createdApprover = await prisma.requestApproval.create({
                       data: {
@@ -746,6 +758,8 @@ export async function POST(request: Request) {
                         level: levelNumber,
                         name: level.displayName || `Level ${levelNumber}`,
                         approverId: actualApproverId,
+                        approverName: approverName, // ✅ Add approver name to database
+                        approverEmail: approverUser?.emp_email, // ✅ Add approver email to database
                         status: APPROVAL_STATUS.PENDING_APPROVAL,
                         createdAt: philippineTime,
                         updatedAt: philippineTime,
@@ -756,16 +770,6 @@ export async function POST(request: Request) {
                     
                     // 📧 Send approval required notification
                     try {
-                      const approverUser = await prisma.users.findUnique({
-                        where: { id: actualApproverId },
-                        select: {
-                          id: true,
-                          emp_fname: true,
-                          emp_lname: true,
-                          emp_email: true,
-                        }
-                      });
-                      
                       if (approverUser && requestUser) {
                         const requestWithUser = {
                           id: newRequest.id,
@@ -774,7 +778,15 @@ export async function POST(request: Request) {
                           user: requestUser
                         };
                         
-                        await notifyApprovalRequired(requestWithUser, template, approverUser, createdApprover.id);
+                        // Use the approverUser we already fetched above
+                        const fullApproverUser = {
+                          id: actualApproverId,
+                          emp_fname: approverUser.emp_fname,
+                          emp_lname: approverUser.emp_lname,
+                          emp_email: approverUser.emp_email,
+                        };
+                        
+                        await notifyApprovalRequired(requestWithUser, template, fullApproverUser, createdApprover.id);
                         console.log(`✅ Approval notification sent to ${approverName}`);
                       }
                     } catch (notificationError) {
@@ -810,18 +822,18 @@ export async function POST(request: Request) {
                   });
                   
                   if (additionalApprover) {
-                    // Create Philippine time by manually adjusting UTC
-                    const now = new Date();
-                    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
-                    
                     const createdAdditional = await prisma.requestApproval.create({
                       data: {
                         requestId: newRequest.id,
                         level: levelNumber,
                         name: level.displayName || `Level ${levelNumber}`,
                         approverId: additionalApprover.id,
+                        approverName: `${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`, // ✅ Add approver name
+                        approverEmail: additionalApprover.emp_email, // ✅ Add approver email
                         status: APPROVAL_STATUS.PENDING_APPROVAL,
-                        createdAt: philippineTime,
+                        sentOn: philippineTime, // ✅ Set sentOn since email is sent immediately for Level 1
+                        createdAt: philippineTime, // ✅ Use the main philippineTime variable
+                        updatedAt: philippineTime, // ✅ Use the main philippineTime variable
                         updatedAt: philippineTime,
                       }
                     });
@@ -863,10 +875,15 @@ export async function POST(request: Request) {
                 console.log('✅ Created history entry: Approvals Initiated - Level 1');
               }
             } else {
+              // ⚠️ IMPORTANT: For levels > 1, create approval records in "dormant" state
+              // These levels should NOT receive email notifications during request creation
+              // They will be activated (and emails sent) when previous level completes
+              console.log(`🔄 Processing Level ${levelNumber} approvers (dormant state - no immediate emails)`);
+              
               // For other levels, only use template approvers
               if (level.approvers && level.approvers.length > 0) {
                 for (const approver of level.approvers) {
-                  console.log(`Processing template approver for level ${levelNumber}:`, approver);
+                  console.log(`Processing template approver for level ${levelNumber} (dormant):`, approver);
                   
                   let actualApproverId = null;
                   let approverName = '';
@@ -949,10 +966,23 @@ export async function POST(request: Request) {
                   }
                   
                   // Create the approval record if we have a valid approver ID
+                  // ⚠️ For levels > 1: Create in dormant state (pending_approval but no email notification)
+                  // These will be activated and emails sent when previous level completes
                   if (actualApproverId) {
-                    // Create Philippine time by manually adjusting UTC
-                    const now = new Date();
-                    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+                    // Get approver email and ensure we have the correct name
+                    const approverUser = await prisma.users.findUnique({
+                      where: { id: actualApproverId },
+                      select: {
+                        emp_fname: true,
+                        emp_lname: true,
+                        emp_email: true,
+                      }
+                    });
+                    
+                    // Use database name if approverName is empty or fallback
+                    if (!approverName && approverUser) {
+                      approverName = `${approverUser.emp_fname} ${approverUser.emp_lname}`;
+                    }
                     
                     const createdOther = await prisma.requestApproval.create({
                       data: {
@@ -960,40 +990,26 @@ export async function POST(request: Request) {
                         level: levelNumber,
                         name: level.displayName || `Level ${levelNumber}`,
                         approverId: actualApproverId,
+                        approverName: approverName, // ✅ Add approver name to database
+                        approverEmail: approverUser?.emp_email, // ✅ Add approver email to database
                         status: APPROVAL_STATUS.PENDING_APPROVAL,
-                        createdAt: philippineTime,
-                        updatedAt: philippineTime,
+                        createdAt: philippineTime, // ✅ Use the same philippineTime as request creation
+                        updatedAt: philippineTime, // ✅ Use the same philippineTime as request creation
+                        // 🔑 Key: Do NOT set sentOn field for dormant levels
+                        // sentOn will be set when the level is activated by approval action
                       }
                     });
                     console.log(`Created template approver for level ${levelNumber}: ${approverName}`);
                     
-                    // 📧 Send approval required notification
-                    try {
-                      const approverUser = await prisma.users.findUnique({
-                        where: { id: actualApproverId },
-                        select: {
-                          id: true,
-                          emp_fname: true,
-                          emp_lname: true,
-                          emp_email: true,
-                        }
-                      });
-                      
-                      if (approverUser && requestUser) {
-                        const requestWithUser = {
-                          id: newRequest.id,
-                          status: newRequest.status,
-                          formData: newRequest.formData,
-                          user: requestUser
-                        };
-                        
-                        await notifyApprovalRequired(requestWithUser, template, approverUser, createdOther.id);
-                        console.log(`✅ Approval notification sent to ${approverName} (Level ${levelNumber})`);
-                      }
-                    } catch (notificationError) {
-                      console.error(`Error sending approval notification to ${approverName} (Level ${levelNumber}):`, notificationError);
-                      // Don't fail the request creation if notification fails
-                    }
+                    // � DO NOT send email notifications for levels > 1 during request creation
+                    // These levels are created in "dormant" state and will be activated 
+                    // (with email notifications) when previous level completes
+                    console.log(`✅ Created dormant approval for level ${levelNumber}: ${approverName} (will be activated when Level ${levelNumber - 1} completes)`);
+                    
+                    // The approval action route will handle:
+                    // 1. Activating this level when previous level is approved
+                    // 2. Setting the sentOn timestamp
+                    // 3. Sending email notifications at that time
                   }
                 }
               }

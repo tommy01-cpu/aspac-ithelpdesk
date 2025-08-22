@@ -89,16 +89,16 @@ export default function AdminSettingsPage() {
       case 'Privacy Settings':
         router.push('/admin/settings/users-permissions?tab=privacy-settings');
         break;
-      // Mail Server Settings items - now handled under Notification Settings
+      // Mail Server Settings items - route to notification page with tab parameter
       case 'Email Template':
         router.push('/admin/settings/notification?tab=email-template');
         break;
       case 'Mail Server Settings':
         router.push('/admin/settings/notification?tab=mail-server-settings');
         break;
-     default:
-        // For other items, you can add specific navigation or show a placeholder
-        console.log(`Clicked on: ${itemName}`);
+      default:
+        // All visible items should have routes defined above
+        console.warn(`No route defined for: ${itemName}`);
         break;
     }
   };
@@ -134,19 +134,7 @@ export default function AdminSettingsPage() {
       bgColor: "bg-indigo-50",
       iconColor: "text-indigo-600",
       items: [
-        "Email Template", "Mail Server Settings", 
-      ]
-    },
-    {
-      title: "Customization",
-      icon: Settings,
-      color: "from-purple-500 to-purple-600",
-      bgColor: "bg-purple-50", 
-      iconColor: "text-purple-600",
-      items: [
-        "Helpdesk", "Asset Management", "Purchase Management",
-        "Contract Management", "Additional Field", "Announcement Type",
-        "Checklist", "Closure Code"
+        "Email Template", "Mail Server Settings"
       ]
     },
     {
@@ -156,8 +144,7 @@ export default function AdminSettingsPage() {
       bgColor: "bg-cyan-50",
       iconColor: "text-cyan-600", 
       items: [
-        "Service Categories", "Service Catalog", "Incident Template", "Task Template",
-        "Reply Template", "Resolution Template", "Field and Form Rules"
+        "Service Categories", "Service Catalog", "Incident Template"
       ]
     },
     {
@@ -167,32 +154,7 @@ export default function AdminSettingsPage() {
       bgColor: "bg-orange-50",
       iconColor: "text-orange-600",
       items: [
-        "Business Rules", "Service Level Agreements", "Request Life Cycle",
-        "Custom Triggers", "Request Timer Actions", "Notification Rules",
-        "Closure Rules", "Technician Auto Assign", "Custom Schedules"
-      ]
-    },
-    {
-      title: "Discovery",
-      icon: Search,
-      color: "from-teal-500 to-teal-600", 
-      bgColor: "bg-teal-50",
-      iconColor: "text-teal-600",
-      items: [
-        "Agent Configuration", "Windows Domain Scan", "Credentials Library",
-        "Remote Control Tools", "Scan Settings", "SNMP Configurations",
-        "Network Scan", "Schedule Scan", "Distributed Asset Scan"
-      ]
-    },
-    {
-      title: "User Survey",
-      icon: ClipboardList,
-      color: "from-pink-500 to-pink-600",
-      bgColor: "bg-pink-50", 
-      iconColor: "text-pink-600",
-      items: [
-        "Survey Configuration", "Survey Exclusion", "Survey Email Configuration",
-        "Survey Reports"
+        "Service Level Agreements", "Technician Auto Assign"
       ]
     }
   ];
