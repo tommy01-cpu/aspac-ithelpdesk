@@ -66,6 +66,7 @@ model users {
   technician                Technician?
   templatesCreated          Template[]             @relation("TemplateCreatedBy")
   templatesUpdated          Template[]             @relation("TemplateUpdatedBy")
+  notifications             Notification[]         @relation("UserNotifications")
   user_roles                user_roles[]
   departmentHead            users?                 @relation("DepartmentHead", fields: [departmentHeadId], references: [id])
   departmentMembers         users[]                @relation("DepartmentHead")
@@ -590,4 +591,70 @@ enum RequestStatus {
   on_hold
   resolved
   closed
+}
+
+model Notification {
+  id          String            @id @default(cuid())
+  userId      Int
+  type        NotificationType
+  title       String
+  message     String
+  data        Json?
+  isRead      Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  user        users             @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  REQUEST_CREATED
+  REQUEST_APPROVED
+  REQUEST_REJECTED
+  REQUEST_ASSIGNED
+  REQUEST_RESOLVED
+  REQUEST_CLOSED
+  APPROVAL_REQUIRED
+  CLARIFICATION_REQUIRED
+  SLA_WARNING
+  SLA_ESCALATION
+}
+
+model MailServerSettings {
+  id             Int       @id @default(autoincrement())
+  serverName     String    @map("server_name")
+  alternateServer String? @map("alternate_server")
+  port           Int
+  protocol       String    @default("SMTP")
+  senderName     String    @map("sender_name")
+  replyTo        String    @map("reply_to")
+  username       String?
+  password       String?
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@map("mail_server_settings")
+}
+
+model EmailConfig {
+  id             Int       @id @default(autoincrement())
+  serverName     String    @map("server_name")
+  alternateServer String? @map("alternate_server")
+  port           Int
+  protocol       String    @default("SMTP")
+  senderName     String    @map("sender_name")
+  replyTo        String    @map("reply_to")
+  username       String?
+  password       String?
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@map("email_config")
 }

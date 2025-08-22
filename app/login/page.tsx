@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { signIn, getSession } from 'next-auth/react';
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Shield, Users, Zap, KeyRound, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 export default function LoginPage() {
   const [employeeId, setEmployeeId] = useState('');
@@ -27,7 +27,11 @@ export default function LoginPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
+
+  // Get callback URL from query params
+  const callbackUrl = searchParams.get('callbackUrl') || '/';
 
   // Password validation function
   const validatePassword = (password: string) => {
@@ -82,9 +86,9 @@ export default function LoginPage() {
           
           toast({
             title: "Login Successful",
-            description: "Welcome back! Redirecting to dashboard...",
+            description: "Welcome back! Redirecting...",
           });
-          router.push('/');
+          router.push(callbackUrl);
         }
       }
     } catch (error) {

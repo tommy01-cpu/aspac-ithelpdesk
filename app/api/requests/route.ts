@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth';
 import { getDatabaseTimestamp } from '@/lib/server-time-utils';
 import { addHistory } from '@/lib/history';
 import { calculateSLADueDate } from '@/lib/sla-calculator';
+import { notifyRequestCreated, notifyApprovalRequired } from '@/lib/notifications';
 
 // Define the status enums as constants to match the database enums
 const REQUEST_STATUS = {
@@ -752,6 +753,34 @@ export async function POST(request: Request) {
                     });
                     level1ApproverNames.push(approverName);
                     console.log(`Created template approver for level ${levelNumber}: ${approverName}`);
+                    
+                    // 📧 Send approval required notification
+                    try {
+                      const approverUser = await prisma.users.findUnique({
+                        where: { id: actualApproverId },
+                        select: {
+                          id: true,
+                          emp_fname: true,
+                          emp_lname: true,
+                          emp_email: true,
+                        }
+                      });
+                      
+                      if (approverUser && requestUser) {
+                        const requestWithUser = {
+                          id: newRequest.id,
+                          status: newRequest.status,
+                          formData: newRequest.formData,
+                          user: requestUser
+                        };
+                        
+                        await notifyApprovalRequired(requestWithUser, template, approverUser, createdApprover.id);
+                        console.log(`✅ Approval notification sent to ${approverName}`);
+                      }
+                    } catch (notificationError) {
+                      console.error(`Error sending approval notification to ${approverName}:`, notificationError);
+                      // Don't fail the request creation if notification fails
+                    }
                   }
                 }
               }
@@ -798,6 +827,24 @@ export async function POST(request: Request) {
                     });
                     level1ApproverNames.push(`${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`);
                     console.log(`Created additional approver for level ${levelNumber}: ${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`);
+                    
+                    // 📧 Send approval required notification
+                    try {
+                      if (requestUser) {
+                        const requestWithUser = {
+                          id: newRequest.id,
+                          status: newRequest.status,
+                          formData: newRequest.formData,
+                          user: requestUser
+                        };
+                        
+                        await notifyApprovalRequired(requestWithUser, template, additionalApprover, createdAdditional.id);
+                        console.log(`✅ Approval notification sent to ${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`);
+                      }
+                    } catch (notificationError) {
+                      console.error(`Error sending approval notification to ${additionalApprover.emp_fname} ${additionalApprover.emp_lname}:`, notificationError);
+                      // Don't fail the request creation if notification fails
+                    }
                   } else {
                     console.warn(`Additional approver with ID ${numericApproverId} not found in database`);
                   }
@@ -919,6 +966,34 @@ export async function POST(request: Request) {
                       }
                     });
                     console.log(`Created template approver for level ${levelNumber}: ${approverName}`);
+                    
+                    // 📧 Send approval required notification
+                    try {
+                      const approverUser = await prisma.users.findUnique({
+                        where: { id: actualApproverId },
+                        select: {
+                          id: true,
+                          emp_fname: true,
+                          emp_lname: true,
+                          emp_email: true,
+                        }
+                      });
+                      
+                      if (approverUser && requestUser) {
+                        const requestWithUser = {
+                          id: newRequest.id,
+                          status: newRequest.status,
+                          formData: newRequest.formData,
+                          user: requestUser
+                        };
+                        
+                        await notifyApprovalRequired(requestWithUser, template, approverUser, createdOther.id);
+                        console.log(`✅ Approval notification sent to ${approverName} (Level ${levelNumber})`);
+                      }
+                    } catch (notificationError) {
+                      console.error(`Error sending approval notification to ${approverName} (Level ${levelNumber}):`, notificationError);
+                      // Don't fail the request creation if notification fails
+                    }
                   }
                 }
               }
@@ -954,6 +1029,34 @@ export async function POST(request: Request) {
         console.error('Error linking attachments:', attachmentError);
         // Don't fail the request creation if attachment linking fails
       }
+    }
+
+    // 📧 Send notifications and emails for request creation
+    try {
+      // Get the full request data with user information for notifications
+      const requestWithUser = await prisma.request.findUnique({
+        where: { id: newRequest.id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              emp_fname: true,
+              emp_lname: true,
+              emp_email: true,
+              department: true,
+            }
+          }
+        }
+      });
+
+      if (requestWithUser && template) {
+        console.log('📧 Sending request creation notifications...');
+        await notifyRequestCreated(requestWithUser, template);
+        console.log('✅ Request creation notifications sent successfully');
+      }
+    } catch (notificationError) {
+      console.error('Error sending request creation notifications:', notificationError);
+      // Don't fail the request creation if notifications fail
     }
 
     return NextResponse.json({ success: true, request: newRequest });

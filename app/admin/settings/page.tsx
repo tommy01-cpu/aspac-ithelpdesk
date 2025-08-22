@@ -89,7 +89,14 @@ export default function AdminSettingsPage() {
       case 'Privacy Settings':
         router.push('/admin/settings/users-permissions?tab=privacy-settings');
         break;
-      default:
+      // Mail Server Settings items - now handled under Notification Settings
+      case 'Email Template':
+        router.push('/admin/settings/notification?tab=email-template');
+        break;
+      case 'Mail Server Settings':
+        router.push('/admin/settings/notification?tab=mail-server-settings');
+        break;
+     default:
         // For other items, you can add specific navigation or show a placeholder
         console.log(`Clicked on: ${itemName}`);
         break;
@@ -121,14 +128,13 @@ export default function AdminSettingsPage() {
       ]
     },
     {
-      title: "Mail Server Settings",
+      title: "Notification Settings",
       icon: MessageSquare,
       color: "from-indigo-500 to-indigo-600", 
       bgColor: "bg-indigo-50",
       iconColor: "text-indigo-600",
       items: [
-        "Incoming", "Outgoing", "Spam Filter",
-        "E-mail Command", "Delimiter"
+        "Email Template", "Mail Server Settings", 
       ]
     },
     {

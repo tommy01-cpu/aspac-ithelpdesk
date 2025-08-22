@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Search, Bell, Settings, User, LogOut, KeyRound, ChevronDown } from "lucide-react";
 import { cn } from "../lib/utils";
+import NotificationDropdown from "@/components/NotificationDropdown";
 
 export default function AppHeader() {
   const { data: session } = useSession();
@@ -218,9 +219,7 @@ export default function AppHeader() {
             <Button variant="ghost" size="icon" className="text-gray-600 hover:text-blue-700 hover:bg-blue-50">
               <Search className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="text-gray-600 hover:text-blue-700 hover:bg-blue-50">
-              <Bell className="h-5 w-5" />
-            </Button>
+            <NotificationDropdown className="text-gray-600 hover:text-blue-700 hover:bg-blue-50" />
             {/* Only show Settings icon if user is an admin */}
             {session?.user?.isAdmin && (
               <Link href="/admin/settings">

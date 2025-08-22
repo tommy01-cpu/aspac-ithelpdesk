@@ -1,0 +1,14 @@
+{
+  "serverName": "smtp.gmail.com",
+  "alternateServer": "",
+  "senderName": "IT Helpdesk",
+  "replyTo": "no-reply@aspacphils.com.ph",
+  "protocol": "SMTP",
+  "port": 587,
+  "username": "no-reply@aspacphils.com.ph",
+  "password": "ycye cxhg kgbe ytaz",
+  "id": 1,
+  "isActive": true,
+  "createdAt": "2025-08-20T07:45:34.160Z",
+  "updatedAt": "2025-08-20T07:45:34.160Z"
+}
