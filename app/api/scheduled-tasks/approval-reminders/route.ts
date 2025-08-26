@@ -103,8 +103,10 @@ export async function POST() {
           const request = approval.request;
           const requesterName = `${request.user.emp_fname} ${request.user.emp_lname}`.trim();
           const requestSubject = getRequestSubject(request.formData);
-          const specificRequestApprovalUrl = `${process.env.BASE_URL || 'http://localhost:3000'}${process.env.APPROVAL_URL || '/requests/approvals'}/${request.id}`;
-          return `- Request #${request.id}: "${requestSubject}" from ${requesterName} - [Approve Here](${specificRequestApprovalUrl})`;
+          const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+          const specificRequestApprovalUrl = `${baseUrl}${process.env.APPROVAL_URL || '/requests/approvals'}/${request.id}`;
+          const specificRequestViewUrl = `${baseUrl}${process.env.REQUEST_VIEW_URL || '/requests/view'}/${request.id}`;
+          return `- Request #${request.id}: "${requestSubject}" from ${requesterName} - [View Request](${specificRequestViewUrl}) | [Approve Here](${specificRequestApprovalUrl})`;
         }).join('\n');
 
         const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
@@ -112,11 +114,11 @@ export async function POST() {
         const requestViewBasePath = process.env.REQUEST_VIEW_URL || '/requests/view';
         
         // Construct full URLs using base URL
-        const requestViewUrl = baseUrl + requestViewBasePath;
+        const primaryRequestId = approvals[0].requestId;
+        const requestViewUrl = `${baseUrl}${requestViewBasePath}/${primaryRequestId}`;
         
         // Always use specific approval URL for the first/primary request
         // This will be the main action button in the email
-        const primaryRequestId = approvals[0].requestId;
         const specificApprovalUrl = `${baseUrl}${approvalBasePath}/${primaryRequestId}`;
 
         const emailVariables = {
@@ -125,8 +127,8 @@ export async function POST() {
           Pending_Requests_Count: approvals.length.toString(),
           Pending_Requests_List: requestsList,
           Base_URL: baseUrl,
-          approval_link: specificApprovalUrl, // Specific request approval or general page
-          request_link: requestViewUrl, // For individual request links
+          approval_link: specificApprovalUrl, // Specific request approval
+          request_link: requestViewUrl, // Specific request view (not general page)
           Encoded_Approvals_URL: encodeURIComponent(specificApprovalUrl)
         };
 

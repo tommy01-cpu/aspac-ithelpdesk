@@ -459,7 +459,8 @@ export default function ApprovalDetailsPage() {
         },
         body: JSON.stringify({
           message: message.trim(),
-          type: 'technician'
+          type: 'technician',
+          isClarificationRequest: false
         }),
       });
 
@@ -574,7 +575,8 @@ export default function ApprovalDetailsPage() {
         },
         body: JSON.stringify({
           message: clarificationMessage.trim(),
-          type: 'approver'
+          type: 'approver',
+          isClarificationRequest: true
         }),
       });
 

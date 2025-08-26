@@ -505,7 +505,7 @@ export default function MyRequestsPage() {
                                         "60px 2fr 1.5fr 1fr 1fr 1fr 1.5fr 1.5fr 1.5fr",
                                     }}
                                     onClick={() =>
-                                      router.push(`/technician/requests/${request.id}`)
+                                      router.push(`/requests/view/${request.id}`)
                                     }
                                     title="Click to view request details"
                                   >

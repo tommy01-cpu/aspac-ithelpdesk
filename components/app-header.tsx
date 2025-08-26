@@ -232,10 +232,10 @@ export default function AppHeader() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center space-x-2 text-gray-700 hover:text-blue-700 hover:bg-blue-50">
                   <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center ring-2 ring-blue-200/50">
-                    {!imgError ? (
+                    {session?.user?.profile_image && !imgError ? (
                       <img
-                        src={`http://hris.aspacphils.com.ph/HRIS-Plus-Version-2.0/contents/images/employees/${session?.user?.employee_id}.jpg`}
-                        alt="Employee Photo"
+                        src={`/uploads/${session.user.profile_image}`}
+                        alt="Profile Photo"
                         className="w-full h-full object-cover"
                         onError={() => setImgError(true)}
                       />

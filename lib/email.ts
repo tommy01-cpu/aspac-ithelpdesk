@@ -2,6 +2,53 @@ import nodemailer from 'nodemailer';
 import { getEmailConfigForService } from './email-config';
 import { getEmailTemplateById, convertDatabaseTemplateToEmail, getTemplateIdByType, TemplateType } from './database-email-templates';
 
+/**
+ * Available Email Template Variables
+ * 
+ * The following variables can be used in email templates and will be automatically replaced:
+ * 
+ * Request Information:
+ * - ${Request_ID}               : The unique request ID number
+ * - ${Request_Title}            : The title/subject of the request
+ * - ${Request_Subject}          : Same as Request_Title (legacy)
+ * - ${Request_Description}      : The full description of the request
+ * - ${Request_Status}           : Current status (Open, In Progress, Resolved, etc.)
+ * - ${Request_Priority}         : Priority level (Low, Medium, High, Critical)
+ * - ${Request_URL}              : Direct link to view the request
+ * - ${Request_Approval_Status}  : Approval status (Approved, Rejected, For Clarification)
+ * - ${Request_Approval_Comment} : Comment from approver when approving/rejecting
+ * - ${Created_Date}             : Date when request was created
+ * 
+ * User Information:
+ * - ${Requester_Name}           : Full name of the person who created the request
+ * - ${Requester_Email}          : Email address of the requester
+ * - ${Approver_Name}            : Full name of the approver
+ * - ${Technician_Name}          : Full name of the assigned technician
+ * - ${Technician_Email}         : Email address of the assigned technician
+ * 
+ * Service/Category Information:
+ * - ${Service_Name}             : Name of the service being requested
+ * - ${Category_Name}            : Category of the service
+ * - ${Template_Name}            : Name of the service template used
+ * 
+ * Approval Information:
+ * - ${Approval_Level}           : The approval level number
+ * - ${approval_link}            : Direct link to approval action page
+ * - ${Clarification}            : Comment/message when clarification is requested
+ * 
+ * System Information:
+ * - ${Base_URL}                 : Base URL of the IT Helpdesk system
+ * - ${Encoded_Request_URL}      : URL-encoded request link for email redirects
+ * - ${Encoded_Approval_URL}     : URL-encoded approval link for email redirects
+ * - ${Encoded_Dashboard_URL}    : URL-encoded dashboard link for email redirects
+ * - ${Encoded_Approvals_URL}    : URL-encoded approvals page link for email redirects
+ * 
+ * SLA Information:
+ * - ${SLA_Due_Date}             : When the SLA is due
+ * - ${Time_Remaining}           : Time remaining until SLA breach
+ * - ${Escalation_Level}         : Current escalation level
+ */
+
 // Get base URL from environment
 const getBaseUrl = () => {
   return process.env.NEXTAUTH_URL || 'http://localhost:3000';
@@ -448,7 +495,7 @@ export const sendRequestCreatedEmail = async (requesterEmail: string, variables:
       ...variables,
       Base_URL: baseUrl,
       Encoded_Request_URL: encodedRequestUrl,
-      Request_Link: loginCallbackUrl
+      Request_Link: requestUrl
     };
     
     console.log('Enhanced variables:', enhancedVariables);
@@ -567,7 +614,8 @@ export const sendApprovalRequiredEmail = async (approverEmail: string, variables
       ...variables,
       Base_URL: baseUrl,
       Encoded_Approval_URL: encodedApprovalUrl,
-      Request_Link: loginCallbackUrl
+      Request_Link: loginCallbackUrl,
+      approval_link: approvalUrl  // Add the missing approval_link variable for template compatibility
     };
     
     console.log('Enhanced variables for approval:', enhancedVariables);
@@ -620,7 +668,7 @@ export const sendRequestApprovedRejectedEmail = async (requesterEmail: string, v
     }
     
     const baseUrl = getBaseUrl();
-    const requestUrl = `${baseUrl}/requests/view/${variables.Request_ID}`;
+    const requestUrl = `${baseUrl}/requests/view/${variables.Request_ID}?tab=approvals`;
     const encodedRequestUrl = encodeURIComponent(requestUrl);
     
     // Create login callback URL - redirects to request after login
@@ -630,7 +678,7 @@ export const sendRequestApprovedRejectedEmail = async (requesterEmail: string, v
       ...variables,
       Base_URL: baseUrl,
       Encoded_Request_URL: encodedRequestUrl,
-      Request_Link: loginCallbackUrl
+      Request_Link: requestUrl
     };
     
     // Convert database template to email format WITH VARIABLES
@@ -980,5 +1028,155 @@ export const sendClarificationReminderEmail = async (requesterEmail: string, var
       message: template.template,
       variables: enhancedVariables
     });
+  }
+};
+
+export const sendClarificationRequiredEmail = async (requesterEmail: string, variables: Record<string, string>) => {
+  try {
+    // Get the template ID for clarification required notification
+    const templateId = await getTemplateIdByType('CLARIFICATION_REQUIRED' as TemplateType);
+    if (!templateId) {
+      throw new Error('Email template not found for CLARIFICATION_REQUIRED');
+    }
+    
+    // Get the template from database
+    const dbTemplate = await getEmailTemplateById(templateId);
+    if (!dbTemplate) {
+      throw new Error('Database email template not found');
+    }
+    
+    const baseUrl = getBaseUrl();
+    const requestUrl = `${baseUrl}/requests/view/${variables.Request_ID}`;
+    const encodedRequestUrl = encodeURIComponent(requestUrl);
+    
+    // Create login callback URL - redirects to request after login
+    const loginCallbackUrl = `${baseUrl}/login?callbackUrl=${encodeURIComponent(`/requests/view/${variables.Request_ID}`)}`;
+    
+    const enhancedVariables = {
+      ...variables,
+      Base_URL: baseUrl,
+      Encoded_Request_URL: encodedRequestUrl,
+      Request_Link: requestUrl
+    };
+    
+    // Convert database template to email format WITH VARIABLES
+    const template = convertDatabaseTemplateToEmail(dbTemplate, enhancedVariables);
+    
+    return sendEmail({
+      to: requesterEmail,
+      subject: template.subject,
+      message: template.textContent,
+      htmlMessage: template.htmlContent,
+      variables: enhancedVariables
+    });
+  } catch (error) {
+    console.error('Error sending clarification required email:', error);
+    // Fallback to hardcoded template if database fails
+    const template = EMAIL_TEMPLATES.CLARIFICATION_REQUIRED;
+    const baseUrl = getBaseUrl();
+    const requestUrl = `${baseUrl}/requests/view/${variables.Request_ID}`;
+    const encodedRequestUrl = encodeURIComponent(requestUrl);
+    
+    const enhancedVariables = {
+      ...variables,
+      Base_URL: baseUrl,
+      Encoded_Request_URL: encodedRequestUrl
+    };
+    
+    return sendEmail({
+      to: requesterEmail,
+      subject: template.subject,
+      message: template.template,
+      variables: enhancedVariables
+    });
+  }
+};
+
+/**
+ * Send email notification to new approver when added to a request
+ */
+export const sendNewApproverNotificationEmail = async (
+  approverEmail: string,
+  approverName: string,
+  requestDetails: {
+    requestId: number;
+    requestTitle: string;
+    requesterName: string;
+    serviceName: string;
+    categoryName: string;
+    level: number;
+    priority: string;
+    createdAt: Date;
+  },
+  templateType: string = 'notify-approver-approval'
+) => {
+  try {
+    // Try to get template from database
+    const templateId = await getTemplateIdByType(templateType as TemplateType);
+    if (templateId) {
+      const dbTemplate = await getEmailTemplateById(templateId);
+      if (dbTemplate) {
+        const baseUrl = getBaseUrl();
+        const requestUrl = `${baseUrl}/requests/view/${requestDetails.requestId}`;
+        const approval_link = `${baseUrl}/approvals?requestId=${requestDetails.requestId}`;
+        
+        const variables = {
+          Approver_Name: approverName,
+          Request_ID: requestDetails.requestId.toString(),
+          Request_Title: requestDetails.requestTitle,
+          Requester_Name: requestDetails.requesterName,
+          Service_Name: requestDetails.serviceName,
+          Category_Name: requestDetails.categoryName,
+          Approval_Level: requestDetails.level.toString(),
+          Priority: requestDetails.priority,
+          Created_Date: requestDetails.createdAt.toLocaleDateString(),
+          Request_URL: requestUrl,
+          approval_link: approval_link,
+          Base_URL: baseUrl
+        };
+
+        const processedTemplate = convertDatabaseTemplateToEmail(dbTemplate, variables);
+        
+        return sendEmail({
+          to: approverEmail,
+          subject: processedTemplate.subject,
+          message: processedTemplate.htmlContent,
+          variables
+        });
+      }
+    }
+
+    // Fallback template if database template not found
+    const fallbackTemplate = {
+      subject: 'IT HELPDESK: New Approval Request - ${Request_ID}',
+      template: `Dear ${approverName},
+
+You have been added as an approver for the following IT Helpdesk request:
+
+Request ID: ${requestDetails.requestId}
+Title: ${requestDetails.requestTitle}
+Requester: ${requestDetails.requesterName}
+Service: ${requestDetails.serviceName}
+Category: ${requestDetails.categoryName}
+Priority: ${requestDetails.priority}
+Approval Level: ${requestDetails.level}
+
+Please review and take action on this request by clicking the link below:
+${getBaseUrl()}/approvals?requestId=${requestDetails.requestId}
+
+Thank you,
+IT Helpdesk Team`
+    };
+
+    return sendEmail({
+      to: approverEmail,
+      subject: fallbackTemplate.subject,
+      message: fallbackTemplate.template,
+      variables: {}
+    });
+
+  } catch (error) {
+    console.error('Error sending new approver notification email:', error);
+    throw error;
   }
 };

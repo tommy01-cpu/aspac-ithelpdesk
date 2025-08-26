@@ -4,12 +4,14 @@ import {
   sendRequestCreatedCCEmail, 
   sendApprovalRequiredEmail,
   sendRequestApprovedRejectedEmail,
+  sendClarificationRequiredEmail,
   sendRequestAssignedRequesterEmail,
   sendRequestAssignedTechnicianEmail,
   sendRequestResolvedEmail,
   sendSLAEscalationEmail 
 } from '@/lib/email';
 import { processImagesForEmailAuto } from './email-image-processor-enhanced';
+import { formatStatusForDisplay } from './status-colors';
 
 // Helper function to ensure all email variables have string values
 const sanitizeEmailVariables = (variables: any): Record<string, string> => {
@@ -29,6 +31,7 @@ export type NotificationType =
   | 'REQUEST_CLOSED'
   | 'APPROVAL_REQUIRED'
   | 'CLARIFICATION_REQUIRED'
+  | 'CLARIFICATION_RESPONSE'
   | 'SLA_WARNING'
   | 'SLA_ESCALATION';
 
@@ -47,8 +50,11 @@ export interface RequestEmailVariables extends Record<string, string> {
   Request_Description: string;
   Requester_Name: string;
   Requester_Email: string;
+  Request_Title?: string;
   Approver_Name?: string;
   Approver_Email?: string;
+  Approval_Comments?: string;
+  Clarification?: string;
 }
 
 // Create in-app notification
@@ -147,7 +153,7 @@ export const notifyRequestCreated = async (requestData: any, templateData: any) 
     // Email variables
     const emailVariables: RequestEmailVariables = {
       Request_ID: requestId.toString(),
-      Request_Status: requestData.status || 'for_approval',
+      Request_Status: formatStatusForDisplay(requestData.status || 'for_approval'),
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
       Requester_Name: requesterName,
@@ -219,7 +225,7 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
     // Email variables
     const emailVariables: RequestEmailVariables = {
       Request_ID: requestId.toString(),
-      Request_Status: requestData.status || 'for_approval',
+      Request_Status: formatStatusForDisplay(requestData.status || 'for_approval'),
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
       Requester_Name: requesterName,
@@ -274,7 +280,7 @@ export const notifyRequestApprovedRejected = async (
     // Email variables
     const emailVariables: RequestEmailVariables = {
       Request_ID: requestId.toString(),
-      Request_Status: requestData.status,
+      Request_Status: formatStatusForDisplay(requestData.status),
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
       Request_Title: requestSubject,
@@ -327,7 +333,7 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
     // Email variables for requester
     const requesterEmailVariables: RequestEmailVariables = {
       Request_ID: requestId.toString(),
-      Request_Status: requestData.status,
+      Request_Status: formatStatusForDisplay(requestData.status),
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
       Request_Title: requestSubject,
@@ -339,7 +345,7 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
     // Email variables for technician
     const technicianEmailVariables: RequestEmailVariables = {
       Request_ID: requestId.toString(),
-      Request_Status: requestData.status,
+      Request_Status: formatStatusForDisplay(requestData.status),
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
       Request_Title: requestSubject,
@@ -407,7 +413,7 @@ export const notifyRequestResolved = async (
     // Email variables
     const emailVariables: RequestEmailVariables = {
       Request_ID: requestId.toString(),
-      Request_Status: requestData.status,
+      Request_Status: formatStatusForDisplay(requestData.status),
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
       Requester_Name: requesterName,
@@ -488,7 +494,7 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
     // Email variables
     const emailVariables: RequestEmailVariables = {
       Request_ID: requestId.toString(),
-      Request_Status: requestData.status,
+      Request_Status: formatStatusForDisplay(requestData.status),
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
       Request_Title: requestSubject,
@@ -515,6 +521,190 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
     return true;
   } catch (error) {
     console.error('Error sending SLA escalation notifications:', error);
+    return false;
+  }
+};
+
+// Function to send approval outcome notification to requester
+export const sendApprovalOutcomeNotification = async (
+  requestId: number, 
+  action: 'approved' | 'rejected',
+  comments?: string
+): Promise<boolean> => {
+  try {
+    console.log(`=== SENDING APPROVAL OUTCOME NOTIFICATION ===`);
+    console.log(`Request ID: ${requestId}, Action: ${action}`);
+
+    // Get request data including user details
+    const requestData = await prisma.request.findUnique({
+      where: { id: requestId },
+      include: {
+        user: true,
+        approvals: {
+          include: {
+            approver: true
+          }
+        }
+      }
+    });
+
+    if (!requestData) {
+      console.error(`Request ${requestId} not found`);
+      return false;
+    }
+
+    const requesterEmail = requestData.user.emp_email;
+    if (!requesterEmail) {
+      console.error(`No email found for requester of request ${requestId}`);
+      return false;
+    }
+
+    const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
+    const requestSubject = requestData.formData?.subject || requestData.formData?.title || `Request #${requestId}`;
+    
+    // Process request description
+    const rawRequestDescription = requestData.formData?.description || requestData.formData?.details || 'No description provided';
+    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+
+    // Email variables - Only include comments if action is 'rejected'
+    const emailVariables: RequestEmailVariables = {
+      Request_ID: requestId.toString(),
+      Request_Status: formatStatusForDisplay(action === 'approved' ? 'approved' : 'rejected'),
+      Request_Subject: requestSubject,
+      Request_Description: requestDescription,
+      Requester_Name: requesterName,
+      Requester_Email: requesterEmail,
+      Request_Title: requestSubject,
+    };
+
+    // Only add rejection comments if action is 'rejected' and comments exist
+    if (action === 'rejected' && comments) {
+      emailVariables.Approval_Comments = comments;
+    }
+
+    // Send email notification to requester
+    await sendRequestApprovedRejectedEmail(requesterEmail, sanitizeEmailVariables(emailVariables));
+    
+    // Create in-app notification for approval outcome
+    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const notificationTitle = action === 'approved' ? 
+      `Request #${requestId} Approved` : 
+      `Request #${requestId} Rejected`;
+    
+    const notificationMessage = action === 'approved' ?
+      `Your request "${requestSubject}" has been approved.` :
+      `Your request "${requestSubject}" has been rejected.${comments ? ` Reason: ${comments}` : ''}`;
+    
+    // For rejected requests, redirect to approvals tab
+    const redirectUrl = action === 'rejected' ? 
+      `${baseUrl}/requests/view/${requestId}?tab=approvals` : 
+      `${baseUrl}/requests/view/${requestId}`;
+    
+    await createNotification({
+      userId: requestData.userId,
+      type: action === 'approved' ? 'REQUEST_APPROVED' : 'REQUEST_REJECTED',
+      title: notificationTitle,
+      message: notificationMessage,
+      data: {
+        requestId: requestId.toString(),
+        requestSubject,
+        action,
+        redirectUrl,
+        ...(comments && action === 'rejected' ? { comments } : {})
+      }
+    });
+    
+    console.log(`✅ Approval outcome notification sent to ${requesterEmail}`);
+    return true;
+
+  } catch (error) {
+    console.error('Error sending approval outcome notification:', error);
+    return false;
+  }
+};
+
+// Function to send clarification request notification to requester
+export const sendClarificationRequestNotification = async (
+  requestId: number, 
+  comments?: string
+): Promise<boolean> => {
+  try {
+    console.log(`=== SENDING CLARIFICATION REQUEST NOTIFICATION ===`);
+    console.log(`Request ID: ${requestId}`);
+
+    // Get request data including user details
+    const requestData = await prisma.request.findUnique({
+      where: { id: requestId },
+      include: {
+        user: true,
+        approvals: {
+          include: {
+            approver: true
+          }
+        }
+      }
+    });
+
+    if (!requestData) {
+      console.error(`Request ${requestId} not found`);
+      return false;
+    }
+
+    const requesterEmail = requestData.user.emp_email;
+    if (!requesterEmail) {
+      console.error(`No email found for requester of request ${requestId}`);
+      return false;
+    }
+
+    const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
+    const requestSubject = requestData.formData?.subject || requestData.formData?.title || `Request #${requestId}`;
+    
+    // Process request description
+    const rawRequestDescription = requestData.formData?.description || requestData.formData?.details || requestData.formData?.['9'] || 'No description provided';
+    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+
+    // Email variables
+    const emailVariables: RequestEmailVariables = {
+      Request_ID: requestId.toString(),
+      Request_Status: formatStatusForDisplay('for_clarification'), // This will format to "For Clarification"
+      Request_Subject: requestSubject,
+      Request_Description: requestDescription,
+      Requester_Name: requesterName,
+      Requester_Email: requesterEmail,
+      Request_Title: requestSubject,
+      Clarification: comments || 'Clarification required for your request', // Use provided comment or default message
+    };
+
+    // Send email notification to requester
+    await sendClarificationRequiredEmail(requesterEmail, sanitizeEmailVariables(emailVariables));
+    
+    // Create in-app notification for clarification request
+    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const notificationTitle = `Clarification Required for Request #${requestId}`;
+    const notificationMessage = `Clarification is required for your request "${requestSubject}".${comments ? ` Message: ${comments}` : ''}`;
+    
+    // Redirect to approvals tab for clarification
+    const redirectUrl = `${baseUrl}/requests/view/${requestId}?tab=approvals`;
+    
+    await createNotification({
+      userId: requestData.userId,
+      type: 'CLARIFICATION_REQUIRED',
+      title: notificationTitle,
+      message: notificationMessage,
+      data: {
+        requestId: requestId.toString(),
+        requestSubject,
+        action: 'clarification',
+        redirectUrl,
+        ...(comments ? { clarificationMessage: comments } : {})
+      }
+    });
+    
+    console.log(`✅ Clarification request notification sent to ${requesterEmail}`);
+    return true;
+
+  } catch (error) {
+    console.error('Error sending clarification request notification:', error);
     return false;
   }
 };

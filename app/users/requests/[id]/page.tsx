@@ -1552,7 +1552,7 @@ export default function RequestViewPage() {
             {/* Main Content */}
             <div className="col-span-8">
               <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-                <TabsList className="grid w-full grid-cols-5 mb-6">
+                <TabsList className={`grid w-full mb-6 ${session?.user?.isTechnician ? 'grid-cols-5' : 'grid-cols-4'}`}>
                   <TabsTrigger value="details" className="flex items-center gap-2">
                     <FileText className="h-4 w-4" />
                     Details
@@ -2258,7 +2258,7 @@ export default function RequestViewPage() {
                                             className="text-xs"
                                             onClick={() => setShowAddApprovalModal(true)}
                                           >
-                                            + Add Approvals
+                                            + Add Approver
                                           </Button>
                                         </>
                                       )}

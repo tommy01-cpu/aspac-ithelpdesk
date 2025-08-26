@@ -1,4 +1,5 @@
 import { prisma } from './prisma';
+import { formatStatusForDisplay } from './status-colors';
 
 interface EmailVariables {
   [key: string]: string;
@@ -147,7 +148,7 @@ export async function sendNewRequestAcknowledgment(
       Requester_Email: requesterEmail,
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
-      Request_Status: requestStatus
+      Request_Status: formatStatusForDisplay(requestStatus)
     }
   });
 }

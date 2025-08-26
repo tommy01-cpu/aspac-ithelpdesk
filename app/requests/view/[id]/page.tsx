@@ -192,6 +192,15 @@ function htmlToText(html?: string | null) {
   }
 }
 
+// Format file size for display
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
 // Dynamically import ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(
   () => import('react-quill').then((mod) => mod.default),
@@ -375,7 +384,7 @@ interface ApprovalLevel {
   id: string;
   level: number;
   name: string;
-  status: 'pending' | 'approved' | 'rejected' | 'not_sent';
+  status: 'pending_approval' | 'approved' | 'rejected' | 'for_clarification' | 'not_sent';
   approverId?: number; // Added to support filtering users already in approver list
   approver: string;
   sentOn?: string;
@@ -390,6 +399,40 @@ interface HistoryEntry {
   timestamp: string;
   actor: string;
   actorType?: string;
+}
+
+// Helper function to determine current approval status from approvals array
+function getCurrentApprovalStatus(approvals: ApprovalLevel[]): string {
+  if (!approvals || approvals.length === 0) {
+    return 'pending approval';
+  }
+
+  // Check if any approval is rejected
+  const hasRejected = approvals.some(approval => approval.status === 'rejected');
+  if (hasRejected) {
+    return 'rejected';
+  }
+
+  // Check if any approval is for clarification
+  const hasForClarification = approvals.some(approval => approval.status === 'for_clarification');
+  if (hasForClarification) {
+    return 'for_clarification';
+  }
+
+  // Check if all approvals are approved
+  const allApproved = approvals.every(approval => approval.status === 'approved');
+  if (allApproved) {
+    return 'approved';
+  }
+
+  // Check if any approval is in progress (approved at least one level)
+  const hasAnyApproved = approvals.some(approval => approval.status === 'approved');
+  if (hasAnyApproved) {
+    return 'pending approval'; // Partially approved, still pending
+  }
+
+  // Default to pending approval
+  return 'pending approval';
 }
 
 export default function RequestViewPage() {
@@ -444,6 +487,8 @@ export default function RequestViewPage() {
   const [resStatus, setResStatus] = useState<string>('open');
   const [resAddWorkLog, setResAddWorkLog] = useState<boolean>(false);
   const [savingResolution, setSavingResolution] = useState(false);
+  const [isEditingResolution, setIsEditingResolution] = useState(false);
+  const [attachmentsToDelete, setAttachmentsToDelete] = useState<string[]>([]);
   // Resolve modal state
   const [showResolveModal, setShowResolveModal] = useState(false);
   const [resolveFcr, setResolveFcr] = useState(false);
@@ -494,6 +539,21 @@ export default function RequestViewPage() {
   // Approval modal states
   const [approverSearch, setApproverSearch] = useState('');
   const [approverResults, setApproverResults] = useState<any[]>([]);
+
+  // Resolution attachment deletion - mark for deletion (don't delete until save)
+  const handleDeleteResolutionAttachment = async (attachmentId: string, attachmentName: string) => {
+    if (!confirm(`Are you sure you want to remove "${attachmentName}"? It will be deleted when you save.`)) {
+      return;
+    }
+    
+    // Just mark for deletion - don't actually delete until save
+    setAttachmentsToDelete(prev => [...prev, attachmentId]);
+    
+    toast({ 
+      title: 'Marked for deletion', 
+      description: `"${attachmentName}" will be deleted when you save the resolution.` 
+    });
+  };
 
   const requestId = params?.id as string;
 
@@ -572,6 +632,33 @@ export default function RequestViewPage() {
     }
   }, [requestId, session]);
 
+  // Initialize resolution state with existing data when request data is loaded
+  useEffect(() => {
+    if (requestData && session?.user?.isTechnician) {
+      const fd: any = requestData.formData || {};
+      const resBlock = fd.resolution || {};
+      
+      // Get existing resolution data - check both new structure and fallback
+      const existingResolution = String(resBlock.closureComments || fd.closureComments || '').trim();
+      const existingClosureCode = String(resBlock.closureCode || '').trim();
+      
+      // Initialize resolution notes with existing data if available
+      if (existingResolution && resNotes === '') {
+        setResNotes(existingResolution);
+      }
+      
+      // Initialize closure code with existing data if available
+      if (existingClosureCode && resolveClosureCode === '') {
+        setResolveClosureCode(existingClosureCode);
+      }
+      
+      // Initialize status with current request status
+      if (requestData.status && resStatus === 'open') {
+        setResStatus(requestData.status);
+      }
+    }
+  }, [requestData, session?.user?.isTechnician]);
+
   // Load conversation counts for all approvals after approvals are loaded
   useEffect(() => {
     if (approvals.length > 0) {
@@ -593,6 +680,18 @@ export default function RequestViewPage() {
     return () => clearTimeout(timeoutId);
   }, [userSearchTerm, approvals, selectedUsers, session]);
 
+  // Initialize work log owner with current user when modal opens
+  useEffect(() => {
+    if (showWorkLogModal && session?.user) {
+      // Set current user as default owner when opening work log modal
+      const currentUserName = session.user.name || `${session.user.firstName || ''} ${session.user.lastName || ''}`.trim() || session.user.email || '';
+      const currentUserId = parseInt(session.user.id) || null;
+      
+      setWlOwnerName(currentUserName);
+      setWlOwnerId(currentUserId);
+    }
+  }, [showWorkLogModal, session?.user]);
+
   const fetchRequestData = async () => {
     try {
       setLoading(true);
@@ -611,6 +710,14 @@ export default function RequestViewPage() {
       setConversations(data.conversations || []);
       setApprovals(data.approvals || []);
       setHistory(data.history || []);
+      
+      // Debug resolution attachments after fetch
+      const fd: any = data.request?.formData || {};
+      const resBlock = fd.resolution || {};
+      const resAttIds = Array.isArray(resBlock.attachments) ? resBlock.attachments : [];
+      console.log('AFTER FETCH DEBUG - Resolution attachments in formData:', resAttIds);
+      console.log('AFTER FETCH DEBUG - All attachments loaded:', (data.attachments || []).map((a: any) => ({ id: a.id, name: a.originalName })));
+      
       // Load work logs for technician
       if (session?.user?.isTechnician) {
         loadWorkLogs();
@@ -807,6 +914,22 @@ export default function RequestViewPage() {
       }
     }
   }, [editForm.template, availableTemplates]);
+
+  // Initialize resolution data when entering edit mode or when request data changes
+  useEffect(() => {
+    if (requestData && isEditingResolution) {
+      const fd: any = requestData.formData || {};
+      const resBlock = fd.resolution || {};
+      const existingResolution = String(resBlock.closureComments || fd.closureComments || '').trim();
+      
+      if (existingResolution) {
+        setResNotes(existingResolution);
+      }
+      
+      // Set status to current request status when entering edit mode
+      setResStatus(requestData.status || 'open');
+    }
+  }, [requestData, isEditingResolution]);
 
   const handleEditRequest = () => {
     // Don't open modal if data isn't loaded yet
@@ -1756,9 +1879,31 @@ export default function RequestViewPage() {
       });
 
       if (response.ok) {
+        // Send email notifications to new approvers
+        try {
+          await fetch('/api/notifications/send-approver-notification', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              requestId,
+              approvers: selectedUsers.map(user => ({
+                email: user.emp_email,
+                name: `${user.emp_fname} ${user.emp_lname}`,
+                level: parseInt(currentLevel)
+              })),
+              template: 'notify-approver-approval'
+            }),
+          });
+        } catch (emailError) {
+          console.error('Failed to send email notifications:', emailError);
+          // Don't fail the whole operation if email fails
+        }
+
         toast({
-          title: "Approvals added",
-          description: `Successfully added ${selectedUsers.length} approver(s) to Level ${currentLevel}`,
+          title: "Approver added",
+          description: `Successfully added ${selectedUsers.length} approver(s) to Level ${currentLevel} and sent email notifications`,
         });
         
         // Refresh the request data to show new approvals
@@ -1908,7 +2053,7 @@ export default function RequestViewPage() {
             {/* Main Content */}
             <div className="col-span-8">
               <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-                <TabsList className="grid w-full grid-cols-5 mb-6">
+                <TabsList className={`grid w-full mb-6 ${session?.user?.isTechnician ? 'grid-cols-5' : 'grid-cols-4'}`}>
                   <TabsTrigger value="details" className="flex items-center gap-2">
                     <FileText className="h-4 w-4" />
                     Details
@@ -2272,168 +2417,465 @@ export default function RequestViewPage() {
                 <TabsContent value="resolution" className="space-y-6">
                   {session?.user?.isTechnician ? (
                     <Card>
-                      <CardHeader>
+                      <CardHeader className="flex flex-row items-center justify-between">
                         <CardTitle className="text-lg">Resolution</CardTitle>
+                        {(() => {
+                          const fd: any = requestData.formData || {};
+                          const resBlock = fd.resolution || {};
+                          const html = String(resBlock.closureComments || fd.closureComments || '').trim();
+                          const hasExistingResolution = html.length > 0;
+                          
+                          if (hasExistingResolution && !isEditingResolution) {
+                            return (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setIsEditingResolution(true)}
+                                className="flex items-center gap-2"
+                              >
+                                <Edit className="h-4 w-4" />
+                                Edit
+                              </Button>
+                            );
+                          } else if (isEditingResolution) {
+                            // Show Save/Cancel buttons when editing
+                            return (
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={async () => {
+                                    if (!session?.user?.isTechnician) { 
+                                      toast({ title: 'Not allowed', description: 'Only technicians can update resolution.', variant: 'destructive' }); 
+                                      return; 
+                                    }
+                                    
+                                    // Basic validation for resolution notes
+                                    if (!resNotes || htmlToText(resNotes).trim().length === 0) {
+                                      toast({ title: 'Validation Error', description: 'Please provide resolution notes before saving.', variant: 'destructive' });
+                                      return;
+                                    }
+                                    
+                                    try {
+                                      setSavingResolution(true);
+                                      // 1) Upload files if any
+                                      let uploaded: any[] = [];
+                                      console.log('New files to upload:', resFiles.length);
+                                      if (resFiles.length > 0) {
+                                        const fd = new FormData();
+                                        resFiles.forEach(f => fd.append('files', f));
+                                        fd.append('requestId', requestId);
+                                        console.log('Uploading files with requestId:', requestId);
+                                        const up = await fetch('/api/attachments', { method: 'POST', body: fd });
+                                        if (up.ok) { 
+                                          const j = await up.json(); 
+                                          uploaded = j.files || [];
+                                          console.log('Uploaded files:', uploaded);
+                                        } else {
+                                          console.error('File upload failed:', up.status);
+                                        }
+                                      }
+                                      const attachmentIds: string[] = uploaded.map((f: any) => f.id).filter(Boolean);
+                                      console.log('Attachment IDs to save:', attachmentIds);
+                                      
+                                      // Delete attachments marked for deletion
+                                      if (attachmentsToDelete.length > 0) {
+                                        console.log('Deleting marked attachments:', attachmentsToDelete);
+                                        for (const attachmentId of attachmentsToDelete) {
+                                          try {
+                                            const deleteResponse = await fetch(`/api/requests/${requestId}/attachments/${attachmentId}`, {
+                                              method: 'DELETE'
+                                            });
+                                            if (!deleteResponse.ok) {
+                                              console.error('Failed to delete attachment:', attachmentId);
+                                            }
+                                          } catch (error) {
+                                            console.error('Error deleting attachment:', attachmentId, error);
+                                          }
+                                        }
+                                      }
+                                      
+                                      // Check if request is already resolved - if so, just update resolution content
+                                      const isAlreadyResolved = requestData?.status === 'resolved';
+                                      
+                                      console.log('RESOLUTION SAVE DEBUG - About to send to resolve API:', {
+                                        requestId,
+                                        attachmentIds,
+                                        resNotesLength: resNotes?.length || 0,
+                                        isFirstTimeResolving: resStatus === 'resolved' && !isAlreadyResolved,
+                                        isUpdatingExisting: isAlreadyResolved
+                                      });
+                                      
+                                      if (resStatus === 'resolved' && !isAlreadyResolved) {
+                                        // Only enforce mandatory fields when resolving for the first time
+                                        const fd: any = requestData?.formData || {};
+                                        const missing: string[] = [];
+                                        if (!fd.category && !fd.serviceCategory && !fd.ServiceCategory) missing.push('Service Category');
+                                        if (!requestData?.priority) missing.push('Priority');
+                                        if (!requestData?.type) missing.push('Request Type');
+                                        if (!fd.assignedTechnician && !fd.assignedTechnicianId) missing.push('Technician');
+                                        if (!resNotes || htmlToText(resNotes).trim().length === 0) missing.push('Resolution');
+                                        if (!resolveClosureCode || resolveClosureCode.trim().length === 0) missing.push('Closure Code');
+                                        const worklogs = Array.isArray(fd.worklogs) ? fd.worklogs : [];
+                                        if (worklogs.length === 0) missing.push('Work Log');
+                                        if (missing.length > 0) {
+                                          toast({ title: 'Missing required fields', description: `Please provide: ${missing.join(', ')}` , variant: 'destructive' });
+                                          throw new Error('Validation failed');
+                                        }
+                                        
+                                        console.log('Creating new resolution with:', { 
+                                          resNotes: resNotes.substring(0, 50) + '...', 
+                                          attachmentIds,
+                                          newFilesCount: resFiles.length 
+                                        });
+                                        
+                                        const resR = await fetch(`/api/requests/${requestId}/resolve`, {
+                                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ fcr: false, closureCode: resolveClosureCode, closureComments: resNotes, attachmentIds })
+                                        });
+                                        
+                                        console.log('Resolve response status:', resR.status);
+                                        const responseData = await resR.json();
+                                        console.log('Resolve response data:', responseData);
+                                        
+                                        if (!resR.ok) {
+                                          console.error('Resolve error response:', responseData);
+                                          
+                                          let msg = 'Failed to resolve';
+                                          if (responseData?.error) {
+                                            msg = responseData.error;
+                                            if (Array.isArray(responseData.details)) {
+                                              msg += `: ${responseData.details.join(', ')}`;
+                                            }
+                                          }
+                                          throw new Error(msg);
+                                        }
+                                      } else if (isAlreadyResolved) {
+                                        // For already resolved requests, call resolve endpoint again to update resolution
+                                        console.log('Updating already resolved request with:', { 
+                                          resNotes: resNotes.substring(0, 50) + '...', 
+                                          attachmentIds,
+                                          newFilesCount: resFiles.length 
+                                        });
+                                        
+                                        const resR = await fetch(`/api/requests/${requestId}/resolve`, {
+                                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ fcr: false, closureCode: resolveClosureCode, closureComments: resNotes, attachmentIds })
+                                        });
+                                        
+                                        console.log('Resolve response status:', resR.status);
+                                        const responseData = await resR.json();
+                                        console.log('Resolve response data:', responseData);
+                                        
+                                        if (!resR.ok) {
+                                          console.error('Resolve error response:', responseData);
+                                          
+                                          let msg = 'Failed to update resolution';
+                                          if (responseData?.error) {
+                                            msg = responseData.error;
+                                            if (Array.isArray(responseData.details)) {
+                                              msg += `: ${responseData.details.join(', ')}`;
+                                            }
+                                          }
+                                          throw new Error(msg);
+                                        }
+                                      } else {
+                                        // For other status updates
+                                        const resS = await fetch(`/api/requests/${requestId}/status`, {
+                                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ status: resStatus, notes: resNotes, attachmentIds })
+                                        });
+                                        if (!resS.ok) {
+                                          let msg = 'Failed to update status';
+                                          try { 
+                                            const j = await resS.json(); 
+                                            if (j?.error) msg = j.error; 
+                                          } catch {}
+                                          throw new Error(msg);
+                                        }
+                                      }
+                                      toast({ title: 'Saved', description: 'Resolution updated.' });
+                                      // reset - clear new files, deletion list, keep resolution notes, exit edit mode
+                                      setResFiles([]); 
+                                      setAttachmentsToDelete([]);
+                                      setIsEditingResolution(false);
+                                      await fetchRequestData();
+                                      
+                                      // Redirect to resolution tab if this was a new resolution
+                                      if (resStatus === 'resolved' && !isAlreadyResolved) {
+                                        setTimeout(() => {
+                                          window.location.href = `http://192.168.1.85:3000/requests/view/${requestId}?tab=resolution`;
+                                        }, 1000);
+                                      }
+                                    } catch (e) {
+                                      toast({ title: 'Error', description: e instanceof Error ? e.message : 'Failed to save resolution', variant: 'destructive' });
+                                    } finally {
+                                      setSavingResolution(false);
+                                    }
+                                  }}
+                                  disabled={savingResolution}
+                                  className="bg-blue-600 hover:bg-blue-700"
+                                >
+                                  {savingResolution ? 'Saving...' : 'Save'}
+                                </Button>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => { 
+                                    // Reset to original values instead of clearing
+                                    const fd: any = requestData?.formData || {};
+                                    const resBlock = fd.resolution || {};
+                                    const originalResolution = String(resBlock.closureComments || fd.closureComments || '').trim();
+                                    const originalClosureCode = String(resBlock.closureCode || '').trim();
+                                    
+                                    setResNotes(originalResolution); 
+                                    setResolveClosureCode(originalClosureCode);
+                                    setResFiles([]);
+                                    setAttachmentsToDelete([]);
+                                    setResStatus(requestData?.status || 'open'); 
+                                    setIsEditingResolution(false);
+                                  }}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </CardHeader>
                       <CardContent className="space-y-6">
-                        {/* Rich editor for resolution notes */}
-                        <div>
-                          <RichTextEditor
-                            value={resNotes}
-                            onChange={setResNotes}
-                            placeholder="Type resolution notes here..."
-                            className="min-h-[180px]"
-                          />
-                        </div>
-
-                        {/* Attachments section */}
-                        <div className="border rounded">
-                          <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium text-gray-700">Attachments</div>
-                          <div className="p-3 space-y-3">
-                            {resFiles.length === 0 ? (
-                              <div className="text-sm text-gray-500">There are no files attached</div>
-                            ) : (
-                              <div className="space-y-2">
-                                {resFiles.map((file, idx) => (
-                                  <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
-                                    <div className="flex items-center gap-2">
-                                      <Paperclip className="h-4 w-4 text-gray-400" />
-                                      <span className="text-sm text-gray-700">{file.name}</span>
-                                      <span className="text-xs text-gray-500">({(file.size/1024/1024).toFixed(2)} MB)</span>
-                                    </div>
-                                    <button className="text-red-500 hover:text-red-600 p-1" onClick={() => setResFiles(prev => prev.filter((_, i) => i !== idx))}>
-                                      <X className="h-4 w-4" />
-                                    </button>
+                        {(() => {
+          const fd: any = requestData.formData || {};
+          const resBlock = fd.resolution || {};
+          const html = String(resBlock.closureComments || fd.closureComments || '').trim();
+          const closureCode = String(resBlock.closureCode || '').trim();
+          const attIds: string[] = Array.isArray(resBlock.attachments) ? resBlock.attachments : [];
+          const resAtts: AttachmentFile[] = (attachments || []).filter(a => 
+            attIds.includes(a.id) && !attachmentsToDelete.includes(a.id)
+          );
+          const hasExistingResolution = html.length > 0 || resAtts.length > 0 || closureCode.length > 0;                          // Show existing resolution in read-only mode if not editing
+                          if (hasExistingResolution && !isEditingResolution) {
+                            return (
+                              <div className="space-y-4">
+                                {/* Resolution Content */}
+                                {html && (
+                                  <div>
+                                    <label className="text-sm font-medium text-gray-700 mb-2 block">Resolution Notes</label>
+                                    <div
+                                      className="bg-gray-50 border rounded p-3 prose max-w-none"
+                                      dangerouslySetInnerHTML={{ __html: html }}
+                                    />
                                   </div>
-                                ))}
+                                )}
+                                {/* Attachments */}
+                                <div className="border rounded">
+                                  <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium text-gray-700">Attachments</div>
+                                  <div className="p-3 space-y-2">
+                                    {resAtts.length === 0 ? (
+                                      <div className="text-sm text-gray-500">There are no files attached</div>
+                                    ) : (
+                                      resAtts.map((a) => (
+                                        <div key={a.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg border">
+                                          <Paperclip className="h-4 w-4 text-gray-400" />
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-gray-900 truncate">{a.originalName}</p>
+                                            <p className="text-xs text-gray-500">{formatFileSize(a.size)}</p>
+                                          </div>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleDownloadAttachment(a.id, a.originalName)}
+                                            disabled={downloading === a.id}
+                                          >
+                                            <Download className="h-4 w-4" />
+                                          </Button>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
                               </div>
-                            )}
-                            <div
-                              className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer ${resDragActive ? 'border-gray-400 bg-gray-50' : 'border-gray-300 bg-white hover:border-gray-400 hover:bg-gray-50'}`}
-                              onDragOver={(e) => { e.preventDefault(); setResDragActive(true); }}
-                              onDragLeave={(e) => { e.preventDefault(); setResDragActive(false); }}
-                              onDrop={(e) => { e.preventDefault(); setResDragActive(false); const files = Array.from(e.dataTransfer.files).filter(f => f.size <= 20*1024*1024); setResFiles(prev => [...prev, ...files]); }}
-                              onClick={() => resFileInputRef.current?.click()}
-                            >
-                              <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                              <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
-                                <Paperclip className="h-4 w-4" />
-                                <span className="text-blue-600 hover:underline cursor-pointer">Browse Files</span>
-                                <span>or Drag files here [ Max size: 20 MB ]</span>
+                            );
+                          }
+
+                          // Show editing interface (either no existing resolution or in edit mode)
+                          return (
+                            <>
+                              {/* Rich editor for resolution notes */}
+                              <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">Resolution Notes</label>
+                                <RichTextEditor
+                                  value={resNotes}
+                                  onChange={setResNotes}
+                                  placeholder="Type resolution notes here..."
+                                  className="min-h-[180px]"
+                                />
                               </div>
-                              <input ref={resFileInputRef} type="file" multiple className="hidden" onChange={(e) => { if (!e.target.files) return; const files = Array.from(e.target.files).filter(f => f.size <= 20*1024*1024); setResFiles(prev => [...prev, ...files]); }} />
-                            </div>
-                          </div>
-                        </div>
 
-                        {/* Status + Add Work Log */}
-                        <div className="border rounded">
-                          <div className="px-3 py-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <div className="md:col-span-2">
-                              <label className="text-sm text-gray-700">Update request status to</label>
-                              <select
-                                className="w-full border rounded px-2 py-2 mt-1 text-sm"
-                                value={resStatus}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  setResStatus(v);
-                                  if (v === 'resolved') {
-                                    // Show Resolve modal immediately when selecting Resolved
-                                    setShowResolveModal(true);
-                                  }
-                                }}
-                              >
-                                <option value="open">Open</option>
-                                <option value="on_hold">On-hold</option>
-                                <option value="resolved">Resolved</option>
-                              </select>
-                            </div>
-                            <div className="flex items-end">
-                              {session?.user?.isTechnician && (
-                                <label className="flex items-center gap-2 text-sm">
-                                  <input
-                                    type="checkbox"
-                                    checked={resAddWorkLog}
-                                    onChange={e => {
-                                      const checked = e.target.checked;
-                                      setResAddWorkLog(checked);
-                                      if (checked) {
-                                        // Show Work Log modal immediately when ticking
-                                        openAddWorkLog();
-                                      }
-                                    }}
-                                  />
-                                  <span>Add Work Log</span>
-                                </label>
-                              )}
-                            </div>
-                          </div>
-                        </div>
+                              {/* Attachments section */}
+                              <div className="border rounded">
+                                <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium text-gray-700">Attachments</div>
+                                <div className="p-3 space-y-3">
+                                  {(() => {
+                                    const fd: any = requestData.formData || {};
+                                    const resBlock = fd.resolution || {};
+                                    const attIds: string[] = Array.isArray(resBlock.attachments) ? resBlock.attachments : [];
+                                    const existingAtts: AttachmentFile[] = (attachments || []).filter(a => 
+                                      attIds.includes(a.id) && !attachmentsToDelete.includes(a.id)
+                                    );
+                                    const hasExistingAttachments = existingAtts.length > 0;
+                                    const hasNewFiles = resFiles.length > 0;
 
-                        {/* Actions */}
-                        <div className="flex items-center gap-3">
-                          <Button
-                            onClick={async () => {
-                              if (!session?.user?.isTechnician) { toast({ title: 'Not allowed', description: 'Only technicians can update resolution.', variant: 'destructive' }); return; }
-                              try {
-                                setSavingResolution(true);
-                                // 1) Upload files if any
-                                let uploaded: any[] = [];
-                                if (resFiles.length > 0) {
-                                  const fd = new FormData();
-                                  resFiles.forEach(f => fd.append('files', f));
-                                  const up = await fetch('/api/attachments', { method: 'POST', body: fd });
-                                  if (up.ok) { const j = await up.json(); uploaded = j.files || []; }
-                                }
-                                const attachmentIds: string[] = uploaded.map((f: any) => f.id).filter(Boolean);
-                                // 2) If Resolved, call resolve endpoint; else call status endpoint
-                                if (resStatus === 'resolved') {
-                                  // Enforce mandatory fields before resolve
+                                    return (
+                                      <>
+                                        {/* Existing Attachments */}
+                                        {hasExistingAttachments && (
+                                          <div className="space-y-2">
+                                            <div className="text-xs font-medium text-gray-600 uppercase tracking-wide">Existing Attachments</div>
+                                            {existingAtts.map((att) => (
+                                              <div key={att.id} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                                                <div className="flex items-center gap-2">
+                                                  <Paperclip className="h-4 w-4 text-gray-400" />
+                                                  <span className="text-sm text-gray-700">{att.originalName}</span>
+                                                  <span className="text-xs text-gray-500">({formatFileSize(att.size)})</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleDownloadAttachment(att.id, att.originalName)}
+                                                    disabled={downloading === att.id}
+                                                    className="text-blue-600 hover:text-blue-700"
+                                                  >
+                                                    <Download className="h-4 w-4" />
+                                                  </Button>
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleDeleteResolutionAttachment(att.id, att.originalName)}
+                                                    className="text-red-600 hover:text-red-700"
+                                                  >
+                                                    <X className="h-4 w-4" />
+                                                  </Button>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+
+                                        {/* New Files Being Added */}
+                                        {hasNewFiles && (
+                                          <div className="space-y-2">
+                                            <div className="text-xs font-medium text-gray-600 uppercase tracking-wide">New Files to Add</div>
+                                            {resFiles.map((file, idx) => (
+                                              <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                                                <div className="flex items-center gap-2">
+                                                  <Paperclip className="h-4 w-4 text-gray-400" />
+                                                  <span className="text-sm text-gray-700">{file.name}</span>
+                                                  <span className="text-xs text-gray-500">({(file.size/1024/1024).toFixed(2)} MB)</span>
+                                                </div>
+                                                <button 
+                                                  className="text-red-500 hover:text-red-600 p-1" 
+                                                  onClick={() => setResFiles(prev => prev.filter((_, i) => i !== idx))}
+                                                >
+                                                  <X className="h-4 w-4" />
+                                                </button>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+
+                                        {/* No attachments message */}
+                                        {!hasExistingAttachments && !hasNewFiles && (
+                                          <div className="text-sm text-gray-500">There are no files attached</div>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
+
+                                  {/* File Upload Area */}
+                                  <div
+                                    className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer ${resDragActive ? 'border-gray-400 bg-gray-50' : 'border-gray-300 bg-white hover:border-gray-400 hover:bg-gray-50'}`}
+                                    onDragOver={(e) => { e.preventDefault(); setResDragActive(true); }}
+                                    onDragLeave={(e) => { e.preventDefault(); setResDragActive(false); }}
+                                    onDrop={(e) => { e.preventDefault(); setResDragActive(false); const files = Array.from(e.dataTransfer.files).filter(f => f.size <= 20*1024*1024); setResFiles(prev => [...prev, ...files]); }}
+                                    onClick={() => resFileInputRef.current?.click()}
+                                  >
+                                    <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                                    <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+                                      <Paperclip className="h-4 w-4" />
+                                      <span className="text-blue-600 hover:underline cursor-pointer">Browse Files</span>
+                                      <span>or Drag files here [ Max size: 20 MB ]</span>
+                                    </div>
+                                    <input ref={resFileInputRef} type="file" multiple className="hidden" onChange={(e) => { if (!e.target.files) return; const files = Array.from(e.target.files).filter(f => f.size <= 20*1024*1024); setResFiles(prev => [...prev, ...files]); }} />
+                                  </div>
+                                </div>
+                              </div>
+
+                          {/* Status + Add Work Log */}
+                          <div className="border rounded">
+                            <div className="px-3 py-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div className="md:col-span-2">
+                                {requestData?.status === 'resolved' ? (
+                                  <div>
+                                    <label className="text-sm text-gray-700">Request Status</label>
+                                    <div className="w-full border rounded px-2 py-2 mt-1 text-sm bg-green-50 border-green-200 text-green-800 font-medium">
+                                      ✓ Resolved (editing resolution content)
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <label className="text-sm text-gray-700">Update request status to</label>
+                                    <select
+                                      className="w-full border rounded px-2 py-2 mt-1 text-sm"
+                                      value={resStatus}
+                                      onChange={(e) => {
+                                        const v = e.target.value;
+                                        setResStatus(v);
+                                        if (v === 'resolved') {
+                                          // Show Resolve modal immediately when selecting Resolved
+                                          setShowResolveModal(true);
+                                        }
+                                      }}
+                                    >
+                                      <option value="open">Open</option>
+                                      <option value="on_hold">On-hold</option>
+                                      <option value="resolved">Resolved</option>
+                                    </select>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex items-end">
+                                {session?.user?.isTechnician && (() => {
+                                  // Check if there are existing work logs
                                   const fd: any = requestData?.formData || {};
-                                  const missing: string[] = [];
-                                  if (!fd.category && !fd.serviceCategory && !fd.ServiceCategory) missing.push('Service Category');
-                                  if (!requestData?.priority) missing.push('Priority');
-                                  if (!requestData?.type) missing.push('Request Type');
-                                  if (!fd.assignedTechnician && !fd.assignedTechnicianId) missing.push('Technician');
-                                  if (!resNotes || htmlToText(resNotes).trim().length === 0) missing.push('Resolution');
                                   const worklogs = Array.isArray(fd.worklogs) ? fd.worklogs : [];
-                                  if (worklogs.length === 0) missing.push('Work Log');
-                                  if (missing.length > 0) {
-                                    toast({ title: 'Missing required fields', description: `Please provide: ${missing.join(', ')}` , variant: 'destructive' });
-                                    throw new Error('Validation failed');
+                                  const hasWorkLogs = worklogs.length > 0;
+                                  
+                                  // Only show the button if there are no work logs yet
+                                  if (!hasWorkLogs) {
+                                    return (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setShowWorkLogModal(true)}
+                                        className="flex items-center gap-2"
+                                      >
+                                        <Plus className="h-4 w-4" />
+                                        Add Work Log
+                                      </Button>
+                                    );
                                   }
-                                  const resR = await fetch(`/api/requests/${requestId}/resolve`, {
-                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ fcr: false, closureComments: resNotes, attachmentIds })
-                                  });
-                                  if (!resR.ok) {
-                                    let msg = 'Failed to resolve';
-                                    try { const j = await resR.json(); if (j?.error) msg = Array.isArray(j.details) ? `${j.error}: ${j.details.join(', ')}` : j.error; } catch {}
-                                    throw new Error(msg);
-                                  }
-                                } else {
-                                  const resS = await fetch(`/api/requests/${requestId}/status`, {
-                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ status: resStatus, notes: resNotes, attachmentIds })
-                                  });
-                                  if (!resS.ok) throw new Error('Failed to update status');
-                                }
-                                toast({ title: 'Saved', description: 'Resolution updated.' });
-                                if (resAddWorkLog) { openAddWorkLog(); }
-                                // reset
-                                setResFiles([]); setResNotes('');
-                                await fetchRequestData();
-                              } catch (e) {
-                                toast({ title: 'Error', description: e instanceof Error ? e.message : 'Failed to save resolution', variant: 'destructive' });
-                              } finally {
-                                setSavingResolution(false);
-                              }
-                            }}
-                            disabled={savingResolution}
-                          >{savingResolution ? 'Saving...' : 'Save'}</Button>
-                          <Button variant="outline" onClick={() => { setResNotes(''); setResFiles([]); setResStatus(requestData?.status || 'open'); setResAddWorkLog(false); }}>Cancel</Button>
-                        </div>
-                      </CardContent>
+                                  
+                                  return null;
+                                })()}
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </CardContent>
                     </Card>
                   ) : (
                     // Read-only Resolution for requesters (non-technicians)
@@ -2604,7 +3046,7 @@ export default function RequestViewPage() {
                                             className="text-xs"
                                             onClick={() => setShowAddApprovalModal(true)}
                                           >
-                                            + Add Approvals
+                                            + Add Approver
                                           </Button>
                                         </>
                                       )}
@@ -3186,9 +3628,9 @@ export default function RequestViewPage() {
                           );
                         }
                         
-                        // For service templates, show actual approval status
-                        const rawApprovalStatus = requestData.formData?.['5'] || 'pending approval';
-                        const { normalized, display } = normalizeApprovalStatus(rawApprovalStatus);
+                        // For service templates, show actual approval status from approvals array
+                        const currentApprovalStatus = getCurrentApprovalStatus(approvals);
+                        const { normalized, display } = normalizeApprovalStatus(currentApprovalStatus);
                         
                         return (
                           <Badge className={getApprovalStatusColor(normalized)} variant="outline">
@@ -4084,7 +4526,7 @@ export default function RequestViewPage() {
           </Dialog>
         )}
 
-        {/* Add Approval Modal */}
+        {/* Add Approver Modal */}
         {showAddApprovalModal && (
           <Dialog open={showAddApprovalModal} onOpenChange={setShowAddApprovalModal}>
             <DialogContent className="max-w-md">

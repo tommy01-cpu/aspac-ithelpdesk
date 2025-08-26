@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { formatStatusForDisplay } from './status-colors';
 
 const prisma = new PrismaClient();
 
@@ -43,7 +44,7 @@ export async function getRequestVariableData(requestId: number): Promise<EmailVa
 
     const variableData: EmailVariableData = {
       Request_ID: request.id.toString(),
-      Request_Status: request.status,
+      Request_Status: formatStatusForDisplay(request.status),
       Request_Title: formData?.title || formData?.subject || 'No Title',
       Request_Description: formData?.description || formData?.details || 'No Description',
       Request_Subject: formData?.subject || formData?.title || 'No Subject',

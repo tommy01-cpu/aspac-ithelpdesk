@@ -79,6 +79,7 @@ export const authOptions: NextAuthOptions = {
             email: user.emp_email ?? undefined,
             employee_id: user.emp_code ?? undefined,
             job_title: user.post_des ?? undefined,
+            profile_image: user.profile_image ?? undefined,
             roles: user.user_roles.map(ur => ur.roles.name),
             isTechnician: !!user.technician, // Simply check if technician record exists
             isServiceApprover: user.isServiceApprover,
@@ -100,6 +101,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.employee_id = user.employee_id;
         token.job_title = user.job_title;
+        token.profile_image = user.profile_image;
         token.roles = user.roles;
         token.isTechnician = user.isTechnician;
         token.isServiceApprover = user.isServiceApprover;
@@ -113,6 +115,7 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.sub ?? '';
         session.user.employee_id = token.employee_id as string | undefined;
         session.user.job_title = token.job_title as string | undefined;
+        session.user.profile_image = token.profile_image as string | undefined;
         session.user.roles = token.roles as string[] | undefined;
         session.user.isTechnician = token.isTechnician as boolean | undefined;
         session.user.isServiceApprover = token.isServiceApprover as boolean | undefined;

@@ -7,6 +7,8 @@ import {
   type TemplateType 
 } from '@/lib/database-email-templates';
 import { processImagesForEmailAuto } from '@/lib/email-image-processor-enhanced';
+import { formatStatusForDisplay } from '@/lib/status-colors';
+import { createNotification } from '@/lib/notifications';
 
 // Initialize Prisma client directly in this file
 const prisma = new PrismaClient();
@@ -205,7 +207,7 @@ async function handleCCNotification(requestId: string, templateKey: string) {
 
     const emailVariables = {
       Request_ID: requestId.toString(),
-      Request_Status: requestData.status || 'for_approval',
+      Request_Status: formatStatusForDisplay(requestData.status || 'for_approval'),
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
       Requester_Name: requesterName,
@@ -442,7 +444,7 @@ async function handleApproverNotification(requestId: string, templateKey: string
 
     const emailVariables = {
       Request_ID: requestId.toString(),
-      Request_Status: requestData.status || 'for_approval',
+      Request_Status: formatStatusForDisplay(requestData.status || 'for_approval'),
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
       Requester_Name: requesterName,
@@ -451,6 +453,7 @@ async function handleApproverNotification(requestId: string, templateKey: string
       Approver_Name: approverName || 'Approver',
       Approver_Email: approverEmail,
       Approval_Link: `http://192.168.1.85:3000/requests/approvals`,
+      approval_link: `http://192.168.1.85:3000/requests/approvals/${requestId}`, // Add specific approval link for template
       Current_Approval_Level: currentApproval.level.toString(),
       Approval_Stage_Name: currentApproval.name
     };
@@ -484,6 +487,27 @@ async function handleApproverNotification(requestId: string, templateKey: string
       
       console.log('📬 SendEmail result:', sendResult);
       console.log(`✅ Approval notification sent to: ${approverEmail}`);
+      
+      // Create in-app notification for the approver
+      if (currentApproval.approverId) {
+        try {
+          await createNotification({
+            userId: currentApproval.approverId,
+            type: 'APPROVAL_REQUIRED',
+            title: 'Approval Required',
+            message: `Request #${requestId} from ${requesterName} requires your approval`,
+            data: {
+              requestId: parseInt(requestId),
+              approvalId: currentApproval.id,
+              redirectUrl: `/requests/approvals/${requestId}`
+            }
+          });
+          console.log('✅ In-app notification created for approver:', currentApproval.approverId);
+        } catch (notifError) {
+          console.error('❌ Failed to create in-app notification for approver:', notifError);
+          // Don't fail the email process for notification issues
+        }
+      }
       
       return NextResponse.json({
         message: 'Approver notification sent successfully',

@@ -115,7 +115,7 @@ export const getApprovalStatusColor = (status: string): string => {
     case 'for clarification':
     case 'pending clarification':
     case 'pending-clarification':
-      return 'bg-orange-100 text-orange-800 border-orange-200 status-badge';
+      return 'bg-sky-100 text-sky-800 border-sky-200 status-badge';
     
     default:
       return 'bg-gray-100 text-gray-800 border-gray-200 status-badge';
@@ -157,9 +157,12 @@ export const normalizeApprovalStatus = (status: string): { normalized: string; d
     case 'pending':
       return { normalized: 'pending approval', display: 'Pending Approval' };
     
+    case 'for-clarification':
+    case 'for clarification':
+    case 'for_clarification':
     case 'pending-clarification':
     case 'pending clarification':
-      return { normalized: 'pending clarification', display: 'Pending Clarification' };
+      return { normalized: 'for clarification', display: 'For Clarification' };
     
     case 'approved':
       return { normalized: 'approved', display: 'Approved' };
@@ -169,6 +172,40 @@ export const normalizeApprovalStatus = (status: string): { normalized: string; d
     
     default:
       return { normalized: 'pending approval', display: 'Pending Approval' };
+  }
+};
+
+/**
+ * Format request status for user display
+ */
+export const formatStatusForDisplay = (status: string): string => {
+  switch (status?.toLowerCase().trim()) {
+    case 'for_approval':
+      return 'For Approval';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'open':
+      return 'Open';
+    case 'on_hold':
+      return 'On Hold';
+    case 'resolved':
+      return 'Resolved';
+    case 'closed':
+      return 'Closed';
+    case 'new':
+      return 'New';
+    case 'in_progress':
+    case 'in-progress':
+      return 'In Progress';
+    case 'assigned':
+      return 'Assigned';
+    case 'approved':
+      return 'Approved';
+    case 'completed':
+      return 'Completed';
+    default:
+      // Capitalize first letter for unknown statuses
+      return status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ');
   }
 };
 

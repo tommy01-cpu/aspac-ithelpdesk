@@ -19,6 +19,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     const { fcr = false, closureCode = '', closureComments = '', attachmentIds = [] } = await request.json().catch(() => ({}));
 
+    console.log('RESOLVE DEBUG - Request payload:', { 
+      fcr, 
+      closureCode, 
+      closureComments: closureComments ? closureComments.substring(0, 100) + '...' : 'empty', 
+      attachmentIds 
+    });
+
     // Check if user is technician from session (which is based on technicians table)
     if (!session.user.isTechnician) {
       return NextResponse.json({ error: 'Only technicians can resolve requests' }, { status: 403 });
@@ -36,25 +43,44 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const fd: any = existing.formData || {};
     const missing: string[] = [];
     if (!closureComments || String(closureComments).trim().length === 0) missing.push('Resolution');
-    if (!fd.assignedTechnician && !fd.assignedTechnicianId) missing.push('Technician');
+    
+    // Only check for assigned technician if the request is not already resolved
+    // (for resolved requests, we just want to update the resolution content)
+    if (existing.status !== 'resolved' && !fd.assignedTechnician && !fd.assignedTechnicianId) {
+      missing.push('Technician');
+    }
+    
     if (missing.length) return NextResponse.json({ error: 'Missing mandatory fields', details: missing }, { status: 400 });
 
     // Persist resolution metadata nested under formData.resolution
+    const existingResolution = fd.resolution || {};
+    const existingAttachments = Array.isArray(existingResolution.attachments) ? existingResolution.attachments : [];
+    const newAttachments = Array.isArray(attachmentIds) ? attachmentIds : [];
+    
+    console.log('Existing attachments:', existingAttachments);
+    console.log('New attachments:', newAttachments);
+    
+    // Merge existing and new attachments (avoid duplicates)
+    const allAttachments = [...new Set([...existingAttachments, ...newAttachments])];
+    console.log('Merged attachments:', allAttachments);
+    
     const updatedForm = {
       ...(fd || {}),
       resolution: {
-        ...(fd.resolution || {}),
+        ...(existingResolution || {}),
         fcr: !!fcr,
         closureCode: String(closureCode || ''),
         closureComments: String(closureComments || ''),
-        attachments: Array.isArray(attachmentIds) ? attachmentIds : [],
+        attachments: allAttachments,
         resolvedById: actor.id,
         resolvedBy: `${actor.emp_fname} ${actor.emp_lname}`.trim(),
-        resolvedAt: new Date().toISOString(),
+        resolvedAt: existingResolution.resolvedAt || new Date().toISOString(), // Keep original resolved time if updating
       },
     } as any;
 
-    // Update to resolved status
+    console.log('Final updated form data:', JSON.stringify(updatedForm.resolution, null, 2));
+
+    // Update to resolved status (or keep as resolved if already resolved)
     // Create Philippine time by manually adjusting UTC
     const now = new Date();
     const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
@@ -68,19 +94,73 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       },
     });
 
-    // History entry
+    // History entry (only if status changed or resolution was updated)
     try {
+      const statusChanged = existing.status !== 'resolved';
+      const historyAction = statusChanged ? 'Resolved' : 'Resolution Updated';
+      
+      // Get attachment names for all resolution attachments (existing + new)
+      let attachmentDetails = '';
+      if (allAttachments.length > 0) {
+        try {
+          const { prismaAttachments } = require('@/lib/prisma-attachments');
+          const attachmentRecords = await prismaAttachments.attachment.findMany({
+            where: { id: { in: allAttachments } },
+            select: { originalName: true }
+          });
+          const attachmentNames = attachmentRecords.map((att: any) => att.originalName);
+          if (attachmentNames.length > 0) {
+            attachmentDetails = `\nAttachments: ${attachmentNames.join(', ')}`;
+          }
+        } catch (e) {
+          console.error('Error fetching attachment names for history:', e);
+        }
+      }
+      
+      // Create resolution preview (strip HTML and truncate)
+      const stripHtml = (html: string) => {
+        return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+      };
+      
+      const resolutionPreview = closureComments ? stripHtml(String(closureComments)) : '';
+      const truncatedResolution = resolutionPreview.length > 200 
+        ? resolutionPreview.substring(0, 200) + '...' 
+        : resolutionPreview;
+      
+      let historyDetails = '';
+      if (statusChanged) {
+        historyDetails = 'Request resolved';
+        if (closureCode && closureCode.trim()) {
+          historyDetails += `\nClosure Code: ${closureCode}`;
+        }
+        if (truncatedResolution) {
+          historyDetails += `\nResolution: ${truncatedResolution}`;
+        }
+        historyDetails += attachmentDetails;
+      } else {
+        // For updates, show the resolution content if it exists
+        historyDetails = 'Resolution updated';
+        if (closureCode && closureCode.trim()) {
+          historyDetails += `\nClosure Code: ${closureCode}`;
+        }
+        if (truncatedResolution) {
+          historyDetails += `\nResolution: ${truncatedResolution}`;
+        }
+        if (attachmentDetails) {
+          historyDetails += attachmentDetails;
+        }
+        if (!truncatedResolution && !attachmentDetails && (!closureCode || !closureCode.trim())) {
+          historyDetails = 'Resolution content updated';
+        }
+      }
+      
       await addHistory(prisma as any, {
         requestId,
-        action: 'Resolved',
+        action: historyAction,
         actorId: actor.id,
         actorName: `${actor.emp_fname} ${actor.emp_lname}`.trim(),
         actorType: 'technician',
-        details:
-          `Closure Code: ${closureCode || 'N/A'}` +
-          (closureComments ? `\nResolution: ${closureComments}` : '') +
-          `\nStatus changed to Resolved` +
-          (fcr ? `\nFirst Call Resolution: YES` : ''),
+        details: historyDetails,
       });
     } catch {}
 

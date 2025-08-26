@@ -93,7 +93,7 @@ export default function UsersPage() {
 
   const fetchReportingUsers = async () => {
     try {
-      const response = await fetch('/api/users?limit=200');
+      const response = await fetch('/api/users?limit=1000');
       const data = await response.json();
       
       if (data.success) {
@@ -124,7 +124,7 @@ export default function UsersPage() {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/users');
+      const response = await fetch('/api/users?limit=1000');
       const data = await response.json();
       
       if (data.success) {

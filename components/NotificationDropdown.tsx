@@ -102,11 +102,23 @@ export default function NotificationDropdown({ className }: NotificationDropdown
     if (notification.data?.requestId) {
       const requestId = notification.data.requestId;
       
-      // For approval-related notifications, redirect to approval page
-      if (notification.type === 'APPROVAL_REQUIRED' || 
-          notification.type === 'CLARIFICATION_REQUIRED') {
+      // Use redirectUrl from notification data if available (highest priority)
+      if (notification.data?.redirectUrl) {
+        console.log('🔗 Using custom redirect URL:', notification.data.redirectUrl);
+        window.location.href = notification.data.redirectUrl;
+        return;
+      }
+      
+      // Fallback logic for notifications without custom redirectUrl
+      if (notification.type === 'APPROVAL_REQUIRED') {
         // Redirect to the approval page for this specific request
         window.location.href = `/requests/approvals/${requestId}`;
+      } else if (notification.type === 'REQUEST_REJECTED') {
+        // Redirect to request view with approvals tab for rejected requests
+        window.location.href = `/requests/view/${requestId}?tab=approvals`;
+      } else if (notification.type === 'CLARIFICATION_REQUIRED') {
+        // For clarification, use default request view with approvals tab (plural)
+        window.location.href = `/requests/view/${requestId}?tab=approvals`;
       } else {
         // For other notifications, redirect to the general request view
         window.location.href = `/requests/view/${requestId}`;
@@ -160,6 +172,8 @@ export default function NotificationDropdown({ className }: NotificationDropdown
         return 'text-green-600';
       case 'REQUEST_REJECTED':
         return 'text-red-600';
+      case 'CLARIFICATION_REQUIRED':
+        return 'text-orange-600';
       case 'APPROVAL_REQUIRED':
         return 'text-yellow-600';
       case 'SLA_ESCALATION':

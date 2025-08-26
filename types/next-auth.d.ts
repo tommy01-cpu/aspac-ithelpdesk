@@ -4,6 +4,7 @@ declare module 'next-auth' {
   interface User {
     employee_id?: string;
     job_title?: string;
+    profile_image?: string;
     roles?: string[];
     isTechnician?: boolean;
     isServiceApprover?: boolean;
@@ -20,6 +21,7 @@ declare module 'next-auth' {
       image?: string | null;
       employee_id?: string;
       job_title?: string;
+      profile_image?: string;
       roles?: string[];
       isTechnician?: boolean;
       isServiceApprover?: boolean;
@@ -31,6 +33,7 @@ declare module 'next-auth' {
   interface JWT {
     employee_id?: string;
     job_title?: string;
+    profile_image?: string;
     roles?: string[];
     isTechnician?: boolean;
     isServiceApprover?: boolean;

@@ -5,6 +5,7 @@ import { ApprovalStatus, RequestStatus } from '@prisma/client';
 import { addHistory } from '@/lib/history';
 import { calculateSLADueDate } from '@/lib/sla-calculator';
 import { autoAssignTechnician } from '@/lib/load-balancer';
+import { sendApprovalOutcomeNotification, sendClarificationRequestNotification } from '@/lib/notifications';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
@@ -131,6 +132,15 @@ export async function POST(request: NextRequest) {
         details: 'Request automatically closed due to approval rejection',
       });
 
+      // Send email notification to requester about rejection
+      try {
+        await sendApprovalOutcomeNotification(approval.requestId, 'rejected', comments);
+        console.log('✅ Rejection notification sent to requester');
+      } catch (emailError) {
+        console.error('❌ Failed to send rejection notification:', emailError);
+        // Don't fail the approval process for email issues
+      }
+
     } else if (action === 'approve') {
       // Helper to finalize request if all approvals are approved
       const finalizeIfAllApproved = async () => {
@@ -235,6 +245,22 @@ export async function POST(request: NextRequest) {
           console.error('Safety finalization failed:', e);
         }
       };
+
+      // Helper to send approval notification when request is fully approved
+      const sendApprovalNotificationIfNeeded = async () => {
+        try {
+          const allApprovals = await prisma.requestApproval.findMany({ where: { requestId: approval.requestId } });
+          const allFullyApproved = allApprovals.length > 0 && allApprovals.every(a => a.status === ApprovalStatus.approved);
+          
+          if (allFullyApproved) {
+            await sendApprovalOutcomeNotification(approval.requestId, 'approved');
+            console.log('✅ Approval notification sent to requester');
+          }
+        } catch (emailError) {
+          console.error('❌ Failed to send approval notification:', emailError);
+        }
+      };
+
       // Check if all approvals in this level are complete
       const levelApprovals = await prisma.requestApproval.findMany({
         where: {
@@ -533,6 +559,14 @@ export async function POST(request: NextRequest) {
                   } catch (e3) {
                     console.error('Finalize after auto-approval failed (SLA/Updated path):', e3);
                   }
+
+                  // Send approval notification after successful finalization
+                  try {
+                    await sendApprovalOutcomeNotification(approval.requestId, 'approved');
+                    console.log('✅ Final approval notification sent to requester');
+                  } catch (emailError) {
+                    console.error('❌ Failed to send final approval notification:', emailError);
+                  }
                 }
               }
             }
@@ -811,6 +845,14 @@ export async function POST(request: NextRequest) {
               } catch (fallbackErr) {
                 console.warn('Fallback SLA/assignment (exception path) failed to create Image 1 entries:', fallbackErr);
               }
+
+              // Send approval notification after successful finalization
+              try {
+                await sendApprovalOutcomeNotification(approval.requestId, 'approved');
+                console.log('✅ Final approval notification sent to requester (fallback path)');
+              } catch (emailError) {
+                console.error('❌ Failed to send final approval notification:', emailError);
+              }
             }
           }
         }
@@ -818,6 +860,9 @@ export async function POST(request: NextRequest) {
 
       // Final safety check: if everything is approved, ensure we finalize and write history
       await finalizeIfAllApproved();
+      
+      // Send approval notification if all approvals are complete
+      await sendApprovalNotificationIfNeeded();
     } else if (action === 'clarification') {
       // For clarification, we only update the approval status
       // The request status remains unchanged
@@ -853,6 +898,15 @@ export async function POST(request: NextRequest) {
             actorId: user.id,
           });
         }
+      }
+
+      // Send email notification to requester about clarification request
+      try {
+        await sendClarificationRequestNotification(approval.requestId, comments);
+        console.log('✅ Clarification request notification sent to requester');
+      } catch (emailError) {
+        console.error('❌ Failed to send clarification notification:', emailError);
+        // Don't fail the approval process for email issues
       }
     }
 
