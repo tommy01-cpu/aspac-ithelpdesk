@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { 
   ArrowLeft, 
@@ -254,6 +254,7 @@ const getTemplateTooltip = (request: RequestData) => {
 
 export default function MyRequestsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const [requests, setRequests] = useState<RequestData[]>([]);
   const [pagination, setPagination] = useState<PaginationData>({ total: 0, pages: 0, current: 1 });
@@ -264,16 +265,54 @@ export default function MyRequestsPage() {
   const [approvalStatusFilter, setApprovalStatusFilter] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Process URL parameters for filtering
+  useEffect(() => {
+    const urlStatus = searchParams.get('status');
+    const urlAssignedTechnicianId = searchParams.get('assignedTechnicianId');
+    const urlAssignedToCurrentUser = searchParams.get('assignedToCurrentUser');
+    
+    // Set status filter from URL
+    if (urlStatus) {
+      if (urlStatus.includes(',')) {
+        // Multiple statuses - show "all" in dropdown to indicate multiple
+        setStatusFilter('all');
+      } else {
+        setStatusFilter(urlStatus);
+      }
+    }
+  }, [searchParams]);
+
   useEffect(() => {
     if (session) {
       fetchRequests();
     }
-  }, [session, currentPage]);
+  }, [session, currentPage, searchParams]);
 
   const fetchRequests = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/technician/requests?page=${currentPage}&limit=10`);
+      
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+      queryParams.set('page', currentPage.toString());
+      queryParams.set('limit', '10');
+      
+      // Add URL filtering parameters
+      const urlStatus = searchParams.get('status');
+      const urlAssignedTechnicianId = searchParams.get('assignedTechnicianId');
+      const urlAssignedToCurrentUser = searchParams.get('assignedToCurrentUser');
+      
+      if (urlStatus) {
+        queryParams.set('status', urlStatus);
+      }
+      if (urlAssignedTechnicianId) {
+        queryParams.set('assignedTechnicianId', urlAssignedTechnicianId);
+      }
+      if (urlAssignedToCurrentUser) {
+        queryParams.set('assignedToCurrentUser', urlAssignedToCurrentUser);
+      }
+      
+      const response = await fetch(`/api/technician/requests?${queryParams.toString()}`);
       
       if (!response.ok) {
         throw new Error('Failed to fetch requests');
@@ -300,7 +339,13 @@ export default function MyRequestsPage() {
       request.id.toString().includes(searchTerm) ||
       (request.subject && request.subject.toLowerCase().includes(searchTerm.toLowerCase()));
     
-    const matchesStatus = statusFilter === 'all' || request.status === statusFilter;
+    // Skip status filtering if URL parameters are present (server-side filtering)
+    const urlStatus = searchParams.get('status');
+    const urlAssignedTechnicianId = searchParams.get('assignedTechnicianId');
+    const urlAssignedToCurrentUser = searchParams.get('assignedToCurrentUser');
+    const hasUrlFiltering = urlStatus || urlAssignedTechnicianId || urlAssignedToCurrentUser;
+    
+    const matchesStatus = hasUrlFiltering || statusFilter === 'all' || request.status === statusFilter;
     const matchesType = typeFilter === 'all' || request.type === typeFilter;
     
     // Check approval status filter
@@ -387,6 +432,24 @@ export default function MyRequestsPage() {
           <div className="h-full overflow-y-auto">
             <div style={{ zoom: '0.8' }}>
               <div className="space-y-6 p-6">
+                {/* URL Filter Indicators */}
+                {searchParams.get('assignedToCurrentUser') === 'true' && (
+                  <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded">
+                    <strong>Showing: My Assigned Requests</strong>
+                    {searchParams.get('status') && (
+                      <span className="ml-2 text-sm">({searchParams.get('status')!.replace(',', ', ')})</span>
+                    )}
+                  </div>
+                )}
+                {searchParams.get('assignedTechnicianId') && searchParams.get('assignedToCurrentUser') !== 'true' && (
+                  <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded">
+                    <strong>Showing: Requests assigned to {searchParams.get('technicianName') || `technician ID ${searchParams.get('assignedTechnicianId')}`}</strong>
+                    {searchParams.get('status') && (
+                      <span className="ml-2 text-sm">({searchParams.get('status')!.replace(',', ', ')})</span>
+                    )}
+                  </div>
+                )}
+
                 {/* Filters */}
                 <div className="flex flex-col md:flex-row gap-4">
                   <div className="flex-1">
