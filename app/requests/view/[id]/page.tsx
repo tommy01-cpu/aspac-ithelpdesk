@@ -444,6 +444,7 @@ export default function RequestViewPage() {
   const [requestData, setRequestData] = useState<RequestData | null>(null);
   const [templateData, setTemplateData] = useState<TemplateData | null>(null);
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
+  const [resolutionAttachments, setResolutionAttachments] = useState<AttachmentFile[]>([]);
   const [conversations, setConversations] = useState<ConversationEntry[]>([]);
   const [approvals, setApprovals] = useState<ApprovalLevel[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -722,6 +723,9 @@ export default function RequestViewPage() {
       if (session?.user?.isTechnician) {
         loadWorkLogs();
       }
+      
+      // Load resolution attachments separately
+      await loadResolutionAttachments();
     } catch (error) {
       console.error('Error fetching request:', error);
       toast({
@@ -731,6 +735,23 @@ export default function RequestViewPage() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load resolution attachments separately
+  const loadResolutionAttachments = async () => {
+    if (!requestId) return;
+    try {
+      const response = await fetch(`/api/requests/${requestId}/attachments/resolution`);
+      if (response.ok) {
+        const data = await response.json();
+        setResolutionAttachments(data.attachments || []);
+        console.log('Resolution attachments loaded:', data.attachments?.length || 0);
+      } else {
+        console.error('Failed to fetch resolution attachments:', response.status);
+      }
+    } catch (error) {
+      console.error('Error fetching resolution attachments:', error);
     }
   };
 
@@ -1654,6 +1675,7 @@ export default function RequestViewPage() {
         noteAttachments.forEach(file => {
           fileFormData.append('files', file);
         });
+        fileFormData.append('type', 'conversation'); // Mark as conversation attachment
         
         const fileUploadResponse = await fetch('/api/attachments', {
           method: 'POST',
@@ -2464,7 +2486,8 @@ export default function RequestViewPage() {
                                         const fd = new FormData();
                                         resFiles.forEach(f => fd.append('files', f));
                                         fd.append('requestId', requestId);
-                                        console.log('Uploading files with requestId:', requestId);
+                                        fd.append('type', 'resolution'); // Mark as resolution attachment
+                                        console.log('Uploading resolution files with requestId:', requestId);
                                         const up = await fetch('/api/attachments', { method: 'POST', body: fd });
                                         if (up.ok) { 
                                           const j = await up.json(); 
@@ -2475,7 +2498,19 @@ export default function RequestViewPage() {
                                         }
                                       }
                                       const attachmentIds: string[] = uploaded.map((f: any) => f.id).filter(Boolean);
-                                      console.log('Attachment IDs to save:', attachmentIds);
+                                      
+                                      // Also include existing resolution attachments that are not marked for deletion
+                                      const existingResolutionAttachments = resolutionAttachments.map(att => att.id);
+                                      const existingAttachmentsNotDeleted = existingResolutionAttachments.filter(
+                                        (id: string) => !attachmentsToDelete.includes(id)
+                                      );
+                                      
+                                      // Combine new and existing attachments
+                                      const allAttachmentIds = [...new Set([...attachmentIds, ...existingAttachmentsNotDeleted])];
+                                      
+                                      console.log('Attachment IDs - New:', attachmentIds);
+                                      console.log('Attachment IDs - Existing (not deleted):', existingAttachmentsNotDeleted);
+                                      console.log('Attachment IDs - All combined:', allAttachmentIds);
                                       
                                       // Delete attachments marked for deletion
                                       if (attachmentsToDelete.length > 0) {
@@ -2499,7 +2534,7 @@ export default function RequestViewPage() {
                                       
                                       console.log('RESOLUTION SAVE DEBUG - About to send to resolve API:', {
                                         requestId,
-                                        attachmentIds,
+                                        attachmentIds: allAttachmentIds,
                                         resNotesLength: resNotes?.length || 0,
                                         isFirstTimeResolving: resStatus === 'resolved' && !isAlreadyResolved,
                                         isUpdatingExisting: isAlreadyResolved
@@ -2524,13 +2559,13 @@ export default function RequestViewPage() {
                                         
                                         console.log('Creating new resolution with:', { 
                                           resNotes: resNotes.substring(0, 50) + '...', 
-                                          attachmentIds,
+                                          attachmentIds: allAttachmentIds,
                                           newFilesCount: resFiles.length 
                                         });
                                         
                                         const resR = await fetch(`/api/requests/${requestId}/resolve`, {
                                           method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ fcr: false, closureCode: resolveClosureCode, closureComments: resNotes, attachmentIds })
+                                          body: JSON.stringify({ fcr: false, closureCode: resolveClosureCode, closureComments: resNotes, attachmentIds: allAttachmentIds })
                                         });
                                         
                                         console.log('Resolve response status:', resR.status);
@@ -2553,13 +2588,13 @@ export default function RequestViewPage() {
                                         // For already resolved requests, call resolve endpoint again to update resolution
                                         console.log('Updating already resolved request with:', { 
                                           resNotes: resNotes.substring(0, 50) + '...', 
-                                          attachmentIds,
+                                          attachmentIds: allAttachmentIds,
                                           newFilesCount: resFiles.length 
                                         });
                                         
                                         const resR = await fetch(`/api/requests/${requestId}/resolve`, {
                                           method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ fcr: false, closureCode: resolveClosureCode, closureComments: resNotes, attachmentIds })
+                                          body: JSON.stringify({ fcr: false, closureCode: resolveClosureCode, closureComments: resNotes, attachmentIds: allAttachmentIds })
                                         });
                                         
                                         console.log('Resolve response status:', resR.status);
@@ -2582,7 +2617,7 @@ export default function RequestViewPage() {
                                         // For other status updates
                                         const resS = await fetch(`/api/requests/${requestId}/status`, {
                                           method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ status: resStatus, notes: resNotes, attachmentIds })
+                                          body: JSON.stringify({ status: resStatus, notes: resNotes, attachmentIds: allAttachmentIds })
                                         });
                                         if (!resS.ok) {
                                           let msg = 'Failed to update status';
@@ -2599,6 +2634,7 @@ export default function RequestViewPage() {
                                       setAttachmentsToDelete([]);
                                       setIsEditingResolution(false);
                                       await fetchRequestData();
+                                      await loadResolutionAttachments(); // Reload resolution attachments
                                       
                                       // Redirect to resolution tab if this was a new resolution
                                       if (resStatus === 'resolved' && !isAlreadyResolved) {
@@ -2649,9 +2685,9 @@ export default function RequestViewPage() {
           const resBlock = fd.resolution || {};
           const html = String(resBlock.closureComments || fd.closureComments || '').trim();
           const closureCode = String(resBlock.closureCode || '').trim();
-          const attIds: string[] = Array.isArray(resBlock.attachments) ? resBlock.attachments : [];
-          const resAtts: AttachmentFile[] = (attachments || []).filter(a => 
-            attIds.includes(a.id) && !attachmentsToDelete.includes(a.id)
+          // Use resolution attachments from database instead of filtering from general attachments
+          const resAtts: AttachmentFile[] = (resolutionAttachments || []).filter(a => 
+            !attachmentsToDelete.includes(a.id)
           );
           const hasExistingResolution = html.length > 0 || resAtts.length > 0 || closureCode.length > 0;                          // Show existing resolution in read-only mode if not editing
                           if (hasExistingResolution && !isEditingResolution) {
@@ -2717,11 +2753,9 @@ export default function RequestViewPage() {
                                 <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium text-gray-700">Attachments</div>
                                 <div className="p-3 space-y-3">
                                   {(() => {
-                                    const fd: any = requestData.formData || {};
-                                    const resBlock = fd.resolution || {};
-                                    const attIds: string[] = Array.isArray(resBlock.attachments) ? resBlock.attachments : [];
-                                    const existingAtts: AttachmentFile[] = (attachments || []).filter(a => 
-                                      attIds.includes(a.id) && !attachmentsToDelete.includes(a.id)
+                                    // Use resolution attachments from database instead of filtering from general attachments
+                                    const existingAtts: AttachmentFile[] = (resolutionAttachments || []).filter(a => 
+                                      !attachmentsToDelete.includes(a.id)
                                     );
                                     const hasExistingAttachments = existingAtts.length > 0;
                                     const hasNewFiles = resFiles.length > 0;
@@ -4191,13 +4225,67 @@ export default function RequestViewPage() {
                 <Button onClick={async () => {
                   try {
                     setSavingResolve(true);
+                    
+                    // Include uploaded attachments from the Resolution tab
+                    let uploaded: any[] = [];
+                    console.log('Resolve Modal - Checking for new files to upload:', resFiles.length);
+                    if (resFiles.length > 0) {
+                      const fd = new FormData();
+                      resFiles.forEach(f => fd.append('files', f));
+                      fd.append('requestId', requestId);
+                      fd.append('type', 'resolution'); // Mark as resolution attachment
+                      console.log('Resolve Modal - Uploading files with requestId:', requestId);
+                      const up = await fetch('/api/attachments', { method: 'POST', body: fd });
+                      if (up.ok) { 
+                        const j = await up.json(); 
+                        uploaded = j.files || [];
+                        console.log('Resolve Modal - Uploaded files:', uploaded);
+                      } else {
+                        console.error('Resolve Modal - File upload failed:', up.status);
+                      }
+                    }
+                    
+                    // Get new attachment IDs
+                    const newAttachmentIds: string[] = uploaded.map((f: any) => f.id).filter(Boolean);
+                    
+                    // Also include existing resolution attachments that are not marked for deletion
+                    const existingResolutionAttachments = resolutionAttachments.map(att => att.id);
+                    const existingAttachmentsNotDeleted = existingResolutionAttachments.filter(
+                      (id: string) => !attachmentsToDelete.includes(id)
+                    );
+                    
+                    // Combine new and existing attachments
+                    const allAttachmentIds = [...new Set([...newAttachmentIds, ...existingAttachmentsNotDeleted])];
+                    
+                    console.log('Resolve Modal - New attachment IDs:', newAttachmentIds);
+                    console.log('Resolve Modal - Existing attachments (not deleted):', existingAttachmentsNotDeleted);
+                    console.log('Resolve Modal - All combined attachment IDs:', allAttachmentIds);
+                    
+                    // Delete attachments marked for deletion
+                    if (attachmentsToDelete.length > 0) {
+                      console.log('Resolve Modal - Deleting marked attachments:', attachmentsToDelete);
+                      for (const attachmentId of attachmentsToDelete) {
+                        try {
+                          const deleteResponse = await fetch(`/api/requests/${requestId}/attachments/${attachmentId}`, {
+                            method: 'DELETE'
+                          });
+                          if (!deleteResponse.ok) {
+                            console.error('Resolve Modal - Failed to delete attachment:', attachmentId);
+                          }
+                        } catch (error) {
+                          console.error('Resolve Modal - Error deleting attachment:', attachmentId, error);
+                        }
+                      }
+                    }
+                    
                     const res = await fetch(`/api/requests/${requestId}/resolve`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         fcr: resolveFcr,
                         closureCode: resolveClosureCode,
-        closureComments: resolveComments
+                        closureComments: resolveComments,
+                        attachmentIds: allAttachmentIds  // Include attachment IDs
                       })
                     });
                     if (!res.ok) throw new Error('Failed to resolve');
@@ -4207,7 +4295,11 @@ export default function RequestViewPage() {
                     setResolveFcr(false);
                     setResolveClosureCode('');
                     setResolveComments('');
+                    // Reset resolution tab files and attachments
+                    setResFiles([]);
+                    setAttachmentsToDelete([]);
                     await fetchRequestData();
+                    await loadResolutionAttachments(); // Reload resolution attachments
                     handleTabChange('history');
                   } catch (e) {
                     toast({ title: 'Error', description: 'Failed to resolve request', variant: 'destructive' });

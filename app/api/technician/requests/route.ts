@@ -38,12 +38,103 @@ export async function GET(request: Request) {
     const limit = Number(searchParams.get('limit')) || 25;
     const page = Number(searchParams.get('page')) || 1;
     const skip = (page - 1) * limit;
+    
+    // Get filtering parameters
+    const statusFilter = searchParams.get('status');
+    const assignedTechnicianId = searchParams.get('assignedTechnicianId');
+    const assignedToCurrentUser = searchParams.get('assignedToCurrentUser');
 
-    console.log('Fetching requests assigned to technician ID:', session.user.id);
-    console.log('Fetching requests assigned to technician Email:', session.user.email);
+    console.log('Filtering parameters:', {
+      statusFilter,
+      assignedTechnicianId,
+      assignedToCurrentUser
+    });
 
-    // For now, let's just return ALL requests to test the UI
+    // Get current user's technician record
+    const currentTechnician = await prisma.technician.findFirst({
+      where: {
+        user: {
+          emp_email: session.user.email
+        },
+        isActive: true
+      }
+    });
+
+    console.log('Current technician:', currentTechnician);
+
+    // Build the where clause for filtering
+    let whereClause: any = {};
+    
+    // Status filtering
+    if (statusFilter) {
+      if (statusFilter.includes(',')) {
+        // Multiple statuses
+        const statuses = statusFilter.split(',').map(s => s.trim());
+        whereClause.status = { in: statuses };
+      } else {
+        whereClause.status = statusFilter;
+      }
+    }
+    
+    // Technician assignment filtering
+    if (assignedToCurrentUser === 'true' && currentTechnician) {
+      // Filter by current user's technician ID
+      whereClause.OR = [
+        {
+          formData: {
+            path: ['assignedTechnicianId'],
+            equals: currentTechnician.id
+          }
+        },
+        {
+          formData: {
+            path: ['assignedTechnicianId'],
+            equals: currentTechnician.id.toString()
+          }
+        }
+      ];
+    } else if (assignedTechnicianId && assignedTechnicianId !== 'unassigned') {
+      // Filter by specific technician ID
+      const techId = parseInt(assignedTechnicianId);
+      whereClause.OR = [
+        {
+          formData: {
+            path: ['assignedTechnicianId'],
+            equals: techId
+          }
+        },
+        {
+          formData: {
+            path: ['assignedTechnicianId'],
+            equals: techId.toString()
+          }
+        }
+      ];
+    } else if (assignedTechnicianId === 'unassigned') {
+      // Filter for unassigned requests
+      whereClause.OR = [
+        {
+          formData: {
+            path: ['assignedTechnicianId'],
+            equals: null
+          }
+        },
+        {
+          NOT: {
+            formData: {
+              path: ['assignedTechnicianId'],
+              not: null
+            }
+          }
+        }
+      ];
+    }
+
+    console.log('Where clause:', JSON.stringify(whereClause, null, 2));
+
+    // For now, let's just return filtered requests
     const requests = await prisma.request.findMany({
+      where: whereClause,
       include: {
         user: {
           select: {

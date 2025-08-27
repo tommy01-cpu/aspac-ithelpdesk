@@ -632,15 +632,7 @@ export default function DashboardPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">Requests by Technician</CardTitle>
-                <Select defaultValue="all">
-                  <SelectTrigger className="w-36 h-7 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="text-xs">All Technicians</SelectItem>
-                    <SelectItem value="assigned" className="text-xs">Assigned Only</SelectItem>
-                  </SelectContent>
-                </Select>
+             
               </div>
             </CardHeader>
             <CardContent className="pt-0">

@@ -223,6 +223,7 @@ export async function GET(
       attachments = await prismaAttachments.attachment.findMany({
         where: {
           requestId: String(requestId), // Convert to string
+          type: 'request', // Only fetch request attachments for Details tab
         },
         select: {
           id: true,

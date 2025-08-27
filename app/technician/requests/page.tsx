@@ -492,7 +492,7 @@ export default function MyRequestsPage() {
                     </Select>
                     
 
-                    <Select value={approvalStatusFilter} onValueChange={setApprovalStatusFilter}>
+                    {/* <Select value={approvalStatusFilter} onValueChange={setApprovalStatusFilter}>
                       <SelectTrigger className="w-40 bg-white/50">
                         <SelectValue placeholder="Approval Status" />
                       </SelectTrigger>
@@ -503,7 +503,7 @@ export default function MyRequestsPage() {
                         <SelectItem value="approved">Approved</SelectItem>
                         <SelectItem value="rejected">Rejected</SelectItem>
                       </SelectContent>
-                    </Select>
+                    </Select> */}
                   </div>
                 </div>
 

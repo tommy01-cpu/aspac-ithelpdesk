@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const files = formData.getAll('files') as File[];
     const requestId = formData.get('requestId') as string;
+    const type = formData.get('type') as string || 'request'; // Default to 'request' type
 
     if (!files || files.length === 0) {
       return NextResponse.json({ error: 'No files provided' }, { status: 400 });
@@ -49,6 +50,7 @@ export async function POST(request: NextRequest) {
           fileContent, // Binary content stored in database
           requestId: requestId || null,
           userId: String(session.user.id),
+          type: type, // Set the attachment type
         },
       });
 
@@ -97,6 +99,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const requestId = searchParams.get('requestId');
     const userId = searchParams.get('userId');
+    const type = searchParams.get('type'); // Optional filter by type
 
     if (!requestId && !userId) {
       return NextResponse.json({ error: 'requestId or userId required' }, { status: 400 });
@@ -105,6 +108,7 @@ export async function GET(request: NextRequest) {
     const where: any = {};
     if (requestId) where.requestId = requestId;
     if (userId) where.userId = userId;
+    if (type) where.type = type; // Filter by type if specified
 
     const attachments = await prismaAttachments.attachment.findMany({
       where,

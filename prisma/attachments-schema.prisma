@@ -20,11 +20,13 @@ model Attachment {
   fileContent Bytes    // Binary file content
   requestId   String?  // Request ID from main database (as string reference)
   userId      String   // User ID from main database (as string reference)
+  type        String   @default("request") // "request" or "resolution"
   uploadedAt  DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
   @@index([requestId])
   @@index([userId])
   @@index([fileName])
+  @@index([requestId, type])
   @@map("attachments")
 }

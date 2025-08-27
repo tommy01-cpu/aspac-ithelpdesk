@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
           },
           {
             status: {
-              in: ['open', 'pending', 'in-progress']
+              in: ['open', 'on_hold', 'for_approval']
             }
           }
         ]

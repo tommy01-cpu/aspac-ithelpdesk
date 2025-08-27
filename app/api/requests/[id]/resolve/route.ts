@@ -23,7 +23,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       fcr, 
       closureCode, 
       closureComments: closureComments ? closureComments.substring(0, 100) + '...' : 'empty', 
-      attachmentIds 
+      attachmentIds,
+      attachmentIdsType: typeof attachmentIds,
+      attachmentIdsIsArray: Array.isArray(attachmentIds),
+      attachmentIdsLength: attachmentIds?.length
     });
 
     // Check if user is technician from session (which is based on technicians table)
@@ -57,12 +60,18 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const existingAttachments = Array.isArray(existingResolution.attachments) ? existingResolution.attachments : [];
     const newAttachments = Array.isArray(attachmentIds) ? attachmentIds : [];
     
-    console.log('Existing attachments:', existingAttachments);
-    console.log('New attachments:', newAttachments);
+    console.log('ATTACHMENT DEBUG - Existing resolution:', existingResolution);
+    console.log('ATTACHMENT DEBUG - Existing attachments:', existingAttachments);
+    console.log('ATTACHMENT DEBUG - New attachments from request:', newAttachments);
+    console.log('ATTACHMENT DEBUG - New attachments type check:', {
+      isArray: Array.isArray(attachmentIds),
+      length: attachmentIds?.length,
+      raw: attachmentIds
+    });
     
     // Merge existing and new attachments (avoid duplicates)
     const allAttachments = [...new Set([...existingAttachments, ...newAttachments])];
-    console.log('Merged attachments:', allAttachments);
+    console.log('ATTACHMENT DEBUG - All merged attachments:', allAttachments);
     
     const updatedForm = {
       ...(fd || {}),
@@ -71,14 +80,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         fcr: !!fcr,
         closureCode: String(closureCode || ''),
         closureComments: String(closureComments || ''),
-        attachments: allAttachments,
+        attachments: allAttachments, // Store attachments only in resolution block
         resolvedById: actor.id,
         resolvedBy: `${actor.emp_fname} ${actor.emp_lname}`.trim(),
         resolvedAt: existingResolution.resolvedAt || new Date().toISOString(), // Keep original resolved time if updating
       },
     } as any;
 
-    console.log('Final updated form data:', JSON.stringify(updatedForm.resolution, null, 2));
+    console.log('Final updated form data (resolution):', JSON.stringify(updatedForm.resolution, null, 2));
 
     // Update to resolved status (or keep as resolved if already resolved)
     // Create Philippine time by manually adjusting UTC

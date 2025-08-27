@@ -196,8 +196,13 @@ export default function AppHeader() {
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link href="/technician/requests?assignedToCurrentUser=true" className="w-full">
+                      <Link href="/technician/requests?assignedToCurrentUser=true&viewMode=assigned_to_me&status=open,on_hold" className="w-full">
                         All Requests
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/technician/reports" className="w-full">
+                        Reports
                       </Link>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
