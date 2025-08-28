@@ -180,6 +180,12 @@ export default function AppHeader() {
                 </Button>
               </Link>
               
+              <Link href="/reports">
+                <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium">
+                  Reports
+                </Button>
+              </Link>
+              
               {/* Only show Technician View if user is a technician */}
               {session?.user?.isTechnician && (
                 <DropdownMenu>

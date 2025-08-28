@@ -55,6 +55,8 @@ model users {
   incidentCatalogCreated                            IncidentCatalogItem[]  @relation("IncidentCatalogCreatedBy")
   incidentCatalogUpdated                            IncidentCatalogItem[]  @relation("IncidentCatalogUpdatedBy")
   notifications                                     Notification[]         @relation("UserNotifications")
+  report_folders                                    report_folders[]
+  reportTemplates                                   ReportTemplate[]       @relation("ReportTemplateCreatedBy")
   requestApprovals                                  RequestApproval[]      @relation("RequestApprovals")
   requestHistory                                    RequestHistory[]       @relation("RequestHistory")
   requests                                          Request[]
@@ -664,6 +666,45 @@ model email_templates {
   @@index([is_active], map: "idx_email_templates_active")
   @@index([template_key], map: "idx_email_templates_key")
   @@map("email_templates")
+}
+
+model ReportTemplate {
+  id             Int             @id @default(autoincrement())
+  name           String          @db.VarChar(255)
+  description    String?
+  selectedFields String[]
+  filters        Json?
+  createdBy      Int
+  isShared       Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  folder_id      Int?
+  report_type    String?         @default("template") @db.VarChar(255)
+  creator        users           @relation("ReportTemplateCreatedBy", fields: [createdBy], references: [id], onDelete: Cascade)
+  report_folders report_folders? @relation(fields: [folder_id], references: [id])
+
+  @@index([createdBy])
+  @@index([isShared])
+  @@map("report_templates")
+}
+
+model report_folders {
+  id                   Int              @id @default(autoincrement())
+  name                 String           @db.VarChar(255)
+  description          String?
+  parent_id            Int?
+  created_by           Int
+  is_shared            Boolean          @default(false)
+  created_at           DateTime         @default(now())
+  updated_at           DateTime         @default(now())
+  users                users            @relation(fields: [created_by], references: [id], onDelete: Cascade)
+  report_folders       report_folders?  @relation("report_foldersToreport_folders", fields: [parent_id], references: [id], onDelete: Cascade)
+  other_report_folders report_folders[] @relation("report_foldersToreport_folders")
+  report_templates     ReportTemplate[]
+
+  @@index([created_by])
+  @@index([is_shared])
+  @@index([parent_id])
 }
 
 enum Priority {

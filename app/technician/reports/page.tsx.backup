@@ -1,0 +1,889 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { redirect } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DatePickerWithRange } from "@/components/ui/date-range-picker";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { 
+  Download, 
+  FileText, 
+  Sheet, 
+  Filter, 
+  Search, 
+  RotateCcw,
+  CheckCircle,
+  Eye,
+  EyeOff,
+  BookTemplate,
+  Plus
+} from "lucide-react";
+import { DateRange } from "react-day-picker";
+import { format } from "date-fns";
+import { ReportTemplateModal } from "@/components/ui/report-template-modal";
+import { TemplateManager } from "@/components/ui/template-manager";
+
+// Define available report fields
+const REPORT_FIELDS = [
+  { id: 'requestId', label: 'Request ID', category: 'Basic' },
+  { id: 'templateName', label: 'Template/Service', category: 'Basic' },
+  { id: 'requesterName', label: 'Requester Name', category: 'User Info' },
+  { id: 'requesterDepartment', label: 'Requester Department', category: 'User Info' },
+  { id: 'assignedTechnician', label: 'Assigned Technician', category: 'Assignment' },
+  { id: 'supportGroup', label: 'Support Group', category: 'Assignment' },
+  { id: 'priority', label: 'Priority', category: 'Details' },
+  { id: 'status', label: 'Status', category: 'Details' },
+  { id: 'createdAt', label: 'Created Date', category: 'Timestamps' },
+  { id: 'updatedAt', label: 'Last Updated', category: 'Timestamps' },
+  { id: 'closedAt', label: 'Closed Date', category: 'Timestamps' },
+  { id: 'slaBreached', label: 'SLA Breached', category: 'SLA' },
+  { id: 'resolutionTime', label: 'Resolution Time', category: 'SLA' },
+  { id: 'approvalStatus', label: 'Approval Status', category: 'Approval' },
+  { id: 'approvedBy', label: 'Approved By', category: 'Approval' },
+  { id: 'description', label: 'Description/Summary', category: 'Content' },
+  { id: 'category', label: 'Category', category: 'Classification' }
+];
+
+// Filter options
+const PRIORITY_OPTIONS = ['Low', 'Medium', 'High', 'Critical'];
+const STATUS_OPTIONS = ['open', 'in_progress', 'on_hold', 'resolved', 'closed', 'cancelled'];
+
+interface ReportData {
+  requestId: string;
+  templateName: string;
+  requesterName: string;
+  requesterDepartment: string;
+  assignedTechnician: string;
+  supportGroup: string;
+  priority: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string;
+  slaBreached: boolean;
+  resolutionTime: string;
+  approvalStatus: string;
+  approvedBy: string;
+  description: string;
+  category: string;
+}
+
+interface ReportTemplateBase {
+  name: string;
+  description?: string;
+  selectedFields: string[];
+  filters: any;
+  isShared: boolean;
+}
+
+interface ReportTemplate extends ReportTemplateBase {
+  id: number;
+  createdAt: string;
+  updatedAt: string;
+  isOwner: boolean;
+  creator: {
+    name: string;
+    email: string;
+  };
+}
+
+export default function TechnicianReportsPage() {
+  const { data: session, status } = useSession();
+  const [selectedFields, setSelectedFields] = useState<string[]>([
+    'requestId', 'templateName', 'requesterName', 'status', 'priority', 'createdAt'
+  ]);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [filters, setFilters] = useState({
+    priority: [] as string[],
+    status: [] as string[],
+    approvalStatus: [] as string[],
+    assignedTechnician: '',
+    supportGroup: '',
+    searchTerm: ''
+  });
+  const [reportData, setReportData] = useState<ReportData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [showFilters, setShowFilters] = useState(false);
+  
+  // Template-related state
+  const [templates, setTemplates] = useState<ReportTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<ReportTemplate | null>(null);
+  const [activeTab, setActiveTab] = useState<'reports' | 'templates'>('reports');
+
+  // Check authentication and authorization
+  useEffect(() => {
+    if (status === "loading") return;
+    if (!session) {
+      redirect("/login");
+    }
+    if (!session.user?.isTechnician) {
+      redirect("/");
+    }
+  }, [session, status]);
+
+  // Load templates
+  useEffect(() => {
+    if (session?.user?.isTechnician) {
+      loadTemplates();
+    }
+  }, [session]);
+
+  const loadTemplates = async () => {
+    setTemplatesLoading(true);
+    try {
+      const response = await fetch('/api/technician/report-templates');
+      if (response.ok) {
+        const data = await response.json();
+        setTemplates(data.templates);
+      }
+    } catch (error) {
+      console.error('Error loading templates:', error);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  };
+
+  // Handle field selection
+  const handleFieldToggle = (fieldId: string) => {
+    setSelectedFields(prev => 
+      prev.includes(fieldId) 
+        ? prev.filter(id => id !== fieldId)
+        : [...prev, fieldId]
+    );
+  };
+
+  // Handle category selection
+  const handleCategoryToggle = (category: string) => {
+    const categoryFields = REPORT_FIELDS.filter(field => field.category === category).map(field => field.id);
+    const allSelected = categoryFields.every(fieldId => selectedFields.includes(fieldId));
+    
+    if (allSelected) {
+      setSelectedFields(prev => prev.filter(fieldId => !categoryFields.includes(fieldId)));
+    } else {
+      setSelectedFields(prev => {
+        const newFields = [...prev];
+        categoryFields.forEach(fieldId => {
+          if (!newFields.includes(fieldId)) {
+            newFields.push(fieldId);
+          }
+        });
+        return newFields;
+      });
+    }
+  };
+
+  // Handle filter changes
+  const handleFilterChange = (filterType: string, value: any) => {
+    setFilters(prev => ({ ...prev, [filterType]: value }));
+  };
+
+  // Generate report
+  const generateReport = async () => {
+    if (selectedFields.length === 0) {
+      setError('Please select at least one field to include in the report');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const queryParams = new URLSearchParams({
+        fields: selectedFields.join(','),
+        ...(dateRange?.from && { startDate: format(dateRange.from, 'yyyy-MM-dd') }),
+        ...(dateRange?.to && { endDate: format(dateRange.to, 'yyyy-MM-dd') }),
+        ...(filters.priority.length > 0 && { priority: filters.priority.join(',') }),
+        ...(filters.status.length > 0 && { status: filters.status.join(',') }),
+        ...(filters.approvalStatus.length > 0 && { approvalStatus: filters.approvalStatus.join(',') }),
+        ...(filters.assignedTechnician && { assignedTechnician: filters.assignedTechnician }),
+        ...(filters.supportGroup && { supportGroup: filters.supportGroup }),
+        ...(filters.searchTerm && { search: filters.searchTerm })
+      });
+
+      const response = await fetch(`/api/technician/reports?${queryParams}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate report');
+      }
+
+      const data = await response.json();
+      setReportData(data.records);
+      setTotalRecords(data.total);
+    } catch (error) {
+      console.error('Error generating report:', error);
+      setError('Failed to generate report. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Export to CSV
+  const exportToCSV = async () => {
+    if (reportData.length === 0) {
+      setError('No data to export. Please generate a report first.');
+      return;
+    }
+
+    try {
+      const queryParams = new URLSearchParams({
+        fields: selectedFields.join(','),
+        format: 'csv',
+        ...(dateRange?.from && { startDate: format(dateRange.from, 'yyyy-MM-dd') }),
+        ...(dateRange?.to && { endDate: format(dateRange.to, 'yyyy-MM-dd') }),
+        ...(filters.priority.length > 0 && { priority: filters.priority.join(',') }),
+        ...(filters.status.length > 0 && { status: filters.status.join(',') }),
+        ...(filters.approvalStatus.length > 0 && { approvalStatus: filters.approvalStatus.join(',') }),
+        ...(filters.assignedTechnician && { assignedTechnician: filters.assignedTechnician }),
+        ...(filters.supportGroup && { supportGroup: filters.supportGroup }),
+        ...(filters.searchTerm && { search: filters.searchTerm })
+      });
+
+      const response = await fetch(`/api/technician/reports/export?${queryParams}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to export CSV');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `technician-report-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      setError('Failed to export CSV. Please try again.');
+    }
+  };
+
+  // Export to JSON
+  const exportToJSON = async () => {
+    if (reportData.length === 0) {
+      setError('No data to export. Please generate a report first.');
+      return;
+    }
+
+    try {
+      const queryParams = new URLSearchParams({
+        fields: selectedFields.join(','),
+        format: 'json',
+        ...(dateRange?.from && { startDate: format(dateRange.from, 'yyyy-MM-dd') }),
+        ...(dateRange?.to && { endDate: format(dateRange.to, 'yyyy-MM-dd') }),
+        ...(filters.priority.length > 0 && { priority: filters.priority.join(',') }),
+        ...(filters.status.length > 0 && { status: filters.status.join(',') }),
+        ...(filters.approvalStatus.length > 0 && { approvalStatus: filters.approvalStatus.join(',') }),
+        ...(filters.assignedTechnician && { assignedTechnician: filters.assignedTechnician }),
+        ...(filters.supportGroup && { supportGroup: filters.supportGroup }),
+        ...(filters.searchTerm && { search: filters.searchTerm })
+      });
+
+      const response = await fetch(`/api/technician/reports/export?${queryParams}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to export JSON');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `technician-report-${format(new Date(), 'yyyy-MM-dd')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting JSON:', error);
+      setError('Failed to export JSON. Please try again.');
+    }
+  };
+
+  // Reset filters
+  const resetFilters = () => {
+    setDateRange(undefined);
+    setFilters({
+      priority: [],
+      status: [],
+      approvalStatus: [],
+      assignedTechnician: '',
+      supportGroup: '',
+      searchTerm: ''
+    });
+    setSelectedFields(['requestId', 'templateName', 'requesterName', 'status', 'priority', 'createdAt']);
+    setReportData([]);
+    setError('');
+  };
+
+  // Template management functions
+  const handleSaveTemplate = async (templateData: ReportTemplateBase) => {
+    try {
+      const url = editingTemplate 
+        ? `/api/technician/report-templates/${editingTemplate.id}`
+        : '/api/technician/report-templates';
+      
+      const method = editingTemplate ? 'PUT' : 'POST';
+      
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(templateData)
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to save template');
+      }
+
+      await loadTemplates();
+      setEditingTemplate(null);
+    } catch (error: any) {
+      throw new Error(error.message || 'Failed to save template');
+    }
+  };
+
+  const handleLoadTemplate = (template: ReportTemplate) => {
+    setSelectedFields(template.selectedFields);
+    setFilters(template.filters);
+    setActiveTab('reports');
+  };
+
+  const handleEditTemplate = (template: ReportTemplate) => {
+    setEditingTemplate(template);
+    setTemplateModalOpen(true);
+  };
+
+  const handleDeleteTemplate = async (templateId: number) => {
+    try {
+      const response = await fetch(`/api/technician/report-templates/${templateId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to delete template');
+      }
+
+      await loadTemplates();
+    } catch (error: any) {
+      throw new Error(error.message || 'Failed to delete template');
+    }
+  };
+
+  const handleDuplicateTemplate = (template: ReportTemplate) => {
+    setSelectedFields(template.selectedFields);
+    setFilters(template.filters);
+    setEditingTemplate(null);
+    setTemplateModalOpen(true);
+  };
+
+  const handleOpenTemplateModal = () => {
+    setEditingTemplate(null);
+    setTemplateModalOpen(true);
+  };
+
+  const handleCloseTemplateModal = () => {
+    setTemplateModalOpen(false);
+    setEditingTemplate(null);
+  };
+
+  // Get field label
+  const getFieldLabel = (fieldId: string) => {
+    return REPORT_FIELDS.find(field => field.id === fieldId)?.label || fieldId;
+  };
+
+  // Format cell value
+  const formatCellValue = (value: any, fieldId: string) => {
+    if (value === null || value === undefined) return '-';
+    
+    switch (fieldId) {
+      case 'createdAt':
+      case 'updatedAt':
+      case 'closedAt':
+        return value ? format(new Date(value), 'MMM dd, yyyy HH:mm') : '-';
+      case 'slaBreached':
+        return value ? 'Yes' : 'No';
+      case 'priority':
+        return value ? value.charAt(0).toUpperCase() + value.slice(1) : '-';
+      case 'status':
+        return value ? value.replace('_', ' ').toUpperCase() : '-';
+      default:
+        return value.toString();
+    }
+  };
+
+  // Get status badge color
+  const getStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'open': return 'bg-blue-100 text-blue-800';
+      case 'in_progress': return 'bg-yellow-100 text-yellow-800';
+      case 'on_hold': return 'bg-orange-100 text-orange-800';
+      case 'resolved': return 'bg-green-100 text-green-800';
+      case 'closed': return 'bg-gray-100 text-gray-800';
+      case 'cancelled': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // Get priority color
+  const getPriorityColor = (priority: string) => {
+    switch (priority?.toLowerCase()) {
+      case 'low': return 'bg-green-100 text-green-800';
+      case 'medium': return 'bg-yellow-100 text-yellow-800';
+      case 'high': return 'bg-orange-100 text-orange-800';
+      case 'critical': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // Group fields by category
+  const fieldsByCategory = REPORT_FIELDS.reduce((acc, field) => {
+    if (!acc[field.category]) {
+      acc[field.category] = [];
+    }
+    acc[field.category].push(field);
+    return acc;
+  }, {} as Record<string, typeof REPORT_FIELDS>);
+
+  if (status === "loading") {
+    return <div>Loading...</div>;
+  }
+
+  if (!session?.user?.isTechnician) {
+    return null;
+  }
+
+  return (
+    <div className="w-full px-6 py-4" style={{ transform: 'scale(0.9)', transformOrigin: 'top left', width: '111.11%' }}>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Reports & Templates</h1>
+          <p className="text-gray-600 mt-1">Generate custom reports and manage reusable templates</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {activeTab === 'reports' && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center gap-2"
+              >
+                {showFilters ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showFilters ? 'Hide' : 'Show'} Filters
+              </Button>
+              <Button
+                variant="outline"
+                onClick={resetFilters}
+                className="flex items-center gap-2"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Reset
+              </Button>
+              <Button
+                onClick={handleOpenTemplateModal}
+                className="flex items-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Save Template
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex space-x-1 mb-6">
+        <Button
+          variant={activeTab === 'reports' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('reports')}
+          className="flex items-center gap-2"
+        >
+          <Search className="h-4 w-4" />
+          Reports
+        </Button>
+        <Button
+          variant={activeTab === 'templates' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('templates')}
+          className="flex items-center gap-2"
+        >
+          <BookTemplate className="h-4 w-4" />
+          Templates ({templates.length})
+        </Button>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-6">
+          {error}
+        </div>
+      )}
+
+      {/* Content based on active tab */}
+      {activeTab === 'templates' ? (
+        /* Template Management */
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">My Templates</h2>
+            <Button
+              onClick={handleOpenTemplateModal}
+              className="flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Create Template
+            </Button>
+          </div>
+          
+          <TemplateManager
+            templates={templates}
+            onLoadTemplate={handleLoadTemplate}
+            onEditTemplate={handleEditTemplate}
+            onDeleteTemplate={handleDeleteTemplate}
+            onDuplicateTemplate={handleDuplicateTemplate}
+            availableFields={REPORT_FIELDS}
+            loading={templatesLoading}
+          />
+        </div>
+      ) : (
+        /* Report Generation */
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+        {/* Field Selection */}
+        <Card className="xl:col-span-1">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5" />
+              Select Fields
+            </CardTitle>
+            <CardDescription>
+              Choose the fields to include in your report ({selectedFields.length} selected)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-96">
+              <div className="space-y-4">
+                {Object.entries(fieldsByCategory).map(([category, fields]) => {
+                  const categoryFields = fields.map(field => field.id);
+                  const allSelected = categoryFields.every(fieldId => selectedFields.includes(fieldId));
+                  const someSelected = categoryFields.some(fieldId => selectedFields.includes(fieldId));
+                  
+                  return (
+                    <div key={category} className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`category-${category}`}
+                          checked={allSelected}
+                          onCheckedChange={() => handleCategoryToggle(category)}
+                          className={someSelected && !allSelected ? 'data-[state=checked]:bg-blue-600' : ''}
+                        />
+                        <Label
+                          htmlFor={`category-${category}`}
+                          className="text-sm font-medium text-gray-700 cursor-pointer"
+                        >
+                          {category}
+                        </Label>
+                        <Badge variant="secondary" className="text-xs">
+                          {categoryFields.filter(fieldId => selectedFields.includes(fieldId)).length}/{categoryFields.length}
+                        </Badge>
+                      </div>
+                      <div className="ml-6 space-y-1">
+                        {fields.map((field) => (
+                          <div key={field.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={field.id}
+                              checked={selectedFields.includes(field.id)}
+                              onCheckedChange={() => handleFieldToggle(field.id)}
+                            />
+                            <Label
+                              htmlFor={field.id}
+                              className="text-sm text-gray-600 cursor-pointer"
+                            >
+                              {field.label}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+
+        {/* Filters and Results */}
+        <div className="xl:col-span-3 space-y-6">
+          {/* Filters */}
+          {showFilters && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Filter className="h-5 w-5" />
+                  Filters
+                </CardTitle>
+                <CardDescription>
+                  Apply filters to narrow down your report data
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Date Range */}
+                <div className="space-y-2">
+                  <Label>Date Range</Label>
+                  <DatePickerWithRange
+                    date={dateRange}
+                    onDateChange={setDateRange}
+                    className="w-full"
+                  />
+                </div>
+
+                {/* Search */}
+                <div className="space-y-2">
+                  <Label htmlFor="search">Search Term</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="search"
+                      placeholder="Search in request ID, description, requester name..."
+                      value={filters.searchTerm}
+                      onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2 gap-4">
+                  {/* Priority Filter */}
+                  <div className="space-y-2">
+                    <Label>Priority</Label>
+                    <Select onValueChange={(value) => {
+                      if (value === 'all') {
+                        handleFilterChange('priority', []);
+                      } else {
+                        handleFilterChange('priority', filters.priority.includes(value) 
+                          ? filters.priority.filter(p => p !== value)
+                          : [...filters.priority, value]
+                        );
+                      }
+                    }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select priority" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Priorities</SelectItem>
+                        {PRIORITY_OPTIONS.map(priority => (
+                          <SelectItem key={priority} value={priority.toLowerCase()}>
+                            {priority}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {filters.priority.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {filters.priority.map(priority => (
+                          <Badge key={priority} variant="secondary" className="text-xs">
+                            {priority}
+                            <button
+                              onClick={() => handleFilterChange('priority', filters.priority.filter(p => p !== priority))}
+                              className="ml-1 hover:text-red-600"
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Status Filter */}
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select onValueChange={(value) => {
+                      if (value === 'all') {
+                        handleFilterChange('status', []);
+                      } else {
+                        handleFilterChange('status', filters.status.includes(value) 
+                          ? filters.status.filter(s => s !== value)
+                          : [...filters.status, value]
+                        );
+                      }
+                    }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Statuses</SelectItem>
+                        {STATUS_OPTIONS.map(status => (
+                          <SelectItem key={status} value={status}>
+                            {status.replace('_', ' ').toUpperCase()}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {filters.status.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {filters.status.map(status => (
+                          <Badge key={status} variant="secondary" className="text-xs">
+                            {status.replace('_', ' ').toUpperCase()}
+                            <button
+                              onClick={() => handleFilterChange('status', filters.status.filter(s => s !== status))}
+                              className="ml-1 hover:text-red-600"
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Assigned Technician */}
+                  <div className="space-y-2">
+                    <Label htmlFor="technician">Assigned Technician</Label>
+                    <Input
+                      id="technician"
+                      placeholder="Enter technician name"
+                      value={filters.assignedTechnician}
+                      onChange={(e) => handleFilterChange('assignedTechnician', e.target.value)}
+                    />
+                  </div>
+
+                  {/* Support Group */}
+                  <div className="space-y-2">
+                    <Label htmlFor="supportGroup">Support Group</Label>
+                    <Input
+                      id="supportGroup"
+                      placeholder="Enter support group"
+                      value={filters.supportGroup}
+                      onChange={(e) => handleFilterChange('supportGroup', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Download className="h-5 w-5" />
+                Generate & Export
+              </CardTitle>
+              <CardDescription>
+                Generate your report and export to CSV or JSON format
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  onClick={generateReport}
+                  disabled={loading || selectedFields.length === 0}
+                  className="flex items-center gap-2"
+                >
+                  <Search className="h-4 w-4" />
+                  {loading ? 'Generating...' : 'Generate Report'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={exportToCSV}
+                  disabled={reportData.length === 0}
+                  className="flex items-center gap-2"
+                >
+                  <FileText className="h-4 w-4" />
+                  Export CSV
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={exportToJSON}
+                  disabled={reportData.length === 0}
+                  className="flex items-center gap-2"
+                >
+                  <Sheet className="h-4 w-4" />
+                  Export JSON
+                </Button>
+              </div>
+
+              {totalRecords > 0 && (
+                <div className="mt-4 text-sm text-gray-600">
+                  Found {totalRecords} records
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Results */}
+          {reportData.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Report Results</CardTitle>
+                <CardDescription>
+                  {reportData.length} records found
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-96 w-full">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {selectedFields.map(fieldId => (
+                          <TableHead key={fieldId} className="whitespace-nowrap">
+                            {getFieldLabel(fieldId)}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {reportData.map((record, index) => (
+                        <TableRow key={index}>
+                          {selectedFields.map(fieldId => (
+                            <TableCell key={fieldId} className="whitespace-nowrap">
+                              {fieldId === 'status' ? (
+                                <Badge className={getStatusColor(record[fieldId as keyof ReportData] as string)}>
+                                  {formatCellValue(record[fieldId as keyof ReportData], fieldId)}
+                                </Badge>
+                              ) : fieldId === 'priority' ? (
+                                <Badge className={getPriorityColor(record[fieldId as keyof ReportData] as string)}>
+                                  {formatCellValue(record[fieldId as keyof ReportData], fieldId)}
+                                </Badge>
+                              ) : (
+                                formatCellValue(record[fieldId as keyof ReportData], fieldId)
+                              )}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+        )}
+
+      {/* Template Modal */}
+      <ReportTemplateModal
+        isOpen={templateModalOpen}
+        onClose={handleCloseTemplateModal}
+        onSave={handleSaveTemplate}
+        template={editingTemplate || undefined}
+        availableFields={REPORT_FIELDS}
+        currentSelectedFields={selectedFields}
+        currentFilters={filters}
+      />
+    </div>
+  );
+}
