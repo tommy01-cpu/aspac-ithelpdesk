@@ -799,6 +799,18 @@ export default function RequestViewPage() {
     }
   };
 
+  const loadTechnicians = async () => {
+    try {
+      const res = await fetch('/api/technicians?limit=100');
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableTechnicians(data.technicians || []);
+      }
+    } catch (e) {
+      console.error('Failed to load technicians', e);
+    }
+  };
+
   // Filter templates based on request type and category
   useEffect(() => {
     console.log('Filtering templates:', {
@@ -844,18 +856,6 @@ export default function RequestViewPage() {
     console.log('Filtered templates result:', filtered.length, filtered.map(t => t.name));
     setFilteredTemplates(filtered);
   }, [availableTemplates, editForm.type, editForm.category]);
-
-  const loadTechnicians = async () => {
-    try {
-      const res = await fetch('/api/users/technicians');
-      if (res.ok) {
-        const data = await res.json();
-        setAvailableTechnicians(data.users || []);
-      }
-    } catch (e) {
-      console.error('Failed to load technicians', e);
-    }
-  };
 
   // Email search functionality (from creation form)
   const searchEmailUsers = async (searchTerm: string) => {
@@ -923,18 +923,38 @@ export default function RequestViewPage() {
         const priorityField = selectedTemplate.fields.find((f: any) => f.type === 'priority');
         const statusField = selectedTemplate.fields.find((f: any) => f.type === 'status');
         
-        if (priorityField && priorityField.defaultValue) {
-          setTemplatePriority(priorityField.defaultValue);
-          setEditForm(prev => ({...prev, priority: priorityField.defaultValue}));
+        // FIXED: Apply template logic based on request type
+        if (editForm.type.toLowerCase() === 'incident') {
+          // For incidents: Get priority from template, set status to 'open'
+          if (priorityField && priorityField.defaultValue) {
+            setTemplatePriority(priorityField.defaultValue);
+            setEditForm(prev => ({...prev, priority: priorityField.defaultValue, status: 'open'}));
+          } else {
+            setEditForm(prev => ({...prev, status: 'open'}));
+          }
+        } else if (editForm.type.toLowerCase() === 'service') {
+          // For services: Priority is selectable, status becomes 'for_approval'  
+          if (priorityField && priorityField.defaultValue) {
+            setTemplatePriority(priorityField.defaultValue);
+            setEditForm(prev => ({...prev, priority: priorityField.defaultValue, status: 'for_approval'}));
+          } else {
+            setEditForm(prev => ({...prev, status: 'for_approval'}));
+          }
         }
         
-        if (statusField && statusField.defaultValue) {
-          setTemplateStatus(statusField.defaultValue);
-          setEditForm(prev => ({...prev, status: statusField.defaultValue}));
+        // Copy template details (approver, SLA, support group, etc.)
+        if (selectedTemplate.approvalWorkflow) {
+          console.log('Copying approval workflow from template:', selectedTemplate.approvalWorkflow);
+        }
+        if (selectedTemplate.slaId) {
+          console.log('Copying SLA from template:', selectedTemplate.slaId);
+        }
+        if (selectedTemplate.supportGroupId) {
+          console.log('Copying support group from template:', selectedTemplate.supportGroupId);
         }
       }
     }
-  }, [editForm.template, availableTemplates]);
+  }, [editForm.template, availableTemplates, editForm.type]);
 
   // Initialize resolution data when entering edit mode or when request data changes
   useEffect(() => {
@@ -969,12 +989,12 @@ export default function RequestViewPage() {
     // Initialize form with current values
     const currentPriority = requestData?.formData?.['2'] || requestData?.formData?.priority || 'Medium';
     
-    // Get request type from multiple possible sources
-    let currentType = 'service'; // default
-    if (requestData?.type) {
-      currentType = requestData.type;
-    } else if (requestData?.formData?.['4']) {
+    // FIXED: Get request type from formData[4] first (where type is actually stored)
+    let currentType = 'Service'; // default
+    if (requestData?.formData?.['4']) {
       currentType = requestData.formData['4'];
+    } else if (requestData?.type) {
+      currentType = requestData.type;
     } else if (requestData?.formData?.type) {
       currentType = requestData.formData.type;
     }
@@ -2320,7 +2340,7 @@ export default function RequestViewPage() {
                   <Card>
                     <CardHeader>
                       <div className="flex items-center justify-between">
-                        <CardTitle className="text-lg">Properties</CardTitle>
+                        <CardTitle className="text-lg">Request Details</CardTitle>
                         <Button variant="ghost" size="sm" onClick={handleEditRequest}>
                           <Edit className="h-4 w-4" />
                           Edit
@@ -3688,7 +3708,7 @@ export default function RequestViewPage() {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <User className="h-4 w-4" />
-                    More Properties
+                    Requester Details
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -3749,24 +3769,10 @@ export default function RequestViewPage() {
                 </CardContent>
               </Card>
 
-              {/* Assets */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Assets</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-3 p-3 border rounded-lg">
-                    <Building className="h-4 w-4 text-gray-500" />
-                    <div>
-                      <p className="font-medium text-sm">Lenovo IdeaPad 3 15ITL6</p>
-                      <p className="text-xs text-gray-500">Laptop</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+           
 
               {/* Template and SLA Information */}
-              {templateData && (
+              {/* {templateData && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">Template Information</CardTitle>
@@ -3818,7 +3824,7 @@ export default function RequestViewPage() {
                     </div>
                   </CardContent>
                 </Card>
-              )}
+              )} */}
             </div>
           </div>
         </div>
@@ -4330,7 +4336,12 @@ export default function RequestViewPage() {
                   <select
                     className="w-full border rounded px-3 py-2 text-sm font-medium bg-white border-blue-200"
                     value={editForm.type}
-                    onChange={e => setEditForm(prev => ({...prev, type: e.target.value, template: '', category: ''}))}
+                    onChange={e => {
+                      const newType = e.target.value;
+                      setEditForm(prev => ({...prev, type: newType, template: '', category: ''}));
+                      // Reload templates for the new type
+                      loadTemplates();
+                    }}
                   >
                     <option value="service">Service</option>
                     <option value="incident">Incident</option>
@@ -4344,7 +4355,12 @@ export default function RequestViewPage() {
                     <select
                       className="w-full border rounded px-2 py-2 text-sm"
                       value={editForm.category}
-                      onChange={e => setEditForm(prev => ({...prev, category: e.target.value, template: ''}))}
+                      onChange={e => {
+                        const newCategory = e.target.value;
+                        setEditForm(prev => ({...prev, category: newCategory, template: ''}));
+                        // Reload templates for the new category
+                        loadTemplates();
+                      }}
                     >
                       <option value="">Select Category</option>
                       {availableCategories.map((category: any) => (
@@ -4379,7 +4395,7 @@ export default function RequestViewPage() {
                 </div>
 
                 {/* Add Approver Section - Only for Service Requests */}
-                {editForm.type === 'service' && (
+                {editForm.type.toLowerCase() === 'service' && (
                   <div className="border rounded p-4 bg-green-50">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-medium text-gray-700">Approval Workflow</h3>
