@@ -148,40 +148,55 @@ export default function AppHeader() {
   };
 
   return (
-    <header className="bg-white/95 backdrop-blur-xl border-b border-gray-200/60 sticky top-0 z-50 shadow-sm">
+    <header className="sticky top-0 z-50 shadow-lg" style={{ backgroundColor: '#7d6b3f', borderBottom: '1px solid rgba(109, 91, 43, 0.5)' }}>
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <div className="flex-shrink-0 flex items-center">
-              <div className="w-10 h-10 bg-gray-600 rounded-xl flex items-center justify-center mr-3 p-2">
-                <img 
-                  src="http://hris.aspacphils.com.ph/HRIS-Plus-Version-2.0/contents/images/aspac-white.png" 
-                  alt="ASPAC Logo" 
-                  className="w-full h-full object-contain"
-                />
-              </div>
+              <img 
+                src="http://hris.aspacphils.com.ph/HRIS-Plus-Version-2.0/contents/images/aspac-white.png" 
+                alt="ASPAC Logo" 
+                className="w-8 h-8 object-contain mr-3"
+              />
               <div>
-                <h1 className="text-xl font-bold text-gray-900">IT Help Desk</h1>
-                <p className="text-xs text-gray-600">Support Portal</p>
+                <h1 className="text-lg font-semibold text-white">IT Help Desk</h1>
               </div>
             </div>
           </div>
           <nav className="hidden md:block">
-            <div className="flex items-center space-x-1">
+            <div className="flex items-center space-x-6">
                 <Link href="/">
-                <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium">
+                <Button 
+                  variant="ghost" 
+                  className={cn(
+                    "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                    pathname === "/" ? "bg-black/20 text-white" : "hover:bg-black/10"
+                  )}
+                >
                   Home
                 </Button>
               </Link>
               
               <Link href="/requests/view">
-                <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium">
+                <Button 
+                  variant="ghost" 
+                  className={cn(
+                    "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                    pathname?.startsWith("/requests") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                  )}
+                >
                   Requests
                 </Button>
               </Link>
               
               <Link href="/reports">
-                <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium">
+                <Button 
+                  variant="ghost" 
+                  className={cn(
+                    "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                    pathname?.startsWith("/reports") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                  )}
+                >
                   Reports
                 </Button>
               </Link>
@@ -190,24 +205,30 @@ export default function AppHeader() {
               {session?.user?.isTechnician && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium flex items-center gap-1">
+                    <Button 
+                      variant="ghost" 
+                      className={cn(
+                        "text-white hover:text-white font-medium flex items-center gap-1 px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                        pathname?.startsWith("/technician") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                      )}
+                    >
                       Technician View
-                      <ChevronDown className="h-4 w-4" />
+                      <ChevronDown className="h-3 w-3" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
+                  <DropdownMenuContent align="start" style={{ backgroundColor: '#7d6b3f', borderColor: 'rgba(109, 91, 43, 0.8)' }}>
                     <DropdownMenuItem asChild>
-                      <Link href="/technician/dashboard" className="w-full">
+                      <Link href="/technician/dashboard" className="w-full text-white hover:text-white hover:bg-black/20">
                         Dashboard
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link href="/technician/requests?assignedToCurrentUser=true&viewMode=assigned_to_me&status=open,on_hold" className="w-full">
+                      <Link href="/technician/requests?assignedToCurrentUser=true&viewMode=assigned_to_me&status=open,on_hold" className="w-full text-white hover:text-white hover:bg-black/20">
                         All Requests
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link href="/technician/reports" className="w-full">
+                      <Link href="/technician/reports" className="w-full text-white hover:text-white hover:bg-black/20">
                         Reports
                       </Link>
                     </DropdownMenuItem>
@@ -218,7 +239,13 @@ export default function AppHeader() {
               {/* Only show Admin View if user is an admin */}
               {session?.user?.isAdmin && (
                 <Link href="/admin/settings">
-                  <Button variant="ghost" className="text-gray-700 hover:text-blue-700 hover:bg-blue-50 font-medium">
+                  <Button 
+                    variant="ghost" 
+                    className={cn(
+                      "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                      pathname?.startsWith("/admin") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                    )}
+                  >
                     Admin View
                   </Button>
                 </Link>
@@ -226,23 +253,23 @@ export default function AppHeader() {
             
             </div>
           </nav>
-          <div className="flex items-center space-x-2">
-            <Button variant="ghost" size="icon" className="text-gray-600 hover:text-blue-700 hover:bg-blue-50">
-              <Search className="h-5 w-5" />
+          <div className="flex items-center space-x-3">
+            <Button variant="ghost" size="icon" className="text-white hover:text-white hover:bg-black/10 transition-all duration-200">
+              <Search className="h-4 w-4" />
             </Button>
-            <NotificationDropdown className="text-gray-600 hover:text-blue-700 hover:bg-blue-50" />
+            <NotificationDropdown className="text-white hover:text-white hover:bg-black/10 transition-all duration-200" />
             {/* Only show Settings icon if user is an admin */}
             {session?.user?.isAdmin && (
               <Link href="/admin/settings">
-                <Button variant="ghost" size="icon" className="text-gray-600 hover:text-blue-700 hover:bg-blue-50">
-                  <Settings className="h-5 w-5" />
+                <Button variant="ghost" size="icon" className="text-white hover:text-white hover:bg-black/10 transition-all duration-200">
+                  <Settings className="h-4 w-4" />
                 </Button>
               </Link>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center space-x-2 text-gray-700 hover:text-blue-700 hover:bg-blue-50">
-                  <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center ring-2 ring-blue-200/50">
+                <Button variant="ghost" className="flex items-center space-x-2 text-white hover:text-white hover:bg-black/10 transition-all duration-200 px-3 py-2 rounded-sm">
+                  <div className="w-7 h-7 rounded-full overflow-hidden bg-amber-600 flex items-center justify-center">
                     {session?.user?.profile_image && !imgError ? (
                       <img
                         src={`/uploads/${session.user.profile_image}`}
@@ -254,35 +281,38 @@ export default function AppHeader() {
                       <User className="h-4 w-4 text-white" />
                     )}
                   </div>
-                  <span className="hidden md:block font-medium">
+                  <span className="hidden md:block font-medium text-sm">
                     {session?.user?.name}
                   </span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-56" style={{ backgroundColor: '#7d6b3f', borderColor: 'rgba(109, 91, 43, 0.8)' }}>
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium">
+                    <p className="text-sm font-medium text-white">
                       {session?.user?.name}
                       {session?.user?.suffix}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-white/70">
                       {session?.user?.employee_id}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-white/70">
                       {session?.user?.job_title}
                     </p>
                   </div>
                 </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => {
-                  resetPasswordModal();
-                  setIsChangePasswordOpen(true);
-                }}>
+                <DropdownMenuSeparator style={{ backgroundColor: 'rgba(109, 91, 43, 0.5)' }} />
+                <DropdownMenuItem 
+                  onClick={() => {
+                    resetPasswordModal();
+                    setIsChangePasswordOpen(true);
+                  }}
+                  className="text-white hover:text-white hover:bg-black/20"
+                >
                   <KeyRound className="mr-2 h-4 w-4" />
                   <span>Change Password</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleSignOut}>
+                <DropdownMenuItem onClick={handleSignOut} className="text-white hover:text-white hover:bg-black/20">
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Sign out</span>
                 </DropdownMenuItem>

@@ -187,3 +187,12 @@
 .ql-snow .ql-picker.ql-size .ql-picker-item[data-value=huge]::before {
   content: 'Huge';
 }
+
+/* Login Background */
+.login-background {
+  background-image: url('/ITHD-BG-1600x900.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
