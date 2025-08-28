@@ -18,7 +18,9 @@ import {
   Tag,
   Calendar,
   User,
-  Info
+  Info,
+  ShoppingCart,
+  Ticket
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -76,6 +78,12 @@ interface RequestData {
     email?: string;
     department?: string;
     employeeCode?: string;
+  };
+  // User information for requester display
+  user?: {
+    emp_fname: string;
+    emp_lname: string;
+    department?: string;
   };
 }
 
@@ -260,18 +268,77 @@ export default function MyRequestsPage() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [approvalStatusFilter, setApprovalStatusFilter] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
+  
+  // New filter states for department head functionality
+  const [viewMode, setViewMode] = useState<'own' | 'department'>('own'); // own requests or department requests
+  const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [departments, setDepartments] = useState<{id: string, name: string}[]>([]);
+  const [isDepartmentHead, setIsDepartmentHead] = useState(false);
 
   useEffect(() => {
     if (session) {
+      console.log('Session user:', session.user); // Debug log
+      fetchUserInfo(); // This will now also fetch and set departments for department heads
+      if (!isDepartmentHead) {
+        fetchDepartments(); // Only fetch all departments if not a department head
+      }
       fetchRequests();
     }
-  }, [session, currentPage]);
+  }, [session, currentPage, viewMode, departmentFilter]);
+
+  const fetchUserInfo = async () => {
+    try {
+      const response = await fetch(`/api/users/${session?.user?.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('User data fetched:', data); // Debug log
+        // Check if user is a department head (has departmentsManaged)
+        const isDepHead = data.user?.departmentsManaged && data.user.departmentsManaged.length > 0;
+        console.log('Is department head:', isDepHead, 'Departments managed:', data.user?.departmentsManaged); // Debug log
+        setIsDepartmentHead(isDepHead);
+        
+        // Set only the departments this user manages
+        if (isDepHead) {
+          setDepartments(data.user.departmentsManaged || []);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user info:', error);
+    }
+  };
+
+  const fetchDepartments = async () => {
+    try {
+      const response = await fetch('/api/departments');
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Departments fetched:', data); // Debug log
+        setDepartments(data.departments || []);
+      }
+    } catch (error) {
+      console.error('Error fetching departments:', error);
+    }
+  };
 
   const fetchRequests = async () => {
     try {
       setLoading(true);
-      // Always filter by current user's requests only
-      const response = await fetch(`/api/requests?page=${currentPage}&limit=10&userId=${session?.user?.id}&myRequests=true`);
+      
+      // Build query parameters based on filter mode
+      let queryParams = `page=${currentPage}&limit=10`;
+      
+      if (viewMode === 'own') {
+        // Always filter by current user's requests only for own view
+        queryParams += `&userId=${session?.user?.id}&myRequests=true`;
+      } else if (viewMode === 'department' && departmentFilter !== 'all') {
+        // Filter by department requests when department head views department requests
+        queryParams += `&departmentId=${departmentFilter}`;
+      } else if (viewMode === 'department') {
+        // Show all departments if user is department head and no specific department selected
+        queryParams += `&departmentHead=${session?.user?.id}`;
+      }
+      
+      const response = await fetch(`/api/requests?${queryParams}`);
       
       if (!response.ok) {
         throw new Error('Failed to fetch requests');
@@ -280,6 +347,10 @@ export default function MyRequestsPage() {
       const data = await response.json();
       setRequests(data.requests || []);
       setPagination(data.pagination || { total: 0, pages: 0, current: 1 });
+      
+      // Debug: Check request types
+      console.log('Request types found:', [...new Set((data.requests || []).map(r => r.type))]);
+      console.log('Sample request:', data.requests?.[0]);
     } catch (error) {
       console.error('Error fetching requests:', error);
       toast({
@@ -299,11 +370,20 @@ export default function MyRequestsPage() {
       (request.subject && request.subject.toLowerCase().includes(searchTerm.toLowerCase()));
     
     const matchesStatus = statusFilter === 'all' || request.status === statusFilter;
-    const matchesType = typeFilter === 'all' || request.type === typeFilter;
+    
+    // Fix type filter - get type from formData[4] first, then fallback to request.type
+    const requestType = (request.formData?.['4']?.toLowerCase() || request.type?.toLowerCase() || 'service');
+    const filterType = typeFilter.toLowerCase();
+    const matchesType = typeFilter === 'all' || requestType === filterType;
     
     // Check approval status filter
     const { status: currentApprovalStatus } = getCurrentApprovalStatus(request.approvals);
     const matchesApprovalStatus = approvalStatusFilter === 'ALL' || currentApprovalStatus === approvalStatusFilter;
+
+    // Debug: Log filtering for first few requests
+    if (requests.indexOf(request) < 3) {
+      console.log(`Request ${request.id}: formData[4]="${request.formData?.['4']}", type="${request.type}", requestType="${requestType}", filterType="${filterType}", matchesType=${matchesType}`);
+    }
 
     return matchesSearch && matchesStatus && matchesType && matchesApprovalStatus;
   });
@@ -324,11 +404,11 @@ export default function MyRequestsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen">
+      <div className="h-screen flex flex-col">
         <div className="w-full">
           <div className="p-0 w-full">
-            <div style={{ zoom: '0.8' }}>
-              <div className="space-y-6 p-6">
+            <div style={{ zoom: '0.9' }} className="flex-1 flex flex-col min-h-0">
+              <div className="flex-1 flex flex-col p-6 gap-6 min-h-0">
                 <div className="flex items-center justify-between">
                   <Skeleton className="h-8 w-48" />
                   <Skeleton className="h-10 w-32" />
@@ -339,7 +419,7 @@ export default function MyRequestsPage() {
                   <Skeleton className="h-10 w-32" />
                   <Skeleton className="h-10 w-40" />
                 </div>
-                <div className="space-y-1">
+                <div className="flex-1 space-y-1">
                   {[1, 2, 3, 4, 5].map((i) => (
                     <Skeleton key={i} className="h-16 w-full" />
                   ))}
@@ -354,7 +434,7 @@ export default function MyRequestsPage() {
 
   return (
     <SessionWrapper>
-      <div className="h-screen flex flex-col overflow-hidden">
+      <div className="h-screen flex flex-col">
         {/* Header - integrated into main layout */}
         <header className="bg-white/80 backdrop-blur-xl border-b border-slate-200/60 z-40 flex-shrink-0">
           <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -380,25 +460,61 @@ export default function MyRequestsPage() {
           </div>
         </header>
 
-        {/* Content Area - Scrollable */}
-        <div className="flex-1 overflow-hidden">
-          <div className="h-full overflow-y-auto">
-            <div style={{ zoom: '0.8' }}>
-              <div className="space-y-6 p-6">
-                {/* Filters */}
+        {/* Content Area - Full height minus header */}
+        <div className="flex-1 flex flex-col min-h-0">
+          <div style={{ zoom: '0.9' }} className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 flex flex-col p-6 gap-6 min-h-0">
+              {/* Filters - Fixed height */}
+              <div className="flex-shrink-0">
+                {/* Standard Filters */}
                 <div className="flex flex-col md:flex-row gap-4">
-                  <div className="flex-1">
-                    <div className="relative">
+                  {/* Department Head Filters + Search Row */}
+                  <div className="flex gap-2 items-center flex-1">
+                    {/* Department Head Filters - Inline */}
+                    {isDepartmentHead && (
+                      <>
+                        <Filter className="h-4 w-4 text-gray-500" />
+                        <Select value={viewMode} onValueChange={(value: 'own' | 'department') => setViewMode(value)}>
+                          <SelectTrigger className="w-80 bg-white/50">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="own">My Requests</SelectItem>
+                            <SelectItem value="department">My Departments Requests</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        
+                        {viewMode === 'department' && (
+                          <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+                            <SelectTrigger className="w-80 bg-white/50">
+                              <SelectValue placeholder="Department" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All My Departments</SelectItem>
+                              {departments.map(dept => (
+                                <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        
+                        <div className="w-px h-6 bg-gray-300 mx-1"></div>
+                      </>
+                    )}
+                    
+                    {/* Search Input */}
+                    <div className="relative flex-1">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                       <Input
                         placeholder="Search requests..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10 bg-white/50"
+                        className="pl-10 bg-white/40"
                       />
                     </div>
                   </div>
                   
+                  {/* Other Filters */}
                   <div className="flex gap-2">
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger className="w-32 bg-white/50">
@@ -441,230 +557,245 @@ export default function MyRequestsPage() {
                     </Select>
                   </div>
                 </div>
+              </div>
 
-                {/* Requests Table with Fixed Header */}
-                <div className="bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto min-w-full">
-                    {filteredRequests.length === 0 ? (
-                    <div className="p-12 text-center">
-                      <FileText className="h-12 w-12 mx-auto text-slate-400 mb-4" />
-                      <p className="text-slate-600 mb-2">No requests found</p>
-                      <p className="text-sm text-slate-500">
-                        {searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || approvalStatusFilter !== 'ALL'
-                          ? 'Try adjusting your filters or search terms'
-                          : 'Create your first request to get started'
-                        }
-                      </p>
+              {/* Requests Table - Flexible height */}
+              <div className="flex-1 bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg overflow-hidden min-h-0">
+                <div className="h-full flex flex-col">
+                  {filteredRequests.length === 0 ? (
+                    <div className="flex-1 flex items-center justify-center p-12">
+                      <div className="text-center">
+                        <FileText className="h-12 w-12 mx-auto text-slate-400 mb-4" />
+                        <p className="text-slate-600 mb-2">No requests found</p>
+                        <p className="text-sm text-slate-500">
+                          {searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || approvalStatusFilter !== 'ALL'
+                            ? 'Try adjusting your filters or search terms'
+                            : 'Create your first request to get started'
+                          }
+                        </p>
+                      </div>
                     </div>
                   ) : (
-                    <div className="relative">
-                      {/* Table Container with Fixed Header */}
-                      <div className="overflow-hidden">
-                        {/* Fixed Header */}
-                        <div className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
-                          <div
-                            className="grid gap-2 px-3 py-3 text-sm font-medium text-slate-700"
-                            style={{
-                              gridTemplateColumns:
-                                "60px 2fr 1.5fr 1fr 1fr 1fr 1.5fr 1.5fr 1.5fr",
-                            }}
-                          >
-                            <div>ID</div>
-                            <div>Subject</div>
-                            <div>Requester</div>
-                            <div>Approval Status</div>
-                            <div>Request Status</div>
-                            <div>Priority</div>
-                            <div>DueBy Date</div>
-                            <div>Created</div>
-                            <div>Assigned To</div>
-                          </div>
-                        </div>
-
-                        {/* Scrollable Content */}
-                        <div className="max-h-[500px] overflow-y-auto">
-                          <div className="divide-y divide-slate-200">
-                            {filteredRequests.map((request) => {
-                              const { status: currentApprovalStatus } =
-                                getCurrentApprovalStatus(request.approvals);
-                              const showApprovalStatus = shouldShowApprovalStatus(
-                                request.status,
-                                request.approvals
-                              );
-
-                              return (
-                                <TooltipProvider key={request.id}>
-                                  <div
-                                    className={`grid gap-2 px-3 py-3 transition-all duration-200 cursor-pointer border-l-4 border-transparent hover:border-blue-400 ${getRowBackgroundColor(
-                                      request.status
-                                    )}`}
-                                    style={{
-                                      gridTemplateColumns:
-                                        "60px 2fr 1.5fr 1fr 1fr 1fr 1.5fr 1.5fr 1.5fr",
-                                    }}
-                                    onClick={() =>
-                                      router.push(`/requests/view/${request.id}`)
-                                    }
-                                    title="Click to view request details"
-                                  >
-                                    {/* ID */}
-                                    <div className="flex items-center">
-                                      <span className="text-sm font-mono font-medium">
-                                        #{request.id}
-                                      </span>
-                                    </div>
-
-                                    {/* Subject */}
-                                    <div className="flex items-center">
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <p className="font-medium text-sm truncate cursor-help">
-                                            {request.formData?.["8"] ||
-                                              request.subject ||
-                                              request.templateName ||
-                                              "-"}
-                                          </p>
-                                        </TooltipTrigger>
-                                        <TooltipContent className="max-w-md p-3">
-                                          <div className="text-sm whitespace-pre-line">
-                                            {getTemplateTooltip(request)}
-                                          </div>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </div>
-
-                                    {/* Requester */}
-                                    <div>
-                                      <p className="font-medium text-sm truncate">
-                                        {request.user ? 
-                                          `${request.user.emp_fname} ${request.user.emp_lname}` :
-                                          request.formData?.["1"] ||
-                                          "-"}
-                                      </p>
-                                      <p className="text-xs text-gray-500 truncate">
-                                        {request.user?.department || "-"}
-                                      </p>
-                                    </div>
-
-                                    {/* Approval Status */}
-                                    <div className="flex items-center">
-                                      {showApprovalStatus ? (
-                                        <Badge
-                                          className={`${getApprovalStatusColor(
-                                            currentApprovalStatus
-                                          )} border-0 text-xs`}
-                                        >
-                                          {capitalizeWords(currentApprovalStatus)}
-                                        </Badge>
-                                      ) : (
-                                        <span className="text-gray-400 text-xs">N/A</span>
-                                      )}
-                                    </div>
-
-                                    {/* Request Status */}
-                                    <div className="flex items-center">
-                                      <Badge
-                                        className={`${getStatusColor(
-                                          request.status
-                                        )} border-0 text-xs`}
-                                      >
-                                        <span className="flex items-center gap-1">
-                                          {getStatusIcon(request.status)}
-                                          {capitalizeWords(request.status)}
-                                        </span>
-                                      </Badge>
-                                    </div>
-
-                                    {/* Priority */}
-                                    <div className="flex items-center">
-                                      <Badge
-                                        className={`${getPriorityColor(
-                                          request.formData?.["2"] ||
-                                            request.priority ||
-                                            "Medium"
-                                        )} border-0 text-xs`}
-                                      >
-                                        {capitalizeWords(
-                                          request.formData?.["2"] ||
-                                            request.priority ||
-                                            "-"
-                                        )}
-                                      </Badge>
-                                    </div>
-
-                                    {/* DueBy Date */}
-                                    <div className="flex items-center gap-1 text-xs text-gray-600">
-                                      <Calendar className="h-3 w-3" />
-                                      <span>
-                                        {request.formData?.slaDueDate
-                                          ? formatDate(request.formData.slaDueDate)
-                                          : "-"}
-                                      </span>
-                                    </div>
-
-                                    {/* Created Date */}
-                                    <div className="flex items-center gap-1 text-xs text-gray-600">
-                                      <Calendar className="h-3 w-3" />
-                                      <span>{formatDate(request.createdAt)}</span>
-                                    </div>
-
-                                    {/* Assigned To */}
-                                    <div className="flex items-center gap-1">
-                                      <User className="h-3 w-3 text-gray-500" />
-                                      <span className="text-xs truncate">
-                                        {request.assignedTechnician?.displayName ||
-                                          request.assignedTechnician?.fullName ||
-                                          request.formData?.assignedTechnician ||
-                                          "-"}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </TooltipProvider>
-                              );
-                            })}
-                          </div>
+                    <>
+                      {/* Fixed Header */}
+                      <div className="bg-slate-50 border-b border-slate-200 flex-shrink-0">
+                        <div
+                          className="grid gap-2 px-3 py-3 text-sm font-medium text-slate-700"
+                          style={{
+                            gridTemplateColumns:
+                              "60px 2fr 1.5fr 1fr 1fr 1fr 1.5fr 1.5fr 1.5fr",
+                          }}
+                        >
+                          <div>ID</div>
+                          <div>Subject</div>
+                          <div>Requester</div>
+                          <div>Approval Status</div>
+                          <div>Request Status</div>
+                          <div>Priority</div>
+                          <div>DueBy Date</div>
+                          <div>Created</div>
+                          <div>Assigned To</div>
                         </div>
                       </div>
-                    </div>
 
+                      {/* Scrollable Content */}
+                      <div className="flex-1 overflow-y-auto">
+                        <div className="divide-y divide-slate-200">
+                          {filteredRequests.map((request) => {
+                            const { status: currentApprovalStatus } =
+                              getCurrentApprovalStatus(request.approvals);
+                            const showApprovalStatus = shouldShowApprovalStatus(
+                              request.status,
+                              request.approvals
+                            );
+
+                            return (
+                              <TooltipProvider key={request.id}>
+                                <div
+                                  className={`grid gap-2 px-3 py-3 transition-all duration-200 cursor-pointer border-l-4 border-transparent hover:border-blue-400 ${getRowBackgroundColor(
+                                    request.status
+                                  )}`}
+                                  style={{
+                                    gridTemplateColumns:
+                                      "60px 2fr 1.5fr 1fr 1fr 1fr 1.5fr 1.5fr 1.5fr",
+                                  }}
+                                  onClick={() =>
+                                    router.push(`/requests/view/${request.id}`)
+                                  }
+                                  title="Click to view request details"
+                                >
+                                  {/* ID */}
+                                  <div className="flex items-center gap-2">
+                                    {/* Type Icon - Get type from formData[4] */}
+                                    {(() => {
+                                      const requestType = request.formData?.['4']?.toLowerCase() || request.type?.toLowerCase() || 'unknown';
+                                      
+                                      // Debug logging for first few requests
+                                      if (requests.indexOf(request) < 3) {
+                                        console.log(`Request ${request.id}: formData[4]="${request.formData?.['4']}", type="${request.type}", using="${requestType}"`);
+                                      }
+                                      
+                                      if (requestType === 'service') {
+                                        return <ShoppingCart className="h-4 w-4 text-blue-600" />;
+                                      } else if (requestType === 'incident') {
+                                        return <Ticket className="h-4 w-4 text-red-600" />;
+                                      } else {
+                                        return <FileText className="h-4 w-4 text-gray-500" />;
+                                      }
+                                    })()}
+                                    <span className="text-sm font-mono font-medium">
+                                      #{request.id}
+                                    </span>
+                                  </div>
+
+                                  {/* Subject */}
+                                  <div className="flex items-center">
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <p className="font-medium text-sm break-words cursor-help">
+                                          {request.formData?.["8"] ||
+                                            request.subject ||
+                                            request.templateName ||
+                                            "-"}
+                                        </p>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="max-w-md p-3">
+                                        <div className="text-sm whitespace-pre-line">
+                                          {getTemplateTooltip(request)}
+                                        </div>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </div>
+
+                                  {/* Requester */}
+                                  <div>
+                                    <p className="font-medium text-sm break-words">
+                                      {request.user ? 
+                                        `${request.user.emp_fname} ${request.user.emp_lname}` :
+                                        request.formData?.["1"] ||
+                                        "-"}
+                                    </p>
+                                    <p className="text-xs text-gray-500 break-words">
+                                      {request.user?.department || "-"}
+                                    </p>
+                                  </div>
+
+                                  {/* Approval Status */}
+                                  <div className="flex items-center">
+                                    {showApprovalStatus ? (
+                                      <Badge
+                                        className={`${getApprovalStatusColor(
+                                          currentApprovalStatus
+                                        )} border-0 text-xs px-1.5 py-0.5`}
+                                      >
+                                        {capitalizeWords(currentApprovalStatus)}
+                                      </Badge>
+                                    ) : (
+                                      <span className="text-gray-400 text-xs">N/A</span>
+                                    )}
+                                  </div>
+
+                                  {/* Request Status */}
+                                  <div className="flex items-center">
+                                    <Badge
+                                      className={`${getStatusColor(
+                                        request.status
+                                      )} border-0 text-xs px-1.5 py-0.5`}
+                                    >
+                                      <span className="flex items-center gap-1">
+                                        {getStatusIcon(request.status)}
+                                        {capitalizeWords(request.status)}
+                                      </span>
+                                    </Badge>
+                                  </div>
+
+                                  {/* Priority */}
+                                  <div className="flex items-center">
+                                    <Badge
+                                      className={`${getPriorityColor(
+                                        request.formData?.["2"] ||
+                                          request.priority ||
+                                          "Medium"
+                                      )} border-0 text-xs px-1.5 py-0.5`}
+                                    >
+                                      {capitalizeWords(
+                                        request.formData?.["2"] ||
+                                          request.priority ||
+                                          "-"
+                                      )}
+                                    </Badge>
+                                  </div>
+
+                                  {/* DueBy Date */}
+                                  <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
+                                    <Calendar className="h-3 w-3 flex-shrink-0" />
+                                    <span className="break-words">
+                                      {request.formData?.slaDueDate
+                                        ? formatDate(request.formData.slaDueDate)
+                                        : "-"}
+                                    </span>
+                                  </div>
+
+                                  {/* Created Date */}
+                                  <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
+                                    <Calendar className="h-3 w-3 flex-shrink-0" />
+                                    <span className="break-words">{formatDate(request.createdAt)}</span>
+                                  </div>
+
+                                  {/* Assigned To */}
+                                  <div className="flex items-center gap-1 leading-tight">
+                                    <User className="h-3 w-3 text-gray-500 flex-shrink-0" />
+                                    <span className="break-words">
+                                      {request.assignedTechnician?.displayName ||
+                                        request.assignedTechnician?.fullName ||
+                                        request.formData?.assignedTechnician ||
+                                        "-"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </TooltipProvider>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
                   )}
+                </div>
+              </div>
+
+              {/* Pagination - Fixed at bottom */}
+              {pagination.pages > 1 && (
+                <div className="flex-shrink-0 bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-slate-600">
+                      Showing {((currentPage - 1) * 10) + 1} to {Math.min(currentPage * 10, pagination.total)} of {pagination.total} requests
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage <= 1}
+                        className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-sm text-slate-600">
+                        Page {currentPage} of {pagination.pages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage >= pagination.pages}
+                        className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                      >
+                        Next
+                      </Button>
+                    </div>
                   </div>
                 </div>
-
-                {/* Pagination */}
-                {pagination.pages > 1 && (
-                  <div className="bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-slate-600">
-                        Showing {((currentPage - 1) * 10) + 1} to {Math.min(currentPage * 10, pagination.total)} of {pagination.total} requests
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handlePageChange(currentPage - 1)}
-                          disabled={currentPage <= 1}
-                          className="border-slate-300 text-slate-700 hover:bg-slate-50"
-                        >
-                          Previous
-                        </Button>
-                        <span className="text-sm text-slate-600">
-                          Page {currentPage} of {pagination.pages}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handlePageChange(currentPage + 1)}
-                          disabled={currentPage >= pagination.pages}
-                          className="border-slate-300 text-slate-700 hover:bg-slate-50"
-                        >
-                          Next
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
           </div>
         </div>

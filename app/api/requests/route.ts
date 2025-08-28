@@ -1111,14 +1111,51 @@ export async function GET(request: Request) {
     const status = searchParams.get('status');
     const type = searchParams.get('type');
     const myRequests = searchParams.get('myRequests');
+    const departmentId = searchParams.get('departmentId');
+    const departmentHead = searchParams.get('departmentHead');
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
 
-    console.log('GET /api/requests - userId:', userId, 'status:', status, 'type:', type, 'myRequests:', myRequests);
+    console.log('GET /api/requests - userId:', userId, 'status:', status, 'type:', type, 'myRequests:', myRequests, 'departmentId:', departmentId, 'departmentHead:', departmentHead);
 
     // Build where clause for filtering
     let whereClause: any = {};
 
-    // If myRequests=true, always filter by current user only (regardless of technician status)
-    if (myRequests === 'true') {
+    // Department head filtering logic
+    if (departmentHead && !myRequests) {
+      // Department head viewing department requests
+      const currentUser = await prisma.users.findUnique({
+        where: { id: parseInt(departmentHead) },
+        include: {
+          departmentsManaged: {
+            select: { id: true }
+          }
+        }
+      });
+
+      if (currentUser?.departmentsManaged && currentUser.departmentsManaged.length > 0) {
+        const managedDepartmentIds = currentUser.departmentsManaged.map(d => d.id);
+        
+        if (departmentId && departmentId !== 'all') {
+          // Filter by specific department
+          whereClause.user = {
+            userDepartment: {
+              id: parseInt(departmentId)
+            }
+          };
+        } else {
+          // Filter by all managed departments
+          whereClause.user = {
+            userDepartment: {
+              id: {
+                in: managedDepartmentIds
+              }
+            }
+          };
+        }
+      }
+    } else if (myRequests === 'true') {
+      // Always filter by current user only (regardless of technician status)
       whereClause.userId = parseInt(session.user.id);
       console.log('Filtering by current user only (myRequests=true):', session.user.id);
     } else if (userId && session.user.isTechnician) {
@@ -1140,6 +1177,14 @@ export async function GET(request: Request) {
 
     console.log('WHERE clause:', JSON.stringify(whereClause, null, 2));
 
+    // Calculate pagination
+    const offset = (page - 1) * limit;
+
+    // Get total count for pagination
+    const total = await prisma.request.count({
+      where: whereClause,
+    });
+
     const requests = await prisma.request.findMany({
       where: whereClause,
       include: {
@@ -1150,6 +1195,12 @@ export async function GET(request: Request) {
             emp_lname: true,
             emp_email: true,
             department: true,
+            userDepartment: {
+              select: {
+                id: true,
+                name: true,
+              }
+            }
           }
         },
         approvals: {
@@ -1171,12 +1222,26 @@ export async function GET(request: Request) {
       },
       orderBy: {
         id: 'desc'
-      }
+      },
+      take: limit,
+      skip: offset,
     });
 
-    console.log(`Found ${requests.length} requests`);
+    console.log(`Found ${requests.length} requests (page ${page}, total: ${total})`);
 
-    return NextResponse.json({ success: true, requests });
+    const totalPages = Math.ceil(total / limit);
+
+    return NextResponse.json({ 
+      success: true, 
+      requests,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: totalPages,
+        current: page
+      }
+    });
   } catch (error) {
     console.error('Error fetching requests:', error);
     return NextResponse.json(

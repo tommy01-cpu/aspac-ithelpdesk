@@ -21,6 +21,36 @@ export async function GET(
             roles: true,
           },
         },
+        departmentsManaged: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+          },
+        },
+        userDepartment: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            departmentHead: {
+              select: {
+                id: true,
+                emp_fname: true,
+                emp_lname: true,
+                emp_code: true,
+              },
+            },
+          },
+        },
+        reportingTo: {
+          select: {
+            id: true,
+            emp_fname: true,
+            emp_lname: true,
+            emp_code: true,
+          },
+        },
       },
     });
 
@@ -34,6 +64,9 @@ export async function GET(
     const userWithRoles = {
       ...user,
       roles: user.user_roles.map(ur => ur.roles.name),
+      departmentsManaged: user.departmentsManaged || [],
+      userDepartment: user.userDepartment,
+      reportingTo: user.reportingTo,
     };
 
     return NextResponse.json({
