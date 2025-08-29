@@ -3017,7 +3017,28 @@ export default function RequestViewPage() {
                                         const v = e.target.value;
                                         setResStatus(v);
                                         if (v === 'resolved') {
-                                          // Show Resolve modal immediately when selecting Resolved
+                                          // Check if there are worklogs before allowing resolution
+                                          const fd: any = requestData?.formData || {};
+                                          const worklogs = Array.isArray(fd.worklogs) ? fd.worklogs : [];
+                                          const hasWorkLogs = worklogs.length > 0;
+                                          
+                                          if (!hasWorkLogs) {
+                                            // Reset the dropdown to previous value
+                                            setResStatus('open');
+                                            
+                                            // Show warning toast
+                                            toast({
+                                              title: "Worklog Required",
+                                              description: "You must add at least one worklog before resolving the request.",
+                                              variant: "destructive",
+                                            });
+                                            
+                                            // Show worklog modal
+                                            setShowWorkLogModal(true);
+                                            return;
+                                          }
+                                          
+                                          // Show Resolve modal if worklogs exist
                                           setShowResolveModal(true);
                                         }
                                       }}

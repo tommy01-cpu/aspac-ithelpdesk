@@ -42,8 +42,6 @@ interface User {
   department: string;
 }
 
-const availableUsers: User[] = [];
-
 export default function SupportGroupsPage() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
@@ -363,6 +361,10 @@ export default function SupportGroupsPage() {
     const userId = typeof user === 'number' ? user : user.id;
     const userName = typeof user === 'number' 
       ? (() => {
+          // Ensure activeUsers is defined before searching
+          if (!activeUsers || !Array.isArray(activeUsers)) {
+            return '';
+          }
           const foundUser = activeUsers.find(u => u.id === user);
           return foundUser ? `${foundUser.emp_fname} ${foundUser.emp_lname}` : '';
         })()
@@ -428,6 +430,11 @@ export default function SupportGroupsPage() {
       ? (editingGroup?.technicianIds || [])
       : (newGroup.technicianIds || []);
     
+    // Ensure activeUsers is defined before filtering
+    if (!activeUsers || !Array.isArray(activeUsers)) {
+      return [];
+    }
+    
     return activeUsers.filter(user => !selectedIds.includes(user.id));
   };
 
@@ -481,6 +488,11 @@ export default function SupportGroupsPage() {
     const selectedIds = isEdit 
       ? (editingGroup?.technicianIds || [])
       : (newGroup.technicianIds || []);
+    
+    // Ensure activeUsers is defined before filtering
+    if (!activeUsers || !Array.isArray(activeUsers)) {
+      return [];
+    }
     
     return activeUsers.filter(user => selectedIds.includes(user.id));
   };

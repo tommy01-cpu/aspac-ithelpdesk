@@ -495,7 +495,7 @@ export default function MyRequestsPage() {
               </div>
               <div className="flex items-center gap-2">
                 <Button
-                  onClick={() => router.push('/technician/catalogs?tab=service')}
+                  onClick={() => router.push('/requests/template?tab=service')}
                   className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
                 >
                   <Plus className="h-4 w-4 mr-2" />

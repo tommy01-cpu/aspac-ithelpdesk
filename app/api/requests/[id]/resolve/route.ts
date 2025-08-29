@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { addHistory } from '@/lib/history';
+import { notifyRequestResolved } from '@/lib/notifications';
 
 // Resolve moves a request to "resolved" (not "closed"). Closing is separate (manual or auto-close).
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
@@ -172,6 +173,34 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         details: historyDetails,
       });
     } catch {}
+
+    // Send email notifications for resolved request (only when status changes to resolved)
+    try {
+      const statusChanged = existing.status !== 'resolved';
+      if (statusChanged) {
+        // Get the complete request data with user information for notifications
+        const requestWithUser = await prisma.request.findUnique({
+          where: { id: requestId },
+          include: {
+            user: true,
+          },
+        });
+
+        if (requestWithUser) {
+          // Get template data if available
+          const templateData = null; // Template data not needed for notification, but parameter is required
+          
+          // Send resolved notifications with resolution description
+          const resolutionDescription = closureComments || 'Request has been resolved';
+          await notifyRequestResolved(requestWithUser, templateData, resolutionDescription);
+          
+          console.log(`✅ Resolved notifications sent for request #${requestId}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error sending resolved request notifications:', error);
+      // Don't fail the request resolution if notifications fail
+    }
 
     return NextResponse.json({ ok: true, request: updated });
   } catch (e) {
