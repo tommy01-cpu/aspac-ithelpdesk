@@ -558,6 +558,11 @@ export default function RequestViewPage() {
   const [slaAction, setSlaAction] = useState(''); // 'start' or 'stop'
   const [isAssigning, setIsAssigning] = useState(false);
 
+  // Change Status modal states
+  const [showChangeStatusModal, setShowChangeStatusModal] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
   // Resolution attachment deletion - mark for deletion (don't delete until save)
   const handleDeleteResolutionAttachment = async (attachmentId: string, attachmentName: string) => {
     if (!confirm(`Are you sure you want to remove "${attachmentName}"? It will be deleted when you save.`)) {
@@ -3960,6 +3965,14 @@ export default function RequestViewPage() {
                     <div className="space-y-3">
                       <Button
                         variant="outline"
+                        onClick={() => setShowChangeStatusModal(true)}
+                        className="w-full flex items-center justify-center gap-2"
+                      >
+                        <Settings className="h-4 w-4" />
+                        Change Status
+                      </Button>
+                      <Button
+                        variant="outline"
                         onClick={() => setShowAssignModal(true)}
                         className="w-full flex items-center justify-center gap-2"
                       >
@@ -5065,6 +5078,108 @@ export default function RequestViewPage() {
             </DialogContent>
           </Dialog>
         )}
+
+        {/* Change Status Modal */}
+        <Dialog open={showChangeStatusModal} onOpenChange={setShowChangeStatusModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Change Status</DialogTitle>
+              <DialogDescription>
+                Update the status of this request.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-gray-700 mb-2 block">Request Status</label>
+                <select
+                  className="w-full border rounded px-3 py-2 text-sm"
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                >
+                  <option value="">Select Status</option>
+                  <option value="on_hold">On Hold</option>
+                  <option value="close">Close</option>
+                  <option value="open">Open</option>
+                </select>
+              </div>
+            </div>
+            
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowChangeStatusModal(false)}>
+                Cancel
+              </Button>
+              <Button 
+                disabled={!selectedStatus || isUpdatingStatus}
+                onClick={async () => {
+                  // Show confirmation dialog
+                  const statusLabels: { [key: string]: string } = {
+                    'on_hold': 'On Hold',
+                    'close': 'Close',
+                    'open': 'Open'
+                  };
+                  
+                  const confirmed = window.confirm(
+                    `Are you sure you want to change the status to "${statusLabels[selectedStatus]}"?\n\n` +
+                    'This will update the request status and create a history entry.\n\n' +
+                    'Do you want to continue?'
+                  );
+                  
+                  if (!confirmed) {
+                    return;
+                  }
+
+                  try {
+                    setIsUpdatingStatus(true);
+                    
+                    const response = await fetch(`/api/requests/${requestId}/status`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        status: selectedStatus
+                      }),
+                    });
+                    
+                    if (response.ok) {
+                      toast({
+                        title: "Status Updated",
+                        description: `Request status has been changed to ${statusLabels[selectedStatus]}.`,
+                        className: "bg-green-50 border-green-200 text-green-800"
+                      });
+                      
+                      // Refresh request data to show changes
+                      await fetchRequestData();
+                      setShowChangeStatusModal(false);
+                      setSelectedStatus('');
+                    } else {
+                      const errorData = await response.json();
+                      throw new Error(errorData.error || 'Failed to update status');
+                    }
+                  } catch (error) {
+                    console.error('Error updating status:', error);
+                    toast({
+                      title: "Error",
+                      description: error instanceof Error ? error.message : "Failed to update status.",
+                      variant: "destructive"
+                    });
+                  } finally {
+                    setIsUpdatingStatus(false);
+                  }
+                }}
+              >
+                {isUpdatingStatus ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Updating...
+                  </div>
+                ) : (
+                  "Update Status"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </SessionWrapper>
   );

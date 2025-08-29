@@ -18,8 +18,15 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
 
     const { status, notes, attachmentIds } = await request.json();
+    
+    // Handle different status mappings
+    let actualStatus = status;
+    if (status === 'close') {
+      actualStatus = 'closed'; // Map 'close' to 'closed'
+    }
+    
     const allowed: Array<keyof typeof RequestStatus> = ['open', 'on_hold', 'for_approval', 'resolved', 'closed'] as any;
-    if (!status || !allowed.includes(status)) {
+    if (!actualStatus || !allowed.includes(actualStatus)) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
     }
 
@@ -30,7 +37,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const existing = await prisma.request.findUnique({ where: { id: requestId } });
     if (!existing) return NextResponse.json({ error: 'Request not found' }, { status: 404 });
 
-    const newStatus = (RequestStatus as any)[status] ?? status;
+    const newStatus = (RequestStatus as any)[actualStatus] ?? actualStatus;
 
     // Update request status with Philippine time
     // Create Philippine time by manually adjusting UTC
@@ -50,17 +57,35 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       }
     });
 
+    // Create proper status display labels
+    const statusLabels: { [key: string]: string } = {
+      'on_hold': 'On Hold',
+      'open': 'Open',
+      'close': 'Closed',
+      'closed': 'Closed',
+      'for_approval': 'For Approval',
+      'resolved': 'Resolved'
+    };
+
+    const oldStatusLabel = statusLabels[existing.status.toString()] || existing.status.toString().replace(/_/g, ' ');
+    const newStatusLabel = statusLabels[status] || statusLabels[actualStatus] || String(actualStatus).replace(/_/g, ' ');
+
     // Add history entry with Philippine time (using new Prisma create method)
     await addHistory(prisma, {
       requestId,
       action: 'Status Change',
       actorId: actor.id,
       actorName: `${actor.emp_fname} ${actor.emp_lname}`,
-      actorType: 'technician',
-      details: `Status changed from ${existing.status.toString().replace(/_/g, ' ')} to ${String(status).replace(/_/g, ' ')}` + (notes ? `\nNotes : ${notes.replace(/<[^>]*>/g, '').trim()}` : ''),
+      actorType: 'user',
+      details: `Status changed from ${oldStatusLabel} to ${newStatusLabel}` + (notes ? `\nNotes : ${notes.replace(/<[^>]*>/g, '').trim()}` : ''),
     });
 
-    return NextResponse.json({ ok: true, request: updated });
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Status updated successfully',
+      newStatus: actualStatus,
+      request: updated 
+    });
   } catch (e) {
     console.error('Status update error', e);
     return NextResponse.json({ error: 'Failed to update status' }, { status: 500 });
