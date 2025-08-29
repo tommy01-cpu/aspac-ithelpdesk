@@ -11,7 +11,7 @@ async function testEmailNotification() {
       "2": "Low", 
       "3": "self-service-portal",
       "4": "Service",
-      "5": "for-approval",
+      "5": "for_approval",
       "6": "Test Category 2",
       "8": "Install LOGiX+ Client App - Email Test", 
       "9": "<p>This is a test email notification for tom.mandapat@aspacphils.com and john.sanchez@aspacphils.com.ph</p>",

@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/prisma';
+import nodemailer from 'nodemailer';
+import { getEmailConfigForService } from './email-config';
 
 // Database email template mapping - maps function names to template ID values
 const TEMPLATE_ID_MAPPING = {
@@ -35,12 +37,12 @@ interface DatabaseEmailTemplate {
   template_key: string;
   title: string;
   subject: string;
-  header_html: string;
+  header_html: string | null;
   content_html: string;
-  footer_html: string;
-  to_field: string;
-  cc_field?: string;
-  is_active: boolean;
+  footer_html: string | null;
+  to_field: string | null;
+  cc_field?: string | null;
+  is_active: boolean | null;
 }
 
 // Cache for email templates to avoid database calls on every email send
@@ -138,18 +140,31 @@ export const convertDatabaseTemplateToEmail = (dbTemplate: DatabaseEmailTemplate
     
     console.log('Subject after variable replacement:', subject);
 
-    // Extract content from content_html (remove the wrapper div)
-    let content = dbTemplate.content_html;
+    // Extract content from content_html (remove wrapper if present)
+    let content = dbTemplate.content_html || '';
     
-    // Server-safe content extraction using regex
+    // Server-safe content extraction using regex - try multiple patterns
+    // Pattern 1: div with padding style
     const contentMatch = content.match(/<div[^>]*style="[^"]*padding:\s*32px[^"]*"[^>]*>([\s\S]*?)<\/div>/);
     if (contentMatch) {
       content = contentMatch[1];
+      console.log('Used div wrapper extraction pattern 1');
     } else {
-      // Try alternative pattern for wrapper extraction
+      // Pattern 2: div with class and padding
       const altMatch = content.match(/<div[^>]*class="[^"]*"[^>]*style="[^"]*padding[^"]*"[^>]*>([\s\S]*?)<\/div>/);
       if (altMatch) {
         content = altMatch[1];
+        console.log('Used div wrapper extraction pattern 2');
+      } else {
+        // Pattern 3: Check if content starts with table (like CC template)
+        if (content.trim().startsWith('<table')) {
+          // For table-based templates, use the content as-is
+          console.log('Template is table-based, using content as-is');
+          // content remains unchanged
+        } else {
+          console.log('No wrapper pattern matched, using content as-is');
+          // content remains unchanged for other templates
+        }
       }
     }
 
@@ -187,7 +202,7 @@ export const convertDatabaseTemplateToEmail = (dbTemplate: DatabaseEmailTemplate
     
     // Fallback to basic conversion
     let subject = dbTemplate.subject;
-    let content = dbTemplate.content_html;
+    let content = dbTemplate.content_html || '';
     
     Object.entries(variables).forEach(([key, value]) => {
       const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
@@ -220,6 +235,140 @@ export const getTemplateIdByType = (templateType: TemplateType): number | null =
   return TEMPLATE_ID_MAPPING[templateType] || null;
 };
 
+// Get base URL from environment
+const getBaseUrl = () => {
+  return process.env.NEXTAUTH_URL || 'http://localhost:3000';
+};
+
+// Email configuration
+const createTransporter = async () => {
+  try {
+    const config = await getEmailConfigForService();
+    
+    const transportConfig: any = {
+      host: config.serverName,
+      port: config.port,
+      secure: config.protocol === 'SMTPS', // true for SMTPS, false for SMTP
+      tls: {
+        rejectUnauthorized: false // For development/testing
+      }
+    };
+
+    // Only add auth if username and password are provided from config
+    if (config.username && config.password) {
+      transportConfig.auth = {
+        user: config.username,
+        pass: config.password,
+      };
+    } else if (process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
+      // Fallback to environment variables
+      transportConfig.auth = {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASSWORD,
+      };
+    }
+
+    return nodemailer.createTransport(transportConfig);
+  } catch (error) {
+    console.error('Error creating email transporter with config:', error);
+    
+    // Fallback to environment variables
+    const config: any = {
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
+      tls: {
+        rejectUnauthorized: false // For development/testing
+      }
+    };
+
+    if (process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
+      config.auth = {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASSWORD,
+      };
+    }
+
+    return nodemailer.createTransport(config);
+  }
+};
+
+// Template variable replacement
+export const replaceTemplateVariables = (template: string, variables: Record<string, string>): string => {
+  let result = template;
+  
+  Object.entries(variables).forEach(([key, value]) => {
+    const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
+    result = result.replace(regex, value || '');
+  });
+  
+  return result;
+};
+
+// Email sending interface
+export interface EmailData {
+  to: string | string[];
+  cc?: string | string[];
+  subject: string;
+  message?: string; // Text message (optional)
+  htmlMessage?: string; // HTML message (optional)
+  variables?: Record<string, string>;
+}
+
+// Main email sending function
+export const sendEmail = async (emailData: EmailData): Promise<boolean> => {
+  try {
+    const transporter = await createTransporter();
+    
+    // Replace template variables if provided
+    let subject = emailData.subject;
+    let message = emailData.message || '';
+    let htmlMessage = emailData.htmlMessage || '';
+    
+    if (emailData.variables) {
+      subject = replaceTemplateVariables(subject, emailData.variables);
+      if (emailData.message) {
+        message = replaceTemplateVariables(emailData.message, emailData.variables);
+      }
+      if (emailData.htmlMessage) {
+        htmlMessage = replaceTemplateVariables(emailData.htmlMessage, emailData.variables);
+      }
+    }
+
+    // Prepare mail options
+    const mailOptions: any = {
+      from: `"IT Helpdesk" <${process.env.SMTP_USER}>`,
+      to: Array.isArray(emailData.to) ? emailData.to.join(', ') : emailData.to,
+      cc: emailData.cc ? (Array.isArray(emailData.cc) ? emailData.cc.join(', ') : emailData.cc) : undefined,
+      subject,
+    };
+
+    // Set content - prioritize HTML if available, otherwise use text
+    if (htmlMessage) {
+      mailOptions.html = htmlMessage;
+      // If we have HTML but no text, create a simple text version
+      if (!message) {
+        mailOptions.text = htmlMessage.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+      } else {
+        mailOptions.text = message;
+      }
+    } else if (message) {
+      mailOptions.text = message;
+      // Simple HTML conversion for plain text
+      mailOptions.html = message.replace(/\n/g, '<br>');
+    } else {
+      throw new Error('No message content provided');
+    }
+
+    const result = await transporter.sendMail(mailOptions);
+    console.log('Email sent successfully:', result.messageId);
+    return true;
+  } catch (error) {
+    console.error('Error sending email:', error);
+    return false;
+  }
+};
+
 // Send email using database template by ID
 export const sendEmailWithTemplateId = async (
   templateId: number, 
@@ -236,7 +385,7 @@ export const sendEmailWithTemplateId = async (
     const emailContent = convertDatabaseTemplateToEmail(template, variables);
     
     // Determine recipient
-    let toField = template.to_field;
+    let toField = template.to_field || '';
     Object.entries(variables).forEach(([key, value]) => {
       const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
       toField = toField.replace(regex, value || '');
@@ -268,5 +417,461 @@ export const sendEmailWithTemplateId = async (
   } catch (error) {
     console.error(`Error sending email with template ID ${templateId}:`, error);
     return null;
+  }
+};
+
+// Specific email functions using database templates
+
+// Request assigned to requester email (Template ID 17 - notify-technician-assigned)
+export const sendRequestAssignedRequesterEmail = async (
+  requesterEmail: string, 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending request assigned requester email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(17, variables, requesterEmail);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 17');
+    }
+    
+    const result = await sendEmail({
+      to: requesterEmail,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent, // ✅ Include HTML content
+    });
+    
+    console.log('✅ Request assigned requester email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending request assigned requester email:', error);
+    return false;
+  }
+};
+
+// Request assigned to technician email (Template ID 18 - alert-technician-assigned)
+export const sendRequestAssignedTechnicianEmail = async (
+  technicianEmail: string, 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending request assigned technician email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(18, variables, technicianEmail);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 18');
+    }
+    
+    const result = await sendEmail({
+      to: technicianEmail,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent, // ✅ Include HTML content
+    });
+    
+    console.log('✅ Request assigned technician email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending request assigned technician email:', error);
+    return false;
+  }
+};
+
+// Request created email (Template ID 10 - acknowledge-new-request)
+export const sendRequestCreatedEmail = async (
+  requesterEmail: string, 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending request created email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(10, variables, requesterEmail);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 10');
+    }
+    
+    const result = await sendEmail({
+      to: requesterEmail,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Request created email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending request created email:', error);
+    return false;
+  }
+};
+
+// Request created CC email (Template ID 11 - acknowledge-cc-new-request)
+export const sendRequestCreatedCCEmail = async (
+  ccEmails: string[], 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending request created CC email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(11, variables);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 11');
+    }
+    
+    const result = await sendEmail({
+      to: ccEmails,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Request created CC email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending request created CC email:', error);
+    return false;
+  }
+};
+
+// Approval required email (Template ID 12 - notify-approver-approval)
+export const sendApprovalRequiredEmail = async (
+  approverEmail: string, 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending approval required email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(12, variables, approverEmail);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 12');
+    }
+    
+    const result = await sendEmail({
+      to: approverEmail,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Approval required email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending approval required email:', error);
+    return false;
+  }
+};
+
+// Request approved/rejected email (Template ID 14 - notify-approval-status)
+export const sendRequestApprovedRejectedEmail = async (
+  requesterEmail: string, 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending request approved/rejected email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(14, variables, requesterEmail);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 14');
+    }
+    
+    const result = await sendEmail({
+      to: requesterEmail,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Request approved/rejected email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending request approved/rejected email:', error);
+    return false;
+  }
+};
+
+// Clarification required email (Template ID 15 - notify-clarification)
+export const sendClarificationRequiredEmail = async (
+  requesterEmail: string, 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending clarification required email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(15, variables, requesterEmail);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 15');
+    }
+    
+    const result = await sendEmail({
+      to: requesterEmail,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Clarification required email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending clarification required email:', error);
+    return false;
+  }
+};
+
+// Request resolved email (Template ID 20 - email-user-resolved)
+export const sendRequestResolvedEmail = async (
+  requesterEmail: string, 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending request resolved email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(20, variables, requesterEmail);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 20');
+    }
+    
+    const result = await sendEmail({
+      to: requesterEmail,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Request resolved email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending request resolved email:', error);
+    return false;
+  }
+};
+
+// SLA escalation email (Template ID 19 - notify-sla-escalation)
+export const sendSLAEscalationEmail = async (
+  technicianEmail: string, 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending SLA escalation email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(19, variables, technicianEmail);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 19');
+    }
+    
+    const result = await sendEmail({
+      to: technicianEmail,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ SLA escalation email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending SLA escalation email:', error);
+    return false;
+  }
+};
+
+// Request resolved CC email (Template ID 21 - acknowledge-cc-resolved)
+export const sendRequestResolvedCCEmail = async (
+  ccEmails: string[], 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending request resolved CC email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(21, variables);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 21');
+    }
+    
+    const result = await sendEmail({
+      to: ccEmails,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Request resolved CC email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending request resolved CC email:', error);
+    return false;
+  }
+};
+
+// Request closed CC email (Template ID 22 - acknowledge-cc-closed)
+export const sendRequestClosedCCEmail = async (
+  ccEmails: string[], 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending request closed CC email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(22, variables);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 22');
+    }
+    
+    const result = await sendEmail({
+      to: ccEmails,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Request closed CC email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending request closed CC email:', error);
+    return false;
+  }
+};
+
+// Approval reminder email (Template ID 13 - approval-reminder)
+export const sendApprovalReminderEmail = async (
+  approverEmail: string, 
+  variables: Record<string, string> = {}
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending approval reminder email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(13, variables, approverEmail);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 13');
+    }
+    
+    const result = await sendEmail({
+      to: approverEmail,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Approval reminder email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending approval reminder email:', error);
+    return false;
+  }
+};
+
+// Clarification reminder email (Template ID 16 - clarification-reminder)
+export const sendClarificationReminderEmail = async (
+  requesterEmail: string, 
+  variables: Record<string, string> = {}
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending clarification reminder email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(16, variables, requesterEmail);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 16');
+    }
+    
+    const result = await sendEmail({
+      to: requesterEmail,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Clarification reminder email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending clarification reminder email:', error);
+    return false;
+  }
+};
+
+/**
+ * Send email notification to new approver when added to a request
+ */
+export const sendNewApproverNotificationEmail = async (
+  approverEmail: string,
+  approverName: string,
+  requestDetails: {
+    requestId: number;
+    requestTitle: string;
+    requesterName: string;
+    serviceName: string;
+    categoryName: string;
+    level: number;
+    priority: string;
+    createdAt: Date;
+  },
+  templateType: string = 'APPROVAL_REQUIRED'
+) => {
+  try {
+    // Try to get template from database
+    const templateId = getTemplateIdByType(templateType as TemplateType);
+    if (templateId) {
+      const baseUrl = getBaseUrl();
+      const requestUrl = `${baseUrl}/requests/view/${requestDetails.requestId}`;
+      const approval_link = `${baseUrl}/approvals?requestId=${requestDetails.requestId}`;
+      
+      const variables = {
+        Approver_Name: approverName,
+        Request_ID: requestDetails.requestId.toString(),
+        Request_Title: requestDetails.requestTitle,
+        Request_Subject: requestDetails.requestTitle,
+        Request_Description: `Service: ${requestDetails.serviceName}\nCategory: ${requestDetails.categoryName}`,
+        Requester_Name: requestDetails.requesterName,
+        Service_Name: requestDetails.serviceName,
+        Category_Name: requestDetails.categoryName,
+        Approval_Level: requestDetails.level.toString(),
+        Priority: requestDetails.priority,
+        Created_Date: requestDetails.createdAt.toLocaleDateString(),
+        Request_URL: requestUrl,
+        approval_link: approval_link,
+        Base_URL: baseUrl,
+        Encoded_Approval_URL: encodeURIComponent(approval_link)
+      };
+
+      const emailContent = await sendEmailWithTemplateId(templateId, variables, approverEmail);
+      if (emailContent) {
+        return sendEmail({
+          to: approverEmail,
+          subject: emailContent.subject,
+          message: emailContent.textContent,
+          htmlMessage: emailContent.htmlContent,
+        });
+      }
+    }
+
+    // Fallback template if database template not found
+    const baseUrl = getBaseUrl();
+    const approval_link = `${baseUrl}/approvals?requestId=${requestDetails.requestId}`;
+    
+    const fallbackSubject = `IT HELPDESK: New Approval Request - ${requestDetails.requestId}`;
+    const fallbackMessage = `Dear ${approverName},
+
+You have been added as an approver for the following IT Helpdesk request:
+
+Request ID: ${requestDetails.requestId}
+Title: ${requestDetails.requestTitle}
+Requester: ${requestDetails.requesterName}
+Service: ${requestDetails.serviceName}
+Category: ${requestDetails.categoryName}
+Priority: ${requestDetails.priority}
+Approval Level: ${requestDetails.level}
+
+Please review and take action on this request by clicking the link below:
+${approval_link}
+
+Thank you,
+IT Helpdesk Team`;
+
+    return sendEmail({
+      to: approverEmail,
+      subject: fallbackSubject,
+      message: fallbackMessage,
+    });
+
+  } catch (error) {
+    console.error('Error sending new approver notification email:', error);
+    throw error;
   }
 };

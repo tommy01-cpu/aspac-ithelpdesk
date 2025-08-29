@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { sendEmail } from '@/lib/email';
+import { sendEmail } from '@/lib/database-email-templates';
 import { 
   sendEmailWithTemplateId, 
   getTemplateIdByType, 
@@ -23,11 +23,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`🔍 Processing CC email notification for request ${requestId} with template ${templateKey}`);
+    // 🚫 PREVENT DUPLICATE CC EMAILS
+    // Since CC emails are already sent by lib/notifications.ts during request creation,
+    // we'll skip sending them again to prevent duplicates
+    if (templateKey === 'acknowledge-cc-new-request') {
+      console.log('⚠️ Skipping duplicate CC email - already sent by notifications.ts');
+      return NextResponse.json({ 
+        success: true, 
+        message: 'CC email already sent during request creation - duplicate prevented' 
+      });
+    }
+
+    console.log(`🔍 Processing email notification for request ${requestId} with template ${templateKey}`);
 
     // Fetch request data with user information
     console.log('📋 Fetching request data...');
-    const requestData = await prisma.requests.findUnique({
+    const requestData = await prisma.request.findUnique({
       where: { id: parseInt(requestId) },
       include: {
         user: {
@@ -56,16 +67,26 @@ export async function POST(request: NextRequest) {
     });
 
     // Get template data if available
-    const templateData = await prisma.request_templates.findUnique({
-      where: { id: requestData.templateId || 0 }
+    const templateData = await prisma.template.findUnique({
+      where: { id: parseInt(requestData.templateId) || 0 }
     });
 
     // Parse email_to_notify from form data (field number 10)
     console.log('📧 Checking form data for email notifications...');
     console.log('Form data field 10:', requestData.formData?.['10']);
     
-    const emailsToNotify = requestData.formData?.['10'] ? 
-      requestData.formData['10'].split(',').map((email: string) => email.trim()).filter((email: string) => email) : [];
+    let emailsToNotify = [];
+    const emailField = requestData.formData?.['10'];
+    
+    if (emailField) {
+      if (Array.isArray(emailField)) {
+        // If it's already an array, use it directly
+        emailsToNotify = emailField.filter((email: string) => email && email.trim());
+      } else if (typeof emailField === 'string') {
+        // If it's a string, split by comma
+        emailsToNotify = emailField.split(',').map((email: string) => email.trim()).filter((email: string) => email);
+      }
+    }
 
     console.log('📬 Parsed emails to notify:', emailsToNotify);
     console.log('📊 Number of recipients:', emailsToNotify.length);
@@ -94,7 +115,7 @@ export async function POST(request: NextRequest) {
     // Prepare email variables
     console.log('📝 Preparing email variables...');
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
-    const requestSubject = templateData?.name || 'IT Helpdesk Request';
+    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
     const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
     
     console.log('👤 Requester:', requesterName);

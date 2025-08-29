@@ -76,13 +76,10 @@ import { toast } from '@/hooks/use-toast';
 import { getStatusColor, getPriorityColor } from '@/lib/status-colors';
 
 // Dynamically import ReactQuill to avoid SSR issues
-const ReactQuill = dynamic(
-  () => import('react-quill').then((mod) => mod.default),
-  { 
-    ssr: false,
-    loading: () => <div className="h-32 bg-slate-50 rounded border animate-pulse" />
-  }
-);
+const ReactQuill = dynamic(() => import('react-quill'), {
+  ssr: false,
+  loading: () => <div className="h-32 bg-slate-50 rounded border animate-pulse" />
+});
 
 // Format a duration in hours or minutes; templateData.slaService fields seem to be in hours.
 function formatDurationFromHours(totalHours: number): string {
@@ -956,16 +953,16 @@ export default function RequestPage() {
                   break;
                 case 'status':
                   initialFormData[field.id] = typeof field.defaultValue === 'string'
-                    ? field.defaultValue.toLowerCase().replace(/\s+/g, '-')
+                    ? field.defaultValue.toLowerCase().replace(/\s+/g, '_')
                     : Array.isArray(field.defaultValue)
-                      ? field.defaultValue.map(v => typeof v === 'string' ? v.toLowerCase().replace(/\s+/g, '-') : v)
+                      ? field.defaultValue.map(v => typeof v === 'string' ? v.toLowerCase().replace(/\s+/g, '_') : v)
                       : field.defaultValue;
                   break;
                 case 'select':
                   initialFormData[field.id] = typeof field.defaultValue === 'string'
-                    ? field.defaultValue.toLowerCase().replace(/\s+/g, '-')
+                    ? field.defaultValue.toLowerCase().replace(/\s+/g, '_')
                     : Array.isArray(field.defaultValue)
-                      ? field.defaultValue.map(v => typeof v === 'string' ? v.toLowerCase().replace(/\s+/g, '-') : v)
+                      ? field.defaultValue.map(v => typeof v === 'string' ? v.toLowerCase().replace(/\s+/g, '_') : v)
                       : field.defaultValue;
                   break;
                 case 'multiselect':
@@ -1137,6 +1134,19 @@ export default function RequestPage() {
 
   const handleFieldChange = (fieldId: string, value: any) => {
     console.log(`Field ${fieldId} changed to:`, value, typeof value);
+    
+    // Special debug logging for email-related fields
+    if (fieldId === '10' || fieldId.includes('email') || (typeof value === 'object' && Array.isArray(value) && value.length > 0 && typeof value[0] === 'string' && value[0].includes('@'))) {
+      console.log('🔍 EMAIL FIELD DEBUG:', {
+        fieldId,
+        value,
+        type: typeof value,
+        isArray: Array.isArray(value),
+        arrayLength: Array.isArray(value) ? value.length : 'N/A',
+        currentFormData: formData
+      });
+    }
+    
     setFormData(prev => ({
       ...prev,
       [fieldId]: value
@@ -1315,6 +1325,17 @@ export default function RequestPage() {
     }
   };
 
+  const convertValueToDisplayText = (value: string, options: string[] = []) => {
+    if (!value || !options) return value;
+    
+    // Find the option that when normalized matches the value
+    const matchingOption = options.find(option => 
+      option.toLowerCase().replace(/\s+/g, '_') === value
+    );
+    
+    return matchingOption || value;
+  };
+
   const renderField = (field: FormField) => {
     const value = formData[field.id] || '';
     const userIsTechnician = isCurrentUserTechnician();
@@ -1458,14 +1479,19 @@ export default function RequestPage() {
             required={isRequired}
           >
             <SelectTrigger className={`bg-white/70 border-slate-200 focus:border-slate-400 ${isDisabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}>
-              <SelectValue placeholder={`${field.label.charAt(0).toUpperCase() + field.label.slice(1)}`} />
+              <SelectValue placeholder={`${field.label.charAt(0).toUpperCase() + field.label.slice(1)}`}>
+                {value && convertValueToDisplayText(value, field.options)}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {field.options?.map((option: string) => (
-                <SelectItem key={option} value={option.toLowerCase().replace(/\s+/g, '-')}>
-                  {option}
-                </SelectItem>
-              ))}
+              {field.options?.map((option: string) => {
+                const normalizedValue = option.toLowerCase().replace(/\s+/g, '_');
+                return (
+                  <SelectItem key={option} value={normalizedValue}>
+                    {option}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         );
@@ -1496,26 +1522,47 @@ export default function RequestPage() {
         );
 
       case 'status':
+        console.log('🔍 Status field debug:', {
+          fieldId: field.id,
+          currentValue: value,
+          options: field.options,
+          formData: formData
+        });
         return (
           <Select 
             value={value} 
-            onValueChange={(val) => handleFieldChange(field.id, val)} 
+            onValueChange={(val) => {
+              console.log('🔄 Status changed:', { from: value, to: val });
+              handleFieldChange(field.id, val);
+            }} 
             disabled={isDisabled}
             required={isRequired}
           >
             <SelectTrigger className={`bg-white/70 border-slate-200 focus:border-slate-400 ${isDisabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}>
-              <SelectValue placeholder="Select status" />
-            </SelectTrigger>
-            <SelectContent>
-              {field.options?.map((option: string) => (
-                <SelectItem key={option} value={option.toLowerCase().replace(/\s+/g, '-')}>
+              <SelectValue placeholder="Select status">
+                {value && (
                   <div className="flex items-center gap-2">
-                    <Badge className={getStatusColor(option)} variant="outline">
-                      {option}
+                    <Badge className={getStatusColor(convertValueToDisplayText(value, field.options))} variant="outline">
+                      {convertValueToDisplayText(value, field.options)}
                     </Badge>
                   </div>
-                </SelectItem>
-              ))}
+                )}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {field.options?.map((option: string) => {
+                const normalizedValue = option.toLowerCase().replace(/\s+/g, '_');
+                console.log('📋 Status option:', { original: option, normalized: normalizedValue });
+                return (
+                  <SelectItem key={option} value={normalizedValue}>
+                    <div className="flex items-center gap-2">
+                      <Badge className={getStatusColor(option)} variant="outline">
+                        {option}
+                      </Badge>
+                    </div>
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         );

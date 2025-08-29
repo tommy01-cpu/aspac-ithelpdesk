@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
         const finalRequest = await prisma.request.update({
           where: { id: approval.requestId },
           data: {
-            status: RequestStatus.open,
+            status: RequestStatus.resolved,
             updatedAt: philippineTime, // Use Philippine time (already UTC+8)
             formData: {
               ...(approval.request.formData as any || {}),
@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
               else lines.push(`DueBy Date set to ${fmt(newDue)}`);
             }
             if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
-            lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Open`);
+            lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Resolved`);
             lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
             await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
           } else {
@@ -237,7 +237,7 @@ export async function POST(request: NextRequest) {
               if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDuePH)}`);
               else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
             }
-            lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
+            lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Resolved`);
             lines.push('Technician Auto Assign : NO');
             await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
           }
@@ -471,7 +471,7 @@ export async function POST(request: NextRequest) {
                   const finalRequest = await prisma.request.update({
                     where: { id: approval.requestId },
                     data: {
-                      status: RequestStatus.open,
+                      status: RequestStatus.resolved,
                       updatedAt: philippineTime, // Use Philippine time (+8 hours)
                       formData: {
                         ...(approval.request.formData as any || {}),
@@ -514,7 +514,7 @@ export async function POST(request: NextRequest) {
                         else lines.push(`DueBy Date set to ${fmt(newDue)}`);
                       }
                       if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
-                      lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Open`);
+                      lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Resolved`);
                       lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
                       await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
                     } else {
@@ -552,7 +552,7 @@ export async function POST(request: NextRequest) {
                         if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDuePH)}`);
                         else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
                       }
-                      lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
+                      lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Resolved`);
                       lines.push('Technician Auto Assign : NO');
                       await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
                     }
@@ -595,7 +595,7 @@ export async function POST(request: NextRequest) {
             const updatedRequest = await prisma.request.update({
               where: { id: approval.requestId },
               data: { 
-                status: RequestStatus.open,
+                status: RequestStatus.resolved,
                 updatedAt: philippineTime, // Use Philippine time
                 formData: {
                   ...(approval.request.formData as any || {}),
@@ -663,7 +663,7 @@ export async function POST(request: NextRequest) {
                   if (assignedTechName) {
                     lines.push(`Technician : ${assignedTechName}`);
                   }
-                  lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Open`);
+                  lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Resolved`);
                   lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
 
                   await addHistory(prisma, {
@@ -724,14 +724,62 @@ export async function POST(request: NextRequest) {
 
                   // Try auto-assign directly (best-effort)
                   let assignedTechName: string | undefined;
+                  let assignedTechnicianData: any = null;
                   try {
                     const templateId = updatedRequest.templateId ? parseInt(updatedRequest.templateId) : undefined;
                     const assignment = await autoAssignTechnician(approval.requestId, templateId);
                     if (assignment.success && assignment.technicianName) {
                       assignedTechName = assignment.technicianName;
+                      // Get full technician data for notifications
+                      if (assignment.technicianId) {
+                        assignedTechnicianData = await prisma.users.findUnique({
+                          where: { id: assignment.technicianId },
+                          select: {
+                            id: true,
+                            emp_fname: true,
+                            emp_lname: true,
+                            emp_email: true,
+                          }
+                        });
+                      }
                     }
                   } catch {
                     // ignore
+                  }
+
+                  // 📧 For services: Send technician assignment notifications after full approval
+                  if (assignedTechnicianData) {
+                    try {
+                      const { notifyRequestAssigned } = require('@/lib/notifications');
+                      
+                      const requestWithUserAndTemplate = await prisma.request.findUnique({
+                        where: { id: approval.requestId },
+                        include: {
+                          user: {
+                            select: {
+                              id: true,
+                              emp_fname: true,
+                              emp_lname: true,
+                              emp_email: true,
+                            }
+                          }
+                        }
+                      });
+
+                      // Get template data separately
+                      const templateData = await prisma.template.findUnique({
+                        where: { id: parseInt(requestWithUserAndTemplate?.templateId || '0') }
+                      });
+
+                      if (requestWithUserAndTemplate && templateData) {
+                        console.log('📧 Sending service technician assignment notifications after approval...');
+                        await notifyRequestAssigned(requestWithUserAndTemplate, templateData, assignedTechnicianData);
+                        console.log('✅ Service technician assignment notifications sent successfully');
+                      }
+                    } catch (notificationError) {
+                      console.error('Error sending service technician assignment notifications:', notificationError);
+                      // Don't fail the approval process if notifications fail
+                    }
                   }
 
                   // Consolidated Updated entry
@@ -750,7 +798,7 @@ export async function POST(request: NextRequest) {
                     else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
                   }
                   if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
-                  lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
+                  lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Resolved`);
                   lines.push(`Technician Auto Assign : ${assignedTechName ? 'YES' : 'NO'}`);
 
                   await addHistory(prisma, {
@@ -808,13 +856,61 @@ export async function POST(request: NextRequest) {
 
                 // Best-effort assignment; ignore result if fails
                 let assignedTechName: string | undefined;
+                let assignedTechnicianData: any = null;
                 try {
                   const templateId = updatedRequest.templateId ? parseInt(updatedRequest.templateId) : undefined;
                   const assignment = await autoAssignTechnician(approval.requestId, templateId);
                   if (assignment.success && assignment.technicianName) {
                     assignedTechName = assignment.technicianName;
+                    // Get full technician data for notifications
+                    if (assignment.technicianId) {
+                      assignedTechnicianData = await prisma.users.findUnique({
+                        where: { id: assignment.technicianId },
+                        select: {
+                          id: true,
+                          emp_fname: true,
+                          emp_lname: true,
+                          emp_email: true,
+                        }
+                      });
+                    }
                   }
                 } catch {}
+
+                // 📧 For services: Send technician assignment notifications after full approval
+                if (assignedTechnicianData) {
+                  try {
+                    const { notifyRequestAssigned } = require('@/lib/notifications');
+                    
+                    const requestWithUserAndTemplate = await prisma.request.findUnique({
+                      where: { id: approval.requestId },
+                      include: {
+                        user: {
+                          select: {
+                            id: true,
+                            emp_fname: true,
+                            emp_lname: true,
+                            emp_email: true,
+                          }
+                        }
+                      }
+                    });
+
+                    // Get template data separately
+                    const templateData = await prisma.template.findUnique({
+                      where: { id: parseInt(requestWithUserAndTemplate?.templateId || '0') }
+                    });
+
+                    if (requestWithUserAndTemplate && templateData) {
+                      console.log('📧 Sending service technician assignment notifications after approval...');
+                      await notifyRequestAssigned(requestWithUserAndTemplate, templateData, assignedTechnicianData);
+                      console.log('✅ Service technician assignment notifications sent successfully');
+                    }
+                  } catch (notificationError) {
+                    console.error('Error sending service technician assignment notifications:', notificationError);
+                    // Don't fail the approval process if notifications fail
+                  }
+                }
 
                 const prevDue = (approval.request.formData as any)?.slaDueDate as string | undefined;
                 const fmt = (iso?: string) => {

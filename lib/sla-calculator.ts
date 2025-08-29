@@ -37,36 +37,82 @@ export interface ExclusionRule {
   monthSelection: string;
 }
 
-// Holiday support: read from config/holidays.json if present
-function getHolidaySet(): Set<string> {
+// Holiday support: fetch from database holiday table
+async function getHolidaySetFromDB(): Promise<Set<string>> {
   try {
-    const file = path.resolve(process.cwd(), 'config', 'holidays.json');
-    if (fs.existsSync(file)) {
-      const raw = fs.readFileSync(file, 'utf8');
-      const json = JSON.parse(raw || '{}');
-      const list: string[] = Array.isArray(json?.holidays) ? json.holidays : [];
-      return new Set(list.map(d => String(d).slice(0, 10)));
-    }
+    const holidays = await prisma.holiday.findMany({
+      where: {
+        isActive: true
+      },
+      select: {
+        date: true
+      }
+    });
+    
+    const holidayDates = holidays.map(h => {
+      // Convert date to YYYY-MM-DD format
+      if (h.date instanceof Date) {
+        return h.date.toISOString().split('T')[0];
+      }
+      return String(h.date).slice(0, 10);
+    });
+    
+    console.log('📅 Loaded holidays from database:', holidayDates);
+    return new Set(holidayDates);
   } catch (e) {
-    console.warn('Failed to read holidays.json; continuing without holidays');
+    console.warn('Failed to fetch holidays from database; falling back to holidays.json');
+    
+    // Fallback to JSON file if database fails
+    try {
+      const file = path.resolve(process.cwd(), 'config', 'holidays.json');
+      if (fs.existsSync(file)) {
+        const raw = fs.readFileSync(file, 'utf8');
+        const json = JSON.parse(raw || '{}');
+        const list: string[] = Array.isArray(json?.holidays) ? json.holidays : [];
+        return new Set(list.map(d => String(d).slice(0, 10)));
+      }
+    } catch (fallbackError) {
+      console.warn('Failed to read holidays.json fallback; continuing without holidays');
+    }
+    
+    return new Set<string>();
   }
-  return new Set<string>();
 }
 
-const HOLIDAYS = getHolidaySet();
+// Cache holidays to avoid repeated database calls
+let HOLIDAYS_CACHE: Set<string> | null = null;
+let HOLIDAYS_CACHE_TIMESTAMP = 0;
+const HOLIDAYS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getHolidaySet(): Promise<Set<string>> {
+  const now = Date.now();
+  
+  // Return cached holidays if still valid
+  if (HOLIDAYS_CACHE && (now - HOLIDAYS_CACHE_TIMESTAMP) < HOLIDAYS_CACHE_TTL) {
+    return HOLIDAYS_CACHE;
+  }
+  
+  // Fetch fresh holidays from database
+  HOLIDAYS_CACHE = await getHolidaySetFromDB();
+  HOLIDAYS_CACHE_TIMESTAMP = now;
+  
+  return HOLIDAYS_CACHE;
+}
 
 function toPHT(date: Date): Date {
   // Simple UTC+8 conversion for Philippine Time
   return new Date(date.getTime() + (8 * 60 * 60 * 1000));
 }
 
-function isHoliday(date: Date): boolean {
+async function isHoliday(date: Date): Promise<boolean> {
   const pht = toPHT(date);
   const y = pht.getFullYear();
   const m = (pht.getMonth() + 1).toString().padStart(2, '0');
   const d = pht.getDate().toString().padStart(2, '0');
   const key = `${y}-${m}-${d}`;
-  return HOLIDAYS.has(key);
+  
+  const holidays = await getHolidaySet();
+  return holidays.has(key);
 }
 
 /**
@@ -204,15 +250,16 @@ export async function getOperationalHours(): Promise<OperationalHours | null> {
 /**
  * Check if a given date and time is within working hours
  */
-export function isWithinWorkingHours(
+export async function isWithinWorkingHours(
   date: Date,
   operationalHours: OperationalHours
-): boolean {
+): Promise<boolean> {
   // Holidays are always non-working days unless round-clock
-  if (operationalHours.workingTimeType !== 'round-clock' && isHoliday(date)) {
+  if (operationalHours.workingTimeType !== 'round-clock' && await isHoliday(date)) {
     return false;
   }
-  const pht = toPHT(date);
+  // For SLA calculations, the input date is already in Philippine time from the API
+  const pht = new Date(date);
   const dayOfWeek = pht.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
   const timeString = pht.toTimeString().slice(0, 5); // "HH:MM"
 
@@ -262,10 +309,10 @@ export function isWithinWorkingHours(
 /**
  * Calculate the next working datetime from a given datetime
  */
-export function getNextWorkingDateTime(
+export async function getNextWorkingDateTime(
   fromDate: Date,
   operationalHours: OperationalHours
-): Date {
+): Promise<Date> {
   let currentDate = new Date(fromDate);
   if (operationalHours.workingTimeType === 'round-clock') {
     return currentDate;
@@ -273,7 +320,7 @@ export function getNextWorkingDateTime(
   // Step minute-by-minute until we hit a working minute (respects holidays via isWithinWorkingHours)
   const maxMinutes = 60 * 24 * 14; // up to 2 weeks
   let steps = 0;
-  while (!isWithinWorkingHours(currentDate, operationalHours) && steps < maxMinutes) {
+  while (!await isWithinWorkingHours(currentDate, operationalHours) && steps < maxMinutes) {
     currentDate.setMinutes(currentDate.getMinutes() + 1);
     steps++;
   }
@@ -284,11 +331,11 @@ export function getNextWorkingDateTime(
  * Calculate working hours between two dates
  * This is useful for SLA calculations
  */
-export function calculateWorkingHours(
+export async function calculateWorkingHours(
   startDate: Date,
   endDate: Date,
   operationalHours: OperationalHours
-): number {
+): Promise<number> {
   if (operationalHours.workingTimeType === 'round-clock') {
     return (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60);
   }
@@ -297,7 +344,7 @@ export function calculateWorkingHours(
   let currentDate = new Date(startDate);
 
   while (currentDate < endDate) {
-  if (isWithinWorkingHours(currentDate, operationalHours)) {
+  if (await isWithinWorkingHours(currentDate, operationalHours)) {
       totalHours += 1/60; // Add 1 minute
     }
     currentDate.setMinutes(currentDate.getMinutes() + 1);
@@ -356,7 +403,8 @@ function getRemainingWorkingHoursInDay(
   date: Date,
   operationalHours: OperationalHours
 ): number {
-  const pht = toPHT(date);
+  // For SLA calculations, the input date is already in Philippine time
+  const pht = new Date(date);
   const dayOfWeek = pht.getDay();
   const currentTime = pht.toTimeString().slice(0, 5); // "HH:MM"
 
@@ -441,12 +489,19 @@ export async function calculateSLADueDate(
   // Work with Philippine time directly - input is already in PHT from database
   let currentPHT = new Date(ticketCreatedDate);
   
+  // CRITICAL FIX: If the ticket is created outside working hours, 
+  // move to the next working day start time immediately
+  if (!await isWithinWorkingHours(currentPHT, operationalHours)) {
+    // Move to next working day at start time
+    currentPHT = await getNextWorkingDayStart(currentPHT, operationalHours);
+  }
+  
   // Process day by day until we've consumed all SLA hours
   while (remainingHours > 0) {
     const dayOfWeek = currentPHT.getDay();
     
     // Check if this is a holiday or non-working day
-    if (isHoliday(currentPHT) || !isWorkingDay(dayOfWeek, operationalHours)) {
+    if (await isHoliday(currentPHT) || !isWorkingDay(dayOfWeek, operationalHours)) {
       // Move to next day at 8 AM
       currentPHT.setDate(currentPHT.getDate() + 1);
       currentPHT.setHours(8, 0, 0, 0);
@@ -483,6 +538,74 @@ export async function calculateSLADueDate(
 
   // Return the result directly as Philippine Time
   return currentPHT;
+}
+
+/**
+ * Get the start time of the next working day
+ */
+async function getNextWorkingDayStart(
+  phtDate: Date,
+  operationalHours: OperationalHours
+): Promise<Date> {
+  let nextDay = new Date(phtDate);
+  
+  // If it's after working hours today, try next day
+  // If it's before working hours today, use today
+  // If it's during working hours today, use current time (shouldn't happen in this context)
+  
+  const currentTime = phtDate.toTimeString().slice(0, 5); // "HH:MM"
+  const dayOfWeek = phtDate.getDay();
+  
+  const workingDay = operationalHours.workingDays.find(
+    (day) => day.dayOfWeek === dayOfWeek
+  );
+  
+  let startTime = '08:00';
+  if (workingDay && workingDay.isEnabled && workingDay.scheduleType !== 'not-set') {
+    if (workingDay.scheduleType === 'custom') {
+      startTime = workingDay.customStartTime || '08:00';
+    } else {
+      startTime = operationalHours.standardStartTime || '08:00';
+    }
+    
+    // If it's before working hours today and today is a working day, use today
+    if (currentTime < startTime) {
+      const [sh, sm] = startTime.split(':').map(n => parseInt(n, 10));
+      nextDay.setHours(sh, sm, 0, 0);
+      return nextDay;
+    }
+  }
+  
+  // Otherwise, find next working day
+  for (let i = 1; i <= 7; i++) {
+    nextDay.setDate(nextDay.getDate() + 1);
+    const nextDayOfWeek = nextDay.getDay();
+    
+    if (await isHoliday(nextDay)) {
+      continue;
+    }
+    
+    const nextWorkingDay = operationalHours.workingDays.find(
+      (day) => day.dayOfWeek === nextDayOfWeek
+    );
+    
+    if (nextWorkingDay && nextWorkingDay.isEnabled && nextWorkingDay.scheduleType !== 'not-set') {
+      // Found next working day
+      if (nextWorkingDay.scheduleType === 'custom') {
+        startTime = nextWorkingDay.customStartTime || '08:00';
+      } else {
+        startTime = operationalHours.standardStartTime || '08:00';
+      }
+      
+      const [sh, sm] = startTime.split(':').map(n => parseInt(n, 10));
+      nextDay.setHours(sh, sm, 0, 0);
+      return nextDay;
+    }
+  }
+  
+  // Fallback to 8 AM next day if no working day found
+  nextDay.setHours(8, 0, 0, 0);
+  return nextDay;
 }
 
 /**
@@ -561,30 +684,81 @@ function getRemainingWorkingHoursInDayPHT(
 
 /**
  * Add working hours to a specific time (Philippine time), accounting for breaks
- * Business rule: Breaks do NOT extend SLA time - SLA time continues through breaks
+ * Business rule: Breaks PAUSE SLA time - SLA clock stops during lunch breaks
+ * This ensures accurate SLA calculations that respect operational hours and breaks
  */
 function addWorkingHoursToTimePHT(
   phtDate: Date,
   hoursToAdd: number,
   operationalHours: OperationalHours
 ): Date {
-  const dayOfWeek = phtDate.getDay();
-  
-  const workingDay = operationalHours.workingDays.find(
-    (day) => day.dayOfWeek === dayOfWeek
-  );
-  
-  if (!workingDay) {
-    return phtDate;
-  }
-  
-  // Convert hours to minutes for precision
-  let minutesToAdd = hoursToAdd * 60;
   let currentPHT = new Date(phtDate);
+  let remainingMinutes = hoursToAdd * 60;
   
-  // Simply add the minutes - breaks don't extend SLA time
-  // The SLA clock keeps ticking through lunch breaks
-  currentPHT.setMinutes(currentPHT.getMinutes() + minutesToAdd);
+  // Add time minute by minute, skipping break hours
+  while (remainingMinutes > 0) {
+    const dayOfWeek = currentPHT.getDay();
+    const workingDay = operationalHours.workingDays.find(
+      (day) => day.dayOfWeek === dayOfWeek
+    );
+    
+    if (!workingDay || !workingDay.isEnabled) {
+      // Move to next working day at start time
+      currentPHT.setDate(currentPHT.getDate() + 1);
+      currentPHT.setHours(8, 0, 0, 0);
+      continue;
+    }
+    
+    // Get working hours for the day
+    let startTime: string;
+    let endTime: string;
+    
+    if (workingDay.scheduleType === 'custom') {
+      startTime = workingDay.customStartTime || '08:00';
+      endTime = workingDay.customEndTime || '18:00';
+    } else {
+      startTime = operationalHours.standardStartTime || '08:00';
+      endTime = operationalHours.standardEndTime || '18:00';
+    }
+    
+    const currentTime = currentPHT.toTimeString().slice(0, 5);
+    
+    // If before working hours, move to start of working day
+    if (currentTime < startTime) {
+      const [sh, sm] = startTime.split(':').map(n => parseInt(n, 10));
+      currentPHT.setHours(sh, sm, 0, 0);
+      continue;
+    }
+    
+    // If after working hours, move to next working day
+    if (currentTime >= endTime) {
+      currentPHT.setDate(currentPHT.getDate() + 1);
+      currentPHT.setHours(8, 0, 0, 0);
+      continue;
+    }
+    
+    // Check if current time is within break hours
+    const breakHours = workingDay.breakHours || [];
+    let isInBreak = false;
+    
+    for (const breakHour of breakHours) {
+      if (currentTime >= breakHour.startTime && currentTime < breakHour.endTime) {
+        // We're in a break, move to end of break
+        const [beh, bem] = breakHour.endTime.split(':').map(n => parseInt(n, 10));
+        currentPHT.setHours(beh, bem, 0, 0);
+        isInBreak = true;
+        break;
+      }
+    }
+    
+    if (isInBreak) {
+      continue;
+    }
+    
+    // Add one minute and continue
+    currentPHT.setMinutes(currentPHT.getMinutes() + 1);
+    remainingMinutes--;
+  }
   
   return currentPHT;
 }

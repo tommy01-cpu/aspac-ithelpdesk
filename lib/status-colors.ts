@@ -23,7 +23,7 @@ export type ApprovalStatus =
   | 'rejected'
   | 'approved'
   | 'pending approval'    // legacy support
-  | 'for-approval'        // legacy support
+  | 'for_approval'        // legacy support
   | 'for approval'        // legacy support
   | 'pending'             // legacy support
   | 'pending clarification' // legacy support
@@ -50,7 +50,7 @@ export const getStatusColor = (status: string): string => {
     // For Approval statuses - blue
     case 'for_approval':
     case 'for approval':
-    case 'for-approval':
+    case 'for_approval':
     case 'pending approval':
     case 'pending':
       return 'bg-blue-100 text-blue-800 border-blue-200 status-badge';
@@ -106,7 +106,7 @@ export const getApprovalStatusColor = (status: string): string => {
     
     case 'pending_approval':
     case 'pending approval':
-    case 'for-approval':
+    case 'for_approval':
     case 'for approval':
     case 'pending':
       return 'bg-blue-100 text-blue-800 border-blue-200 status-badge';
@@ -150,7 +150,7 @@ export const getPriorityColor = (priority: string): string => {
  */
 export const normalizeApprovalStatus = (status: string): { normalized: string; display: string } => {
   switch (status?.toLowerCase().trim()) {
-    case 'for-approval':
+    case 'for_approval':
     case 'for approval':
     case 'pending-approval':
     case 'pending approval':
@@ -224,7 +224,7 @@ export const isValidRequestStatus = (status: string): boolean => {
 export const isValidApprovalStatus = (status: string): boolean => {
   const validStatuses: ApprovalStatus[] = [
     'pending_approval', 'for_clarification', 'rejected', 'approved',
-    'pending approval', 'for-approval', 'for approval', 'pending',
+    'pending approval', 'for_approval', 'for approval', 'pending',
     'pending clarification', 'pending-clarification'
   ];
   return validStatuses.includes(status.toLowerCase().trim() as ApprovalStatus);

@@ -263,11 +263,24 @@ export async function POST(request: NextRequest) {
         hour12: false
       }).replace(/(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})/, '$3-$1-$2 $4:$5:$6');
 
+      // Also format assignedDate if it exists to ensure consistency
+      const assignedDatePH = slaStartAt.toLocaleString('en-PH', { 
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit', 
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).replace(/(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})/, '$3-$1-$2 $4:$5:$6');
+
       console.log('💾 Saving SLA data:', {
         slaHours,
         slaDueDate: slaDueDatePH,
         slaCalculatedAt: slaCalculatedAtPH,
         slaStartAt: slaStartAtPH,
+        assignedDate: assignedDatePH,
         slaSource,
         slaId
       });
@@ -276,6 +289,7 @@ export async function POST(request: NextRequest) {
       console.log('💾 Updating database with SLA data...');
       console.log('🕐 SLA Start Time (UTC):', slaStartAt.toISOString());
       console.log('🕐 FormData slaStartAt (PH String - no Z):', slaStartAtPH);
+      console.log('🕐 FormData assignedDate (PH String - no Z):', assignedDatePH);
       
       // Create Philippine time for database updatedAt (same approach as approval action)
       const slaStartAtForDB = new Date(slaStartAt.getTime() + (8 * 60 * 60 * 1000));
@@ -292,6 +306,7 @@ export async function POST(request: NextRequest) {
             slaDueDate: slaDueDatePH,
             slaCalculatedAt: slaCalculatedAtPH,
             slaStartAt: slaStartAtPH,
+            assignedDate: assignedDatePH, // Ensure this is also in PH format
             slaSource,
             ...(slaId ? { slaId: slaId.toString() } : {}),
           }

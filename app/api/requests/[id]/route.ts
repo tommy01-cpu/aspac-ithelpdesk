@@ -99,6 +99,8 @@ export async function GET(
             emp_code: true,
             post_des: true,
             emp_cell: true,
+            landline_no: true,
+            local_no: true,
             department: true,
             emp_status: true,
             profile_image: true,

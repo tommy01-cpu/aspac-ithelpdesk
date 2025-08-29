@@ -8,10 +8,16 @@ import {
   sendRequestAssignedRequesterEmail,
   sendRequestAssignedTechnicianEmail,
   sendRequestResolvedEmail,
+  sendRequestResolvedCCEmail,
   sendSLAEscalationEmail 
-} from '@/lib/email';
+} from '@/lib/database-email-templates';
 import { processImagesForEmailAuto } from './email-image-processor-enhanced';
 import { formatStatusForDisplay } from './status-colors';
+
+// Helper function to get base URL
+const getBaseUrl = () => {
+  return process.env.NEXTAUTH_URL || 'http://localhost:3000';
+};
 
 // Helper function to ensure all email variables have string values
 const sanitizeEmailVariables = (variables: any): Record<string, string> => {
@@ -50,11 +56,15 @@ export interface RequestEmailVariables extends Record<string, string> {
   Request_Description: string;
   Requester_Name: string;
   Requester_Email: string;
-  Request_Title?: string;
-  Approver_Name?: string;
-  Approver_Email?: string;
-  Approval_Comments?: string;
-  Clarification?: string;
+  Request_Title: string;
+  Approver_Name: string;
+  Approver_Email: string;
+  Approval_Comments: string;
+  Clarification: string;
+  Request_URL?: string;
+  Request_Link?: string;
+  Base_URL?: string;
+  Encoded_Request_URL?: string;
 }
 
 // Create in-app notification
@@ -141,14 +151,37 @@ export const notifyRequestCreated = async (requestData: any, templateData: any) 
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requesterEmail = requestData.user.emp_email;
-    const requestSubject = templateData?.name || 'IT Helpdesk Request';
+    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
     const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
     
-    const emailsToNotify = requestData.formData?.emailNotify ? 
-      requestData.formData.emailNotify.split(',').map((email: string) => email.trim()).filter((email: string) => email) : [];
+    const emailsToNotify = (() => {
+      // Use field ID '10' as the primary source for email notifications
+      // This is the actual form field that stores emails to notify
+      const emailField = requestData.formData?.['10'] || [];
+      
+      console.log('🔍 Email notify field check:', {
+        field10: requestData.formData?.['10'],
+        emailNotify: requestData.formData?.emailNotify,
+        emailsToNotify: requestData.formData?.emailsToNotify,
+        selectedField: emailField,
+        note: 'Using field 10 as primary source'
+      });
+      
+      if (Array.isArray(emailField)) {
+        return emailField.filter((email: string) => email && email.trim());
+      } else if (typeof emailField === 'string' && emailField.trim()) {
+        return emailField.split(',').map((email: string) => email.trim()).filter((email: string) => email);
+      }
+      return [];
+    })();
+
+    // Generate base URL and request URLs
+    const baseUrl = getBaseUrl();
+    const requestUrl = `${baseUrl}/requests/view/${requestId}`;
+    const encodedRequestUrl = encodeURIComponent(requestUrl);
 
     // Email variables
     const emailVariables: RequestEmailVariables = {
@@ -159,6 +192,14 @@ export const notifyRequestCreated = async (requestData: any, templateData: any) 
       Requester_Name: requesterName,
       Requester_Email: requesterEmail,
       Request_Title: requestSubject,
+      Approver_Name: '', // Not applicable for request creation
+      Approver_Email: '', // Not applicable for request creation
+      Approval_Comments: '', // Not applicable for request creation
+      Clarification: '', // Not applicable for request creation
+      Request_URL: requestUrl,
+      Request_Link: requestUrl,
+      Base_URL: baseUrl,
+      Encoded_Request_URL: encodedRequestUrl,
     };
 
     // Send email to requester (4.1.1)
@@ -166,11 +207,15 @@ export const notifyRequestCreated = async (requestData: any, templateData: any) 
       await sendRequestCreatedEmail(requesterEmail, sanitizeEmailVariables(emailVariables));
     }
 
-    // Send email to CC users (4.1.2)
-    if (emailsToNotify.length > 0) {
-      await sendRequestCreatedCCEmail(emailsToNotify, sanitizeEmailVariables({
+    // Send email to CC users (4.1.2) - but exclude the requester's email to avoid duplicates
+    const ccEmailsToNotify = emailsToNotify.filter(email => 
+      email.toLowerCase() !== requesterEmail.toLowerCase()
+    );
+    
+    if (ccEmailsToNotify.length > 0) {
+      await sendRequestCreatedCCEmail(ccEmailsToNotify, sanitizeEmailVariables({
         ...emailVariables,
-        Emails_To_Notify: emailsToNotify.join(', '),
+        Emails_To_Notify: ccEmailsToNotify.join(', '),
       }));
     }
 
@@ -179,7 +224,7 @@ export const notifyRequestCreated = async (requestData: any, templateData: any) 
       userId: requestData.userId,
       type: 'REQUEST_CREATED',
       title: `Request Created: #${requestId}`,
-      message: `Your request "${requestSubject}" has been submitted and is pending approval.`,
+      message: `Your request "${requestSubject}" has been submitted.`,
       data: { requestId, status: requestData.status },
     });
 
@@ -213,7 +258,7 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
   try {
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
-    const requestSubject = templateData?.name || 'IT Helpdesk Request';
+    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
     const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
@@ -221,6 +266,13 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
     
     const approverEmail = approverData.emp_email;
     const approverName = `${approverData.emp_fname} ${approverData.emp_lname}`.trim();
+
+    // Generate base URL and request URLs
+    const baseUrl = getBaseUrl();
+    const requestUrl = `${baseUrl}/requests/view/${requestId}`;
+    const approvalUrl = `${baseUrl}/requests/approvals/${requestId}`;
+    const encodedRequestUrl = encodeURIComponent(requestUrl);
+    const encodedApprovalUrl = encodeURIComponent(approvalUrl);
 
     // Email variables
     const emailVariables: RequestEmailVariables = {
@@ -230,8 +282,17 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
       Request_Description: requestDescription,
       Requester_Name: requesterName,
       Requester_Email: requestData.user.emp_email,
+      Request_Title: requestSubject,
       Approver_Name: approverName,
       Approver_Email: approverEmail,
+      Approval_Comments: '', // Not applicable for approval request
+      Clarification: '', // Not applicable for approval request
+      Request_URL: requestUrl,
+      Request_Link: requestUrl,
+      Base_URL: baseUrl,
+      Encoded_Request_URL: encodedRequestUrl,
+      Encoded_Approval_URL: encodedApprovalUrl,
+      approval_link: approvalUrl,
     };
 
     // Send email to approver
@@ -271,11 +332,16 @@ export const notifyRequestApprovedRejected = async (
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requesterEmail = requestData.user.emp_email;
-    const requestSubject = templateData?.name || 'IT Helpdesk Request';
+    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
     const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+
+    // Generate base URL and request URLs
+    const baseUrl = getBaseUrl();
+    const requestUrl = `${baseUrl}/requests/view/${requestId}`;
+    const encodedRequestUrl = encodeURIComponent(requestUrl);
 
     // Email variables
     const emailVariables: RequestEmailVariables = {
@@ -286,8 +352,16 @@ export const notifyRequestApprovedRejected = async (
       Request_Title: requestSubject,
       Requester_Name: requesterName,
       Requester_Email: requesterEmail,
+      Approver_Name: '', // TODO: Add approver name if available
+      Approver_Email: '', // TODO: Add approver email if available
+      Approval_Comments: approvalComment,
+      Clarification: '', // Not applicable for approval outcome
       Request_Approval_Status: approvalStatus.toUpperCase(),
       Request_Approval_Comment: approvalComment,
+      Request_URL: requestUrl,
+      Request_Link: requestUrl,
+      Base_URL: baseUrl,
+      Encoded_Request_URL: encodedRequestUrl,
     };
 
     // Send email to requester
@@ -320,7 +394,7 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requesterEmail = requestData.user.emp_email;
-    const requestSubject = templateData?.name || 'IT Helpdesk Request';
+    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
     const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
@@ -329,6 +403,13 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
     const technicianName = `${technicianData.emp_fname} ${technicianData.emp_lname}`.trim();
     const technicianEmail = technicianData.emp_email;
     const dueDate = requestData.formData?.slaDueDate || 'Not specified';
+
+    // Generate base URL and request URLs
+    const baseUrl = getBaseUrl();
+    const requestUrl = `${baseUrl}/requests/view/${requestId}`;
+    const technicianUrl = `${baseUrl}/technician/requests/${requestId}`;
+    const encodedRequestUrl = encodeURIComponent(requestUrl);
+    const encodedTechnicianUrl = encodeURIComponent(technicianUrl);
 
     // Email variables for requester
     const requesterEmailVariables: RequestEmailVariables = {
@@ -339,7 +420,15 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
       Request_Title: requestSubject,
       Requester_Name: requesterName,
       Requester_Email: requesterEmail,
+      Approver_Name: '', // Not applicable for assignment
+      Approver_Email: '', // Not applicable for assignment
+      Approval_Comments: '', // Not applicable for assignment
+      Clarification: '', // Not applicable for assignment
       Technician_Name: technicianName,
+      Request_URL: requestUrl,
+      Request_Link: requestUrl,
+      Base_URL: baseUrl,
+      Encoded_Request_URL: encodedRequestUrl,
     };
 
     // Email variables for technician
@@ -351,8 +440,17 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
       Request_Title: requestSubject,
       Requester_Name: requesterName,
       Requester_Email: requesterEmail,
+      Approver_Name: '', // Not applicable for assignment
+      Approver_Email: '', // Not applicable for assignment
+      Approval_Comments: '', // Not applicable for assignment
+      Clarification: '', // Not applicable for assignment
       Technician_Name: technicianName,
       Due_By_Date: dueDate,
+      Request_URL: technicianUrl,
+      Request_Link: technicianUrl,
+      Base_URL: baseUrl,
+      Encoded_Request_URL: encodedRequestUrl,
+      Encoded_Technician_URL: encodedTechnicianUrl,
     };
 
     // Send email to requester (4.1.8)
@@ -400,15 +498,41 @@ export const notifyRequestResolved = async (
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requesterEmail = requestData.user.emp_email;
-    const requestSubject = templateData?.name || 'IT Helpdesk Request';
+    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
     const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
     
-    const emailsToNotify = requestData.formData?.emailNotify ? 
-      requestData.formData.emailNotify.split(',').map((email: string) => email.trim()).filter((email: string) => email) : [];
+    const emailsToNotify = (() => {
+      // Check multiple possible field names for email notifications
+      const emailField = requestData.formData?.emailNotify || 
+                         requestData.formData?.emailsToNotify ||
+                         requestData.formData?.['10'] ||
+                         requestData.formData?.email_to_notify ||
+                         [];
+      
+      console.log('🔍 Email notify field check (resolved):', {
+        emailNotify: requestData.formData?.emailNotify,
+        emailsToNotify: requestData.formData?.emailsToNotify,
+        field10: requestData.formData?.['10'],
+        email_to_notify: requestData.formData?.email_to_notify,
+        selectedField: emailField
+      });
+      
+      if (Array.isArray(emailField)) {
+        return emailField.filter((email: string) => email && email.trim());
+      } else if (typeof emailField === 'string' && emailField.trim()) {
+        return emailField.split(',').map((email: string) => email.trim()).filter((email: string) => email);
+      }
+      return [];
+    })();
     const closeRequestLink = `http://192.168.1.85:3000/requests/view/${requestId}`;
+
+    // Generate base URL and request URLs
+    const baseUrl = getBaseUrl();
+    const requestUrl = `${baseUrl}/requests/view/${requestId}`;
+    const encodedRequestUrl = encodeURIComponent(requestUrl);
 
     // Email variables
     const emailVariables: RequestEmailVariables = {
@@ -418,9 +542,18 @@ export const notifyRequestResolved = async (
       Request_Description: requestDescription,
       Requester_Name: requesterName,
       Requester_Email: requesterEmail,
+      Request_Title: requestSubject,
+      Approver_Name: '', // Not applicable for resolution
+      Approver_Email: '', // Not applicable for resolution
+      Approval_Comments: '', // Not applicable for resolution
+      Clarification: '', // Not applicable for resolution
       Resolution_Description: resolutionDescription,
       Request_Resolution: resolutionDescription,
       Close_Request_Link: closeRequestLink,
+      Request_URL: requestUrl,
+      Request_Link: requestUrl,
+      Base_URL: baseUrl,
+      Encoded_Request_URL: encodedRequestUrl,
     };
 
     // Send email to requester (4.1.11)
@@ -430,16 +563,7 @@ export const notifyRequestResolved = async (
 
     // Send email to CC users (4.1.12)
     if (emailsToNotify.length > 0) {
-      // Use REQUEST_RESOLVED_CC template for CC users
-      const { sendEmail, EMAIL_TEMPLATES } = await import('@/lib/email');
-      const template = EMAIL_TEMPLATES.REQUEST_RESOLVED_CC;
-      
-      await sendEmail({
-        to: emailsToNotify,
-        subject: template.subject,
-        message: template.template,
-        variables: sanitizeEmailVariables(emailVariables)
-      });
+      await sendRequestResolvedCCEmail(emailsToNotify, sanitizeEmailVariables(emailVariables));
     }
 
     // Create in-app notification for requester
@@ -481,7 +605,7 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
   try {
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
-    const requestSubject = templateData?.name || 'IT Helpdesk Request';
+    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
     const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
@@ -490,6 +614,13 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
     const technicianName = `${technicianData.emp_fname} ${technicianData.emp_lname}`.trim();
     const technicianEmail = technicianData.emp_email;
     const dueDate = requestData.formData?.slaDueDate || 'Not specified';
+
+    // Generate base URL and request URLs
+    const baseUrl = getBaseUrl();
+    const requestUrl = `${baseUrl}/requests/view/${requestId}`;
+    const technicianUrl = `${baseUrl}/technician/requests/${requestId}`;
+    const encodedRequestUrl = encodeURIComponent(requestUrl);
+    const encodedTechnicianUrl = encodeURIComponent(technicianUrl);
 
     // Email variables
     const emailVariables: RequestEmailVariables = {
@@ -500,8 +631,17 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
       Request_Title: requestSubject,
       Requester_Name: requesterName,
       Requester_Email: requestData.user.emp_email,
+      Approver_Name: '', // Not applicable for SLA escalation
+      Approver_Email: '', // Not applicable for SLA escalation
+      Approval_Comments: '', // Not applicable for SLA escalation
+      Clarification: '', // Not applicable for SLA escalation
       Technician_Name: technicianName,
       Due_By_Date: dueDate,
+      Request_URL: technicianUrl,
+      Request_Link: technicianUrl,
+      Base_URL: baseUrl,
+      Encoded_Request_URL: encodedRequestUrl,
+      Encoded_Technician_URL: encodedTechnicianUrl,
     };
 
     // Send email to technician
@@ -566,6 +706,11 @@ export const sendApprovalOutcomeNotification = async (
     const rawRequestDescription = requestData.formData?.description || requestData.formData?.details || 'No description provided';
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
 
+    // Generate base URL and request URLs
+    const baseUrl = getBaseUrl();
+    const requestUrl = `${baseUrl}/requests/view/${requestId}`;
+    const encodedRequestUrl = encodeURIComponent(requestUrl);
+
     // Email variables - Only include comments if action is 'rejected'
     const emailVariables: RequestEmailVariables = {
       Request_ID: requestId.toString(),
@@ -575,18 +720,20 @@ export const sendApprovalOutcomeNotification = async (
       Requester_Name: requesterName,
       Requester_Email: requesterEmail,
       Request_Title: requestSubject,
+      Approver_Name: '', // TODO: Add approver name if available
+      Approver_Email: '', // TODO: Add approver email if available
+      Approval_Comments: action === 'rejected' && comments ? comments : '',
+      Clarification: '', // Not applicable for approval outcome
+      Request_URL: requestUrl,
+      Request_Link: requestUrl,
+      Base_URL: baseUrl,
+      Encoded_Request_URL: encodedRequestUrl,
     };
-
-    // Only add rejection comments if action is 'rejected' and comments exist
-    if (action === 'rejected' && comments) {
-      emailVariables.Approval_Comments = comments;
-    }
 
     // Send email notification to requester
     await sendRequestApprovedRejectedEmail(requesterEmail, sanitizeEmailVariables(emailVariables));
     
     // Create in-app notification for approval outcome
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
     const notificationTitle = action === 'approved' ? 
       `Request #${requestId} Approved` : 
       `Request #${requestId} Rejected`;
@@ -663,6 +810,11 @@ export const sendClarificationRequestNotification = async (
     const rawRequestDescription = requestData.formData?.description || requestData.formData?.details || requestData.formData?.['9'] || 'No description provided';
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
 
+    // Generate base URL and request URLs
+    const baseUrl = getBaseUrl();
+    const requestUrl = `${baseUrl}/requests/view/${requestId}`;
+    const encodedRequestUrl = encodeURIComponent(requestUrl);
+
     // Email variables
     const emailVariables: RequestEmailVariables = {
       Request_ID: requestId.toString(),
@@ -672,14 +824,20 @@ export const sendClarificationRequestNotification = async (
       Requester_Name: requesterName,
       Requester_Email: requesterEmail,
       Request_Title: requestSubject,
+      Approver_Name: '', // Not applicable for clarification request
+      Approver_Email: '', // Not applicable for clarification request
+      Approval_Comments: '', // Not applicable for clarification request
       Clarification: comments || 'Clarification required for your request', // Use provided comment or default message
+      Request_URL: requestUrl,
+      Request_Link: requestUrl,
+      Base_URL: baseUrl,
+      Encoded_Request_URL: encodedRequestUrl,
     };
 
     // Send email notification to requester
     await sendClarificationRequiredEmail(requesterEmail, sanitizeEmailVariables(emailVariables));
     
     // Create in-app notification for clarification request
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
     const notificationTitle = `Clarification Required for Request #${requestId}`;
     const notificationMessage = `Clarification is required for your request "${requestSubject}".${comments ? ` Message: ${comments}` : ''}`;
     

@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 // GET /api/email-templates/[id] - Get a single template
 export async function GET(
@@ -31,8 +29,6 @@ export async function GET(
       { error: 'Failed to fetch template' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -89,8 +85,6 @@ export async function PUT(
       { error: 'Failed to update template' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -120,7 +114,5 @@ export async function DELETE(
       { error: 'Failed to delete template' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

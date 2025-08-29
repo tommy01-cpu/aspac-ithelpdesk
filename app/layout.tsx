@@ -1,11 +1,15 @@
 import './globals.css';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Nunito_Sans } from 'next/font/google';
 import { SessionProvider } from './providers/session-provider';
 import HeaderVisibility from '../components/header-visibility';
 import { Toaster } from '@/components/ui/toaster';
 
 const inter = Inter({ subsets: ['latin'] });
+const nunitoSans = Nunito_Sans({ 
+  subsets: ['latin'],
+  variable: '--font-nunito-sans',
+});
 
 export const metadata: Metadata = {
   title: 'IT Help Desk - ASPAC Philippines',
@@ -19,7 +23,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={`${inter.className} ${nunitoSans.variable}`}>
         <SessionProvider>
           <HeaderVisibility>
             {children}

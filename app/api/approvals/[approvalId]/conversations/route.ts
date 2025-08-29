@@ -7,7 +7,7 @@ import { authOptions } from '@/lib/auth';
 import { addHistory } from '@/lib/history';
 import { getDatabaseTimestamp, normalizeClientTimestamp } from '@/lib/server-time-utils';
 import { sendEmailWithTemplateId } from '@/lib/database-email-templates';
-import { sendEmail } from '@/lib/email';
+import { sendEmail } from '@/lib/database-email-templates';
 import { createNotification } from '@/lib/notifications';
 import { prisma } from '@/lib/prisma';
 

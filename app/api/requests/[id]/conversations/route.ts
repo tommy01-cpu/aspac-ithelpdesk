@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { sendEmailWithTemplateId } from '@/lib/database-email-templates';
-import { sendEmail } from '@/lib/email';
+import { sendEmail } from '@/lib/database-email-templates';
 import { createNotification } from '@/lib/notifications';
 
 export async function GET(

@@ -1658,7 +1658,24 @@ Top - utmost action needed as classified by Management` : '',
             {field.options
               ?.filter(option => option && option.trim() !== '') // Filter out empty options
               ?.map((option, index) => {
-                const value = option.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || `option-${index}`;
+                // Special mapping for status values to match database enums
+                let value;
+                // Define status mapping that applies to any field with status options
+                const statusMap: { [key: string]: string } = {
+                  'For Approval': 'for_approval',
+                  'Cancelled': 'cancelled',
+                  'Open': 'open',
+                  'On-Hold': 'on_hold',
+                  'Resolved': 'resolved',
+                  'Closed': 'closed'
+                };
+                
+                if (field.type === 'status' || statusMap[option]) {
+                  // Use status mapping for status fields or any field with status options
+                  value = statusMap[option] || option.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+                } else {
+                  value = option.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || `option-${index}`;
+                }
                 return (
                   <div key={index} className="flex items-center space-x-2">
                     <RadioGroupItem 

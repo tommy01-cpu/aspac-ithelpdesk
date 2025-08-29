@@ -541,7 +541,7 @@ export default function MyRequestsPage() {
                             <div>Request Status</div>
                             <div>Priority</div>
                             <div>DueBy Date</div>
-                            <div>Created</div>
+                            <div>Created Date</div>
                             <div>Assigned To</div>
                           </div>
                         </div>

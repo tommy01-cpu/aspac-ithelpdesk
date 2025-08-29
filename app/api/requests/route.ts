@@ -5,7 +5,7 @@ import { authOptions } from '@/lib/auth';
 import { getDatabaseTimestamp } from '@/lib/server-time-utils';
 import { addHistory } from '@/lib/history';
 import { calculateSLADueDate } from '@/lib/sla-calculator';
-import { notifyRequestCreated, notifyApprovalRequired } from '@/lib/notifications';
+import { notifyRequestCreated, notifyApprovalRequired, notifyRequestAssigned } from '@/lib/notifications';
 
 // Define the status enums as constants to match the database enums
 const REQUEST_STATUS = {
@@ -333,12 +333,13 @@ export async function POST(request: Request) {
     // Create the request in the database
     // Create Philippine time that will be stored correctly in UTC database
     const now = new Date();
-    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // Add 8 hours to store as Philippine time in UTC
+    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); 
+    const philippineTimeLocal = new Date(now.getTime() ); // Add 8 hours to store as Philippine time in UTC
     console.log('🕐 Current Philippine time:', philippineTime.toString());
     console.log('🕐 UTC equivalent (will be stored):', philippineTime.toISOString());
     
     // Create consistent timestamp string for SLA display (same format as SLA assignment route)
-    const philippineTimeString = philippineTime.toLocaleString('en-PH', { 
+    const philippineTimeString = philippineTimeLocal.toLocaleString('en-PH', { 
       timeZone: 'Asia/Manila',
       year: 'numeric',
       month: '2-digit', 
@@ -378,6 +379,9 @@ export async function POST(request: Request) {
         userId: actualUserId, // Use the determined user ID
         formData: {
           ...formData,
+          // Normalize email notification field for consistent access
+          // REMOVED: emailNotify normalization to prevent duplicate emails
+          // Use field '10' directly in notifications instead
           ...(slaData && {
             slaId: slaData.id,
             slaName: slaData.name,
@@ -403,6 +407,41 @@ export async function POST(request: Request) {
     console.log('  - Database updatedAt (Date):', philippineTime.toString());
     console.log('  - SLA slaStartAt (String):', philippineTimeString);
     console.log('  - Both represent the same moment in time');
+
+    // 📧 Flag to prevent duplicate notifications
+    let notificationsSent = false;
+
+    // 📧 PRIORITY: Send request creation notifications FIRST (for non-incident requests)
+    // Note: Incident requests have their own specific notification flow below
+    console.log('🔍 Request type check - type:', type, 'isIncident:', type === 'incident');
+    if (type !== 'incident') {
+      try {
+        const requestWithUser = await prisma.request.findUnique({
+          where: { id: newRequest.id },
+          include: {
+            user: {
+              select: {
+                id: true,
+                emp_fname: true,
+                emp_lname: true,
+                emp_email: true,
+                department: true,
+              }
+            }
+          }
+        });
+
+        if (requestWithUser && template) {
+          console.log('📧 PRIORITY: Sending NON-INCIDENT request creation notifications first...');
+          await notifyRequestCreated(requestWithUser, template);
+          console.log('✅ PRIORITY: NON-INCIDENT request creation notifications sent successfully');
+          notificationsSent = true;
+        }
+      } catch (notificationError) {
+        console.error('Error sending non-incident request creation notifications:', notificationError);
+        // Don't fail the request creation if notifications fail
+      }
+    }
 
     // 📝 STANDARD HISTORY ENTRY 1: Request Created (Priority 1)
     if (requestUser) {
@@ -453,6 +492,39 @@ export async function POST(request: Request) {
       });
       console.log('✅ Created history entry: Incident Opened');
 
+      // 📧 Send request creation notifications FIRST (before technician assignment)
+      console.log('🔍 INCIDENT notification check - type:', type, 'isIncident:', type === 'incident', 'notificationsSent:', notificationsSent);
+      if (!notificationsSent) {
+        try {
+          const requestWithUser = await prisma.request.findUnique({
+            where: { id: newRequest.id },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  emp_fname: true,
+                  emp_lname: true,
+                  emp_email: true,
+                  department: true,
+                }
+              }
+            }
+          });
+
+          if (requestWithUser && template) {
+            console.log('📧 Sending INCIDENT request creation notifications...');
+            await notifyRequestCreated(requestWithUser, template);
+            console.log('✅ INCIDENT request creation notifications sent successfully');
+            notificationsSent = true;
+          }
+        } catch (notificationError) {
+          console.error('Error sending incident request creation notifications:', notificationError);
+          // Don't fail the request creation if notifications fail
+        }
+      } else {
+        console.log('⚠️ Skipping incident notifications - already sent for this request');
+      }
+
       // Auto-assign technician if none assigned
       const assignedTechnicianId = formData.assignedTechnicianId;
       if (!assignedTechnicianId || assignedTechnicianId === '') {
@@ -498,6 +570,32 @@ export async function POST(request: Request) {
             details: `Automatically assigned to ${availableTechnician.displayName}`,
           });
           console.log('✅ Created history entry: Auto-Assigned to', availableTechnician.displayName);
+
+          // 📧 For incidents: Send technician assignment notifications immediately
+          try {
+            const requestWithUser = await prisma.request.findUnique({
+              where: { id: newRequest.id },
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    emp_fname: true,
+                    emp_lname: true,
+                    emp_email: true,
+                  }
+                }
+              }
+            });
+
+            if (requestWithUser && availableTechnician.user) {
+              console.log('📧 Sending incident technician assignment notifications...');
+              await notifyRequestAssigned(requestWithUser, template, availableTechnician.user);
+              console.log('✅ Incident technician assignment notifications sent successfully');
+            }
+          } catch (notificationError) {
+            console.error('Error sending incident technician assignment notifications:', notificationError);
+            // Don't fail the request creation if notifications fail
+          }
         } else {
           console.log('⚠️ No available technician found for auto-assignment');
         }
@@ -595,7 +693,6 @@ export async function POST(request: Request) {
                       comments: 'Automatically approved for incident request',
                       sentOn: philippineTime,
                       actedOn: philippineTime,
-                      createdAt: philippineTime,
                       updatedAt: philippineTime,
                     }
                   });
@@ -1045,34 +1142,6 @@ export async function POST(request: Request) {
         console.error('Error linking attachments:', attachmentError);
         // Don't fail the request creation if attachment linking fails
       }
-    }
-
-    // 📧 Send notifications and emails for request creation
-    try {
-      // Get the full request data with user information for notifications
-      const requestWithUser = await prisma.request.findUnique({
-        where: { id: newRequest.id },
-        include: {
-          user: {
-            select: {
-              id: true,
-              emp_fname: true,
-              emp_lname: true,
-              emp_email: true,
-              department: true,
-            }
-          }
-        }
-      });
-
-      if (requestWithUser && template) {
-        console.log('📧 Sending request creation notifications...');
-        await notifyRequestCreated(requestWithUser, template);
-        console.log('✅ Request creation notifications sent successfully');
-      }
-    } catch (notificationError) {
-      console.error('Error sending request creation notifications:', notificationError);
-      // Don't fail the request creation if notifications fail
     }
 
     return NextResponse.json({ success: true, request: newRequest });

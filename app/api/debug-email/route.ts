@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendEmail } from '@/lib/email';
+import { sendEmail } from '@/lib/database-email-templates';
 
 export async function POST(req: NextRequest) {
   try {

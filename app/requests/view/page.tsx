@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { 
   ArrowLeft, 
@@ -251,22 +251,55 @@ const getTemplateTooltip = (request: RequestData) => {
   // Add template type
   details.push(`Type: ${capitalizeWords(request.type || 'Service')}`);
   
-  // Add template name
-  details.push(`Template: ${request.templateName}`);
+  // Add template name if available (try multiple sources)
+  const templateName =  request.template?.name;
+  if (templateName) {
+    details.push(`Template: ${templateName}`);
+  } else if (request.templateId) {
+    details.push(`Template ID: ${request.templateId}`);
+  }
   
   return details.join('\n');
 };
 
 export default function MyRequestsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const [requests, setRequests] = useState<RequestData[]>([]);
   const [pagination, setPagination] = useState<PaginationData>({ total: 0, pages: 0, current: 1 });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  
+  // Initialize filters from URL parameters
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const statusParam = searchParams?.get('status');
+    console.log('URL status parameter:', statusParam); // Debug log
+    if (statusParam) {
+      // Direct mapping since URL params now match the filter values
+      const result = statusParam === 'for_approval' || statusParam === 'open' || 
+             statusParam === 'on_hold' || statusParam === 'resolved' || 
+             statusParam === 'closed' || statusParam === 'cancelled' 
+             ? statusParam : 'all';
+      console.log('Setting status filter to:', result); // Debug log
+      return result;
+    }
+    return 'all';
+  });
+  
   const [typeFilter, setTypeFilter] = useState('all');
-  const [approvalStatusFilter, setApprovalStatusFilter] = useState('ALL');
+  
+  const [approvalStatusFilter, setApprovalStatusFilter] = useState(() => {
+    const approvalParam = searchParams?.get('approvals');
+    if (approvalParam) {
+      // Direct mapping since URL params now match the filter values
+      return approvalParam === 'for_clarification' || approvalParam === 'pending_approval' ||
+             approvalParam === 'approved' || approvalParam === 'rejected'
+             ? approvalParam : 'ALL';
+    }
+    return 'ALL';
+  });
+  
   const [currentPage, setCurrentPage] = useState(1);
   
   // New filter states for department head functionality
@@ -278,13 +311,15 @@ export default function MyRequestsPage() {
   useEffect(() => {
     if (session) {
       console.log('Session user:', session.user); // Debug log
+      console.log('Current statusFilter:', statusFilter); // Debug log
+      console.log('Current URL params:', Object.fromEntries(searchParams?.entries() || [])); // Debug log
       fetchUserInfo(); // This will now also fetch and set departments for department heads
       if (!isDepartmentHead) {
         fetchDepartments(); // Only fetch all departments if not a department head
       }
       fetchRequests();
     }
-  }, [session, currentPage, viewMode, departmentFilter]);
+  }, [session, currentPage, viewMode, departmentFilter, statusFilter, typeFilter, approvalStatusFilter]);
 
   const fetchUserInfo = async () => {
     try {
@@ -325,7 +360,7 @@ export default function MyRequestsPage() {
       setLoading(true);
       
       // Build query parameters based on filter mode
-      let queryParams = `page=${currentPage}&limit=10`;
+      let queryParams = `page=${currentPage}&limit=100`; // Increased limit to show more results
       
       if (viewMode === 'own') {
         // Always filter by current user's requests only for own view
@@ -338,6 +373,18 @@ export default function MyRequestsPage() {
         queryParams += `&departmentHead=${session?.user?.id}`;
       }
       
+      // Add status filter if specified
+      if (statusFilter && statusFilter !== 'all') {
+        queryParams += `&status=${statusFilter}`;
+      }
+      
+      // Add approval status filter if specified
+      if (approvalStatusFilter && approvalStatusFilter !== 'ALL') {
+        queryParams += `&approvals=${approvalStatusFilter}`;
+      }
+      
+      console.log('🔍 Final query params:', queryParams);
+      
       const response = await fetch(`/api/requests?${queryParams}`);
       
       if (!response.ok) {
@@ -349,7 +396,8 @@ export default function MyRequestsPage() {
       setPagination(data.pagination || { total: 0, pages: 0, current: 1 });
       
       // Debug: Check request types
-      console.log('Request types found:', [...new Set((data.requests || []).map(r => r.type))]);
+      const requestTypes = Array.from(new Set((data.requests || []).map((r: any) => r.type)));
+      console.log('Request types found:', requestTypes);
       console.log('Sample request:', data.requests?.[0]);
     } catch (error) {
       console.error('Error fetching requests:', error);
@@ -370,6 +418,11 @@ export default function MyRequestsPage() {
       (request.subject && request.subject.toLowerCase().includes(searchTerm.toLowerCase()));
     
     const matchesStatus = statusFilter === 'all' || request.status === statusFilter;
+    
+    // Debug logging for status filtering
+    if (statusFilter !== 'all' && requests.indexOf(request) < 3) {
+      console.log(`Request ${request.id}: status="${request.status}", filter="${statusFilter}", matches=${matchesStatus}`);
+    }
     
     // Fix type filter - get type from formData[4] first, then fallback to request.type
     const requestType = (request.formData?.['4']?.toLowerCase() || request.type?.toLowerCase() || 'service');
@@ -404,27 +457,23 @@ export default function MyRequestsPage() {
 
   if (loading) {
     return (
-      <div className="h-screen flex flex-col">
-        <div className="w-full">
-          <div className="p-0 w-full">
-            <div style={{ zoom: '0.9' }} className="flex-1 flex flex-col min-h-0">
-              <div className="flex-1 flex flex-col p-6 gap-6 min-h-0">
-                <div className="flex items-center justify-between">
-                  <Skeleton className="h-8 w-48" />
-                  <Skeleton className="h-10 w-32" />
-                </div>
-                <div className="flex gap-4">
-                  <Skeleton className="h-10 flex-1" />
-                  <Skeleton className="h-10 w-32" />
-                  <Skeleton className="h-10 w-32" />
-                  <Skeleton className="h-10 w-40" />
-                </div>
-                <div className="flex-1 space-y-1">
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <Skeleton key={i} className="h-16 w-full" />
-                  ))}
-                </div>
-              </div>
+      <div className="p-6">
+        <div style={{ zoom: '0.9' }}>
+          <div className="flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-8 w-48" />
+              <Skeleton className="h-10 w-32" />
+            </div>
+            <div className="flex gap-4">
+              <Skeleton className="h-10 flex-1" />
+              <Skeleton className="h-10 w-32" />
+              <Skeleton className="h-10 w-32" />
+              <Skeleton className="h-10 w-40" />
+            </div>
+            <div className="space-y-1" style={{ height: 'calc(99vh - 300px)' }}>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
             </div>
           </div>
         </div>
@@ -434,18 +483,16 @@ export default function MyRequestsPage() {
 
   return (
     <SessionWrapper>
-      <div className="h-screen flex flex-col">
-        {/* Header - integrated into main layout */}
-        <header className="bg-white/80 backdrop-blur-xl border-b border-slate-200/60 z-40 flex-shrink-0">
-          <div className="w-full px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-16">
-              <div className="flex items-center gap-4">
-                <div>
-                  <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-                    My Requests
-                  </h1>
-                  <p className="text-sm text-slate-600">View and manage your service requests</p>
-                </div>
+      <div className="p-6">
+        <div style={{ zoom: '0.9' }}>
+          <div className="flex flex-col gap-6">
+            {/* Page Title and Actions */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                  My Requests
+                </h1>
+                <p className="text-sm text-slate-600">View and manage your requests</p>
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -457,13 +504,6 @@ export default function MyRequestsPage() {
                 </Button>
               </div>
             </div>
-          </div>
-        </header>
-
-        {/* Content Area - Full height minus header */}
-        <div className="flex-1 flex flex-col min-h-0">
-          <div style={{ zoom: '0.9' }} className="flex-1 flex flex-col min-h-0">
-            <div className="flex-1 flex flex-col p-6 gap-6 min-h-0">
               {/* Filters - Fixed height */}
               <div className="flex-shrink-0">
                 {/* Standard Filters */}
@@ -559,8 +599,9 @@ export default function MyRequestsPage() {
                 </div>
               </div>
 
-              {/* Requests Table - Flexible height */}
-              <div className="flex-1 bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg overflow-hidden min-h-0">
+              {/* Requests Table - Dynamic height with at least 1% bottom margin */}
+              <div className="bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg overflow-hidden" 
+                   style={{ height: 'calc(100vh - 190px)' }}>
                 <div className="h-full flex flex-col">
                   {filteredRequests.length === 0 ? (
                     <div className="flex-1 flex items-center justify-center p-12">
@@ -593,7 +634,7 @@ export default function MyRequestsPage() {
                           <div>Request Status</div>
                           <div>Priority</div>
                           <div>DueBy Date</div>
-                          <div>Created</div>
+                          <div>Created Date</div>
                           <div>Assigned To</div>
                         </div>
                       </div>
@@ -729,7 +770,7 @@ export default function MyRequestsPage() {
                                   {/* DueBy Date */}
                                   <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
                                     <Calendar className="h-3 w-3 flex-shrink-0" />
-                                    <span className="break-words">
+                                    <span className="text-sm break-words">
                                       {request.formData?.slaDueDate
                                         ? formatDate(request.formData.slaDueDate)
                                         : "-"}
@@ -739,13 +780,13 @@ export default function MyRequestsPage() {
                                   {/* Created Date */}
                                   <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
                                     <Calendar className="h-3 w-3 flex-shrink-0" />
-                                    <span className="break-words">{formatDate(request.createdAt)}</span>
+                                    <span className="text-sm break-words">{formatDate(request.createdAt)}</span>
                                   </div>
 
                                   {/* Assigned To */}
                                   <div className="flex items-center gap-1 leading-tight">
                                     <User className="h-3 w-3 text-gray-500 flex-shrink-0" />
-                                    <span className="break-words">
+                                    <span className="text-sm break-words">
                                       {request.assignedTechnician?.displayName ||
                                         request.assignedTechnician?.fullName ||
                                         request.formData?.assignedTechnician ||
@@ -799,7 +840,6 @@ export default function MyRequestsPage() {
             </div>
           </div>
         </div>
-      </div>
     </SessionWrapper>
   );
 }

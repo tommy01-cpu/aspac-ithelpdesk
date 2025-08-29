@@ -154,9 +154,9 @@ export default function AppHeader() {
           <div className="flex items-center">
             <div className="flex-shrink-0 flex items-center">
               <img 
-                src="http://hris.aspacphils.com.ph/HRIS-Plus-Version-2.0/contents/images/aspac-white.png" 
-                alt="ASPAC Logo" 
-                className="w-8 h-8 object-contain mr-3"
+                src="/aspac-logo.png"
+                  alt="ASPAC Logo"
+                className="w-12 h-12 object-contain mr-3"
               />
               <div>
                 <h1 className="text-lg font-semibold text-white">IT Help Desk</h1>

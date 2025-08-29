@@ -3,11 +3,9 @@ export const revalidate = 0;
 export const fetchCache = 'force-no-store';
 
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { sendEmailWithTemplateId, getTemplateIdByType } from '@/lib/database-email-templates';
-import { sendEmail } from '@/lib/email';
-
-const prisma = new PrismaClient();
+import { sendEmail } from '@/lib/database-email-templates';
 
 // This endpoint sends daily reminder emails to approvers with pending approvals
 // Should be called by an external scheduler (e.g., Windows Task Scheduler, cron job, etc.) at 8 AM daily
@@ -190,8 +188,6 @@ export async function POST() {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

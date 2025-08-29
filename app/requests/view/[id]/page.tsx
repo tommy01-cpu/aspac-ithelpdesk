@@ -292,6 +292,8 @@ interface RequestData {
   createdAt: string;
   updatedAt: string;
   user: {
+    landline_no: string;
+    local_no: string;
     id: number;
     emp_email: string;
     emp_fname: string;
@@ -540,6 +542,17 @@ export default function RequestViewPage() {
   // Approval modal states
   const [approverSearch, setApproverSearch] = useState('');
   const [approverResults, setApproverResults] = useState<any[]>([]);
+
+  // New action modal states
+  const [showChangeTypeModal, setShowChangeTypeModal] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showActionsModal, setShowActionsModal] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [categoryTemplates, setCategoryTemplates] = useState<any[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [assignedTechnician, setAssignedTechnician] = useState('');
+  const [newRequestStatus, setNewRequestStatus] = useState('');
+  const [slaAction, setSlaAction] = useState(''); // 'start' or 'stop'
 
   // Resolution attachment deletion - mark for deletion (don't delete until save)
   const handleDeleteResolutionAttachment = async (attachmentId: string, attachmentName: string) => {
@@ -972,6 +985,15 @@ export default function RequestViewPage() {
     }
   }, [requestData, isEditingResolution]);
 
+  // Initialize assigned technician when assign modal opens
+  useEffect(() => {
+    if (showAssignModal && requestData?.formData?.assignedTechnician) {
+      setAssignedTechnician(requestData.formData.assignedTechnician);
+    } else if (showAssignModal) {
+      setAssignedTechnician(''); // Reset if no technician assigned
+    }
+  }, [showAssignModal, requestData]);
+
   const handleEditRequest = () => {
     // Don't open modal if data isn't loaded yet
     if (!requestData) {
@@ -1108,7 +1130,7 @@ export default function RequestViewPage() {
     setWlHours('');
     setWlMinutes('');
     setWlIncludeNonOp(false);
-   
+    setWlDescription(''); // Reset description field
   };
 
   const openAddWorkLog = () => {
@@ -1175,8 +1197,13 @@ export default function RequestViewPage() {
         })
       });
       if (!res.ok) throw new Error('Failed to save work log');
-      toast({ title: 'Saved', description: isEdit ? 'Work log updated successfully' : 'Work log saved successfully' });
+      toast({ 
+        title: 'Saved', 
+        description: isEdit ? 'Work log updated successfully' : 'Work log saved successfully',
+        className: "bg-yellow-50 border-yellow-200 text-yellow-800"
+      });
       setShowWorkLogModal(false);
+      resetWorkLogForm(); // Clear form data for next entry
       await loadWorkLogs();
       await fetchRequestData(); // refresh history
     } catch (e) {
@@ -1194,7 +1221,11 @@ export default function RequestViewPage() {
         body: JSON.stringify({ id: wl.id })
       });
       if (!res.ok) throw new Error('Failed to delete');
-      toast({ title: 'Deleted', description: 'Work log removed' });
+      toast({ 
+        title: 'Deleted', 
+        description: 'Work log removed',
+        className: "bg-yellow-50 border-yellow-200 text-yellow-800"
+      });
       await loadWorkLogs();
       await fetchRequestData();
     } catch (e) {
@@ -2068,15 +2099,15 @@ export default function RequestViewPage() {
                   <FileText className="h-5 w-5 text-blue-600" />
                   <div>
                     <h1 className="text-lg font-semibold text-gray-900">
-                      #{requestData.id} {templateData?.name || 'Request'}
+                      #{requestData.id} {requestData.formData?.[8] || 'Request'}
                     </h1>
                     <div className="flex items-center gap-2 text-sm text-gray-500">
                       <span>by {requestData.user.emp_fname} {requestData.user.emp_lname}</span>
-                      <span>•</span>
+                      <span> on </span>
                           <span>{formatDbTimestamp(requestData.createdAt)}</span>
-                      <span>•</span>
+                      <span> / </span>
                       <span>
-                        DueBy: {requestData.formData?.slaDueDate
+                        Due By: {requestData.formData?.slaDueDate
                           ? formatDbTimestamp(String(requestData.formData.slaDueDate))
                           : 'N/A'}
                       </span>
@@ -2341,55 +2372,33 @@ export default function RequestViewPage() {
                     <CardHeader>
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-lg">Request Details</CardTitle>
-                        <Button variant="ghost" size="sm" onClick={handleEditRequest}>
-                          <Edit className="h-4 w-4" />
-                          Edit
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => setShowChangeTypeModal(true)}
+                          >
+                            Change Type
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => setShowAssignModal(true)}
+                          >
+                            Assign
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => setShowActionsModal(true)}
+                          >
+                            Actions
+                          </Button>
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Priority</span>
-                            <Badge className={getPriorityColor(requestData.formData?.['2'] || requestData.formData?.priority || 'medium')}>
-                              {(requestData.formData?.['2'] || requestData.formData?.priority || 'medium').charAt(0).toUpperCase() + (requestData.formData?.['2'] || requestData.formData?.priority || 'medium').slice(1)}
-                            </Badge>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Mode</span>
-                            <span className="text-sm text-gray-600">Self-Service Portal</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Request Type</span>
-                            <span className="text-sm text-gray-600 capitalize">{requestData.formData?.['4'] || requestData.formData?.type || 'Request'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">E-mail Id(s) To Notify</span>
-                            <span className="text-sm text-gray-600">-</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Department</span>
-                            <span className="text-sm text-gray-600">{requestData.user.department}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Service Category</span>
-                            <span className="text-sm text-gray-600">{requestData.formData?.category || 'Data Management'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Created Date</span>
-                            <span className="text-sm text-gray-600">{formatDbTimestamp(requestData.createdAt)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Resolution Date</span>
-                            <span className="text-sm text-gray-600">
-                              {requestData.formData?.resolution?.resolvedAt
-                                ? formatDbTimestamp(String(requestData.formData.resolution.resolvedAt))
-                                : '-'}
-                            </span>
-                          </div>
-                        </div>
-                        
                         <div className="space-y-4">
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Request Status</span>
@@ -2399,9 +2408,45 @@ export default function RequestViewPage() {
                                 : requestData.status.charAt(0).toUpperCase() + requestData.status.slice(1)}
                             </Badge>
                           </div>
+                         
                           <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Category</span>
-                            <span className="text-sm text-gray-600">Data Management</span>
+                            <span className="text-sm font-medium text-gray-700">Mode</span>
+                            <span className="text-sm text-gray-600">Self-Service Portal</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Request Type</span>
+                            <span className="text-sm text-gray-600 capitalize">{requestData.formData?.['4'] || requestData.formData?.type || 'Request'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Service Category</span>
+                            <span className="text-sm text-gray-600">{requestData.formData?.['6'] || ''}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Template</span>
+                            <span className="text-sm text-gray-600">{templateData?.name || 'Unknown Template'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">SLA</span>
+                            <span className="text-sm text-gray-600">
+                              {requestData.formData?.slaName
+                                ? String(requestData.formData.slaName)
+                                : templateData?.slaService?.name || 'Not specified'}
+                            </span>
+                          </div>  
+                       
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">E-mail Id(s) To Notify</span>
+                            <span className="text-sm text-gray-600">
+                              {(() => {
+                                const emailsToNotify = requestData.formData?.['10'];
+                                if (Array.isArray(emailsToNotify) && emailsToNotify.length > 0) {
+                                  return emailsToNotify.join(', ');
+                                } else if (typeof emailsToNotify === 'string' && emailsToNotify.trim()) {
+                                  return emailsToNotify;
+                                }
+                                return 'None';
+                              })()}
+                            </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Technician</span>
@@ -2411,36 +2456,67 @@ export default function RequestViewPage() {
                                 : 'Not Assigned'}
                             </span>
                           </div>
+                          
+                        
+                        
+                        
+                        </div>
+                        
+                        <div className="space-y-4">
+                          
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Priority</span>
+                            <Badge className={getPriorityColor(requestData.formData?.['2'] || requestData.formData?.priority || 'medium')}>
+                              {(requestData.formData?.['2'] || requestData.formData?.priority || 'medium').charAt(0).toUpperCase() + (requestData.formData?.['2'] || requestData.formData?.priority || 'medium').slice(1)}
+                            </Badge>
+                          </div>
+                        
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Created By</span>
                             <span className="text-sm text-gray-600">{requestData.user.emp_fname} {requestData.user.emp_lname}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">SLA</span>
-                            <span className="text-sm text-gray-600">
-                              {requestData.formData?.slaName
-                                ? String(requestData.formData.slaName)
-                                : templateData?.slaService?.name || 'Not specified'}
-                            </span>
+                            <span className="text-sm font-medium text-gray-700">Department</span>
+                            <span className="text-sm text-gray-600">{requestData.user.department}</span>
                           </div>
-                          <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">Template</span>
-                            <span className="text-sm text-gray-600">{templateData?.name || 'Unknown Template'}</span>
+                            <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Created Date</span>
+                            <span className="text-sm text-gray-600">{formatDbTimestamp(requestData.createdAt)}</span>
                           </div>
                           
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Due By Date</span>
+                            <span className="text-sm text-gray-600">
+                              {requestData.formData?.slaDueDate
+                                ? formatDbTimestampDisplay(String(requestData.formData.slaDueDate))
+                                : '-'}
+                            </span>
+                          </div>
+                        
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">SLA Start Time</span>
                             <span className="text-sm text-gray-600">
                               {requestData.formData?.slaStartAt
-                                ? formatDbTimestampDisplay(String(requestData.formData.slaStartAt), { shortFormat: true })
+                                ? formatDbTimestampDisplay(String(requestData.formData.slaStartAt))
+                                : '-'}
+
+                                {}
+                            </span>
+                          </div>     
+                        
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-700">Resolution Date</span>
+                            <span className="text-sm text-gray-600">
+                              {requestData.formData?.resolution?.resolvedAt
+                                ? formatDbTimestamp(String(requestData.formData.resolution.resolvedAt))
                                 : '-'}
                             </span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-sm font-medium text-gray-700">DueBy Date</span>
+                            <span className="text-sm font-medium text-gray-700">Closed Date</span>
                             <span className="text-sm text-gray-600">
-                              {requestData.formData?.slaDueDate
-                                ? formatDbTimestampDisplay(String(requestData.formData.slaDueDate), { shortFormat: true })
+                              {requestData.formData?.resolution?.closedAt
+                                ? formatDbTimestamp(String(requestData.formData.resolution.closedAt))
                                 : '-'}
                             </span>
                           </div>
@@ -2468,17 +2544,17 @@ export default function RequestViewPage() {
                           const hasExistingResolution = html.length > 0;
                           
                           if (hasExistingResolution && !isEditingResolution) {
-                            return (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setIsEditingResolution(true)}
-                                className="flex items-center gap-2"
-                              >
-                                <Edit className="h-4 w-4" />
-                                Edit
-                              </Button>
-                            );
+                            // return (
+                            //   <Button
+                            //     variant="outline"
+                            //     size="sm"
+                            //     onClick={() => setIsEditingResolution(true)}
+                            //     className="flex items-center gap-2"
+                            //   >
+                            //     <Edit className="h-4 w-4" />
+                            //     Edit
+                            //   </Button>
+                            // );
                           } else if (isEditingResolution) {
                             // Show Save/Cancel buttons when editing
                             return (
@@ -3732,8 +3808,12 @@ export default function RequestViewPage() {
                           <span className="font-medium">{requestData.user.department}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-600">Phone</span>
-                          <span className="font-medium">{requestData.user.emp_cell || '+639998668296'}</span>
+                          <span className="text-gray-600">Land Line No.</span>
+                          <span className="font-medium">{requestData.user.landline_no || '-'}</span>
+                        </div>
+                         <div className="flex justify-between">
+                          <span className="text-gray-600">Local No.</span>
+                          <span className="font-medium">{requestData.user.local_no || '-'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Job title</span>
@@ -4070,7 +4150,12 @@ export default function RequestViewPage() {
 
         {/* Work Log Modal (Add/Edit) */}
         {session?.user?.isTechnician && (
-          <Dialog open={showWorkLogModal} onOpenChange={setShowWorkLogModal}>
+          <Dialog open={showWorkLogModal} onOpenChange={(open) => {
+            setShowWorkLogModal(open);
+            if (!open) {
+              resetWorkLogForm(); // Clear form when modal closes
+            }
+          }}>
             <DialogContent className="max-w-3xl">
               <DialogHeader>
                 <DialogTitle>{editingWorkLog ? 'Edit Work Log' : 'New Work Log'}</DialogTitle>
@@ -4174,7 +4259,10 @@ export default function RequestViewPage() {
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={() => setShowWorkLogModal(false)}>Cancel</Button>
+                <Button variant="outline" onClick={() => {
+                  setShowWorkLogModal(false);
+                  resetWorkLogForm(); // Clear form when Cancel is clicked
+                }}>Cancel</Button>
                 <Button onClick={saveWorkLog}>Save</Button>
               </DialogFooter>
             </DialogContent>
@@ -4684,6 +4772,265 @@ export default function RequestViewPage() {
                 </Button>
                 <Button disabled={selectedUsers.length === 0}>
                   Add Approvers
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Change Type Modal */}
+        {showChangeTypeModal && (
+          <Dialog open={showChangeTypeModal} onOpenChange={setShowChangeTypeModal}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Change Type</DialogTitle>
+                <DialogDescription>
+                  Select Service category to change the request type.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm text-gray-700 mb-2 block">Service Category</label>
+                  <select
+                    className="w-full border rounded px-2 py-2 text-sm"
+                    value={selectedCategory}
+                    onChange={(e) => {
+                      setSelectedCategory(e.target.value);
+                      // Load templates for selected category
+                      const categoryTemplates = availableTemplates.filter(template => 
+                        template.category?.id === parseInt(e.target.value)
+                      );
+                      setCategoryTemplates(categoryTemplates);
+                      setSelectedTemplate('');
+                    }}
+                  >
+                    <option value="">Select Category</option>
+                    {availableCategories.map(category => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                
+                {selectedCategory && categoryTemplates.length > 0 && (
+                  <div>
+                    <label className="text-sm text-gray-700 mb-2 block">Templates</label>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {categoryTemplates.map(template => (
+                        <div 
+                          key={template.id}
+                          className={`p-3 border rounded cursor-pointer hover:bg-gray-50 ${
+                            selectedTemplate === template.id.toString() ? 'border-blue-500 bg-blue-50' : ''
+                          }`}
+                          onClick={() => setSelectedTemplate(template.id.toString())}
+                        >
+                          <div className="font-medium text-sm">{template.name}</div>
+                          {template.description && (
+                            <div className="text-xs text-gray-500 mt-1">{template.description}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowChangeTypeModal(false)}>
+                  Cancel
+                </Button>
+                <Button 
+                  disabled={!selectedTemplate}
+                  onClick={() => {
+                    // Handle change type logic here
+                    toast({
+                      title: "Type Changed",
+                      description: "Request type has been updated successfully.",
+                      className: "bg-yellow-50 border-yellow-200 text-yellow-800"
+                    });
+                    setShowChangeTypeModal(false);
+                    setSelectedCategory('');
+                    setSelectedTemplate('');
+                  }}
+                >
+                  Change Type
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Assign Modal */}
+        {showAssignModal && (
+          <Dialog open={showAssignModal} onOpenChange={setShowAssignModal}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Assign Technician</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm text-gray-700 mb-2 block">Technician</label>
+                  <select
+                    className="w-full border rounded px-2 py-2 text-sm"
+                    value={assignedTechnician}
+                    onChange={(e) => setAssignedTechnician(e.target.value)}
+                  >
+                    <option value="">Not Assigned</option>
+                    {availableTechnicians.map(tech => (
+                      <option key={tech.id} value={tech.id}>
+                        {tech.displayName || `${tech.emp_fname} ${tech.emp_lname}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowAssignModal(false)}>
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={async () => {
+                    try {
+                      // Update the assigned technician in formData
+                      const response = await fetch(`/api/requests/${requestId}`, {
+                        method: 'PATCH',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          formData: {
+                            ...requestData.formData,
+                            assignedTechnician: assignedTechnician
+                          }
+                        }),
+                      });
+                      
+                      if (response.ok) {
+                        toast({
+                          title: "Assigned",
+                          description: "Technician has been assigned successfully.",
+                          className: "bg-yellow-50 border-yellow-200 text-yellow-800"
+                        });
+                        // Refresh request data
+                        await fetchRequestData();
+                        setShowAssignModal(false);
+                        setAssignedTechnician('');
+                      } else {
+                        throw new Error('Failed to assign technician');
+                      }
+                    } catch (error) {
+                      toast({
+                        title: "Error",
+                        description: "Failed to assign technician.",
+                        variant: "destructive"
+                      });
+                    }
+                  }}
+                >
+                  Assign
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Actions Modal */}
+        {showActionsModal && (
+          <Dialog open={showActionsModal} onOpenChange={setShowActionsModal}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Actions</DialogTitle>
+                <DialogDescription>
+                  Change request status and manage SLA timer.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm text-gray-700 mb-2 block">Request Status</label>
+                  <select
+                    className="w-full border rounded px-2 py-2 text-sm"
+                    value={newRequestStatus}
+                    onChange={(e) => setNewRequestStatus(e.target.value)}
+                  >
+                    <option value="">Select Status</option>
+                    <option value="for_approval">For Approval</option>
+                    <option value="open">Open</option>
+                    <option value="on_hold">On Hold</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="closed">Closed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="text-sm text-gray-700 mb-2 block">SLA Timer</label>
+                  <div className="flex gap-2">
+                    <Button
+                      variant={slaAction === 'start' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setSlaAction('start')}
+                      className="flex-1"
+                    >
+                      Start Timer
+                    </Button>
+                    <Button
+                      variant={slaAction === 'stop' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setSlaAction('stop')}
+                      className="flex-1"
+                    >
+                      Stop Timer
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowActionsModal(false)}>
+                  Cancel
+                </Button>
+                <Button 
+                  disabled={!newRequestStatus}
+                  onClick={async () => {
+                    try {
+                      // Update request status and SLA
+                      const response = await fetch(`/api/requests/${requestId}`, {
+                        method: 'PATCH',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          status: newRequestStatus,
+                          slaAction: slaAction
+                        }),
+                      });
+                      
+                      if (response.ok) {
+                        toast({
+                          title: "Updated",
+                          description: "Request status and SLA have been updated.",
+                          className: "bg-yellow-50 border-yellow-200 text-yellow-800"
+                        });
+                        // Refresh request data
+                        await fetchRequestData();
+                        setShowActionsModal(false);
+                        setNewRequestStatus('');
+                        setSlaAction('');
+                      } else {
+                        throw new Error('Failed to update request');
+                      }
+                    } catch (error) {
+                      toast({
+                        title: "Error",
+                        description: "Failed to update request.",
+                        variant: "destructive"
+                      });
+                    }
+                  }}
+                >
+                  Apply Changes
                 </Button>
               </DialogFooter>
             </DialogContent>

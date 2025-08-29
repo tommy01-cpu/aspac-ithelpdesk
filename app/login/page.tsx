@@ -109,9 +109,13 @@ export default function LoginPage() {
             return;
           }
           
+          // Get user's name for personalized welcome message
+          const userName = session.user.name || session.user.employee_id || 'User';
+          
           toast({
             title: "Login Successful",
-            description: "Welcome back! Redirecting...",
+            description: `Welcome, ${userName}! `,
+            className: "bg-yellow-50 border-yellow-200 text-yellow-800"
           });
           router.push(callbackUrl);
         }
@@ -408,22 +412,20 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-black/40"></div>
 
         <div className="relative w-full max-w-md mx-auto">
-          <Card className="bg-white shadow-2xl border-0 bg-opacity-10">
+          <Card className="bg-white shadow-2xl border-0 bg-opacity-30 rounded-3xl">
             <CardHeader className="text-center pb-6">
               {/* Logo and Title */}
-              <div className="flex items-center justify-center mb-3">
+              <div className="flex flex-col items-center justify-center mb-3">
                 <Image
                   src="/aspac-logo.png"
                   alt="ASPAC Logo"
-                  width={60}
-                  height={60}
-                  className="object-contain mr-3"
+                  width={100}
+                  height={100}
+                  className="object-contain mb-3"
                 />
-                <h1 className="text-xl font-semibold " style={{ fontSize: '35px' }}>IT Help Desk</h1>
-                
-               
+                <h1 className="text-xl font-semibold font-neo-sans" style={{ fontSize: '35px' }}>IT Help Desk</h1>
               </div>
-               <p className="text-sm font-bold ">version.250828</p>
+               <p className="text-sm font-bold ">Version 1.250828</p>
             </CardHeader>
 
             <CardContent className="space-y-6">
@@ -438,15 +440,18 @@ export default function LoginPage() {
                 <div className="space-y-2">
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="employee_id"
-                      type="text"
-                      value={employeeId}
-                      onChange={(e) => setEmployeeId(e.target.value)}
-                      placeholder="Username"
-                      className="pl-10 h-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500/20"
-                      required
-                    />
+                  <Input
+                    id="employee_id"
+                    type="text"
+                    value={employeeId}
+                    onChange={(e) => setEmployeeId(e.target.value)}
+                    placeholder="Username"
+                    className="pl-10 h-12"
+                    required
+                  />
+
+
+
                   </div>
                 </div>
 
@@ -460,7 +465,7 @@ export default function LoginPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Password"
-                      className="pl-10 pr-10 h-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500/20"
+                      className="pl-10 pr-10 h-12"
                       required
                     />
                     <Button
@@ -503,8 +508,9 @@ export default function LoginPage() {
 
           {/* Footer Text */}
           <div className="mt-6 text-center text-white text-sm">
-          
-            <p className="mt-1">© 2025 ASPAC International Inc. All rights reserved.</p>
+
+
+            <p className="mt-1">This website is best viewed with <strong style={{ color: '#1191ccff' }}><Link href="https://www.google.com/chrome/">Google Chrome</Link></strong></p>
           </div>
         </div>
       </div>

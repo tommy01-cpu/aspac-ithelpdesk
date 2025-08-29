@@ -15,7 +15,7 @@ async function createTestRequest() {
       '2': 'Low',
       '3': 'test',
       '4': 'Service',
-      '5': 'for-approval',
+      '5': 'for_approval',
       '6': 'Test Category',
       '8': 'SLA Test Request',
       '9': 'Testing SLA calculation fix',

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { sendNewApproverNotificationEmail } from '@/lib/email';
+import { sendNewApproverNotificationEmail } from '@/lib/database-email-templates';
 
 export async function POST(request: NextRequest) {
   try {
