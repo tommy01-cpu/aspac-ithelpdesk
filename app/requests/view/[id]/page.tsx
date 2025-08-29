@@ -3564,6 +3564,8 @@ export default function RequestViewPage() {
                                     return <Clock className="h-4 w-4 text-gray-600" />; // Clock icon
                                   case 'WorkLog Added':
                                   case 'Work Log Added':
+                                  case 'WorkLog Updated':
+                                  case 'WorkLog Deleted':
                                     return <Edit className="h-4 w-4 text-gray-600" />; // Edit/pencil icon
                                   case 'Assigned':
                                     return <User className="h-4 w-4 text-blue-600" />; // User icon
@@ -3594,6 +3596,8 @@ export default function RequestViewPage() {
                                   case 'SLA Timer Started': return 20;
                                   case 'WorkLog Added': return 30;
                                   case 'Work Log Added': return 30;
+                                  case 'WorkLog Updated': return 30;
+                                  case 'WorkLog Deleted': return 30;
                                   case 'Conversation Message': return 35;
                                   case 'Resolved': return 40;
                                   case 'Request Approved - Ready for Work': return 40;
@@ -3604,11 +3608,9 @@ export default function RequestViewPage() {
                                 }
                               };
 
-                              // Hide conversations and worklogs from history
+                              // Hide conversations and internal noise from history
                               const HIDDEN_ACTIONS = new Set([
                                 'Conversation Message',
-                                'WorkLog Added',
-                                'Work Log Added',
                                 // Hide internal/system noise entries not desired in UI
                                 'SLA/Assignment Error',
                                 'Request Approved - Ready for Work',
@@ -3922,14 +3924,19 @@ export default function RequestViewPage() {
                         <UserCheck className="h-4 w-4" />
                         Assign Technician
                       </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => setShowChangeTypeModal(true)}
-                        className="w-full flex items-center justify-center gap-2"
-                      >
-                        <Tag className="h-4 w-4" />
-                        Change Type
-                      </Button>
+                      {/* Change Type button - only show for incident requests */}
+                      {(requestData?.formData?.['4']?.toLowerCase() === 'incident' || 
+                        requestData?.formData?.type?.toLowerCase() === 'incident' || 
+                        requestData?.type?.toLowerCase() === 'incident') && (
+                        <Button
+                          variant="outline"
+                          onClick={() => setShowChangeTypeModal(true)}
+                          className="w-full flex items-center justify-center gap-2"
+                        >
+                          <Tag className="h-4 w-4" />
+                          Change Type
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

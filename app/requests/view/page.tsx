@@ -360,7 +360,7 @@ export default function MyRequestsPage() {
       setLoading(true);
       
       // Build query parameters based on filter mode
-      let queryParams = `page=${currentPage}&limit=100`; // Increased limit to show more results
+      let queryParams = `page=${currentPage}&limit=100`; // 100 per page as requested
       
       if (viewMode === 'own') {
         // Always filter by current user's requests only for own view
@@ -809,7 +809,7 @@ export default function MyRequestsPage() {
                 <div className="flex-shrink-0 bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg p-4">
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-slate-600">
-                      Showing {((currentPage - 1) * 10) + 1} to {Math.min(currentPage * 10, pagination.total)} of {pagination.total} requests
+                      Showing {((currentPage - 1) * 100) + 1} to {Math.min(currentPage * 100, pagination.total)} of {pagination.total} requests
                     </p>
                     <div className="flex items-center gap-2">
                       <Button

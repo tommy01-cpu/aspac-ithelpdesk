@@ -189,17 +189,20 @@ export default function AppHeader() {
                 </Button>
               </Link>
               
-              <Link href="/reports">
-                <Button 
-                  variant="ghost" 
-                  className={cn(
-                    "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
-                    pathname?.startsWith("/reports") ? "bg-black/20 text-white" : "hover:bg-black/10"
-                  )}
-                >
-                  Reports
-                </Button>
-              </Link>
+              {/* Only show Reports if user is admin, technician, or has elevated privileges */}
+              {(session?.user?.isAdmin || session?.user?.isTechnician || session?.user?.isServiceApprover) && (
+                <Link href="/reports">
+                  <Button 
+                    variant="ghost" 
+                    className={cn(
+                      "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                      pathname?.startsWith("/reports") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                    )}
+                  >
+                    Reports
+                  </Button>
+                </Link>
+              )}
               
               {/* Only show Technician View if user is a technician */}
               {session?.user?.isTechnician && (

@@ -130,7 +130,15 @@ export async function POST(
 
     // Add history entry
     try {
-      await addHistory(prisma, {
+      console.log('🔍 About to add worklog history entry:', {
+        requestId,
+        action: 'WorkLog Added',
+        actorId: parseInt(session.user.id),
+        actorName: session.user.name || 'Technician',
+        actorType: 'technician'
+      });
+      
+      await addHistory(prisma as any, {
         requestId,
         action: 'WorkLog Added',
         actorId: parseInt(session.user.id),
@@ -138,8 +146,17 @@ export async function POST(
         actorType: 'technician',
         details: `Owner: ${newLog.ownerName}\nTime Taken: ${(newLog.timeTakenMinutes / 60 >> 0).toString().padStart(2,'0')} hr ${(newLog.timeTakenMinutes % 60).toString().padStart(2,'0')} min`,
       });
+      
+      console.log('✅ Worklog history entry added successfully');
     } catch (e) {
-      console.warn('Failed to write worklog history entry:', e);
+      console.error('❌ Failed to write worklog history entry:', e);
+      console.error('Error details:', {
+        message: e instanceof Error ? e.message : 'Unknown error',
+        stack: e instanceof Error ? e.stack : 'No stack trace',
+        requestId,
+        userId: session.user.id,
+        userName: session.user.name
+      });
     }
 
     return NextResponse.json({ success: true, worklog: newLog });
@@ -231,6 +248,20 @@ export async function PUT(
       where: { id: requestId },
       data: { formData: { ...(currentForm || {}), worklogs } }
     });
+
+    // Add history entry for edit
+    try {
+      await addHistory(prisma as any, {
+        requestId,
+        action: 'WorkLog Updated',
+        actorId: parseInt(session.user.id),
+        actorName: session.user.name || 'Technician',
+        actorType: 'technician',
+        details: `Owner: ${updated.ownerName}\nTime Taken: ${(updated.timeTakenMinutes / 60 >> 0).toString().padStart(2,'0')} hr ${(updated.timeTakenMinutes % 60).toString().padStart(2,'0')} min`,
+      });
+    } catch (e) {
+      console.error('❌ Failed to write worklog edit history entry:', e);
+    }
 
     return NextResponse.json({ success: true, worklog: updated });
   } catch (error) {
