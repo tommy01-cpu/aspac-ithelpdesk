@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { addHistory } from '@/lib/history';
 import { RequestStatus } from '@prisma/client';
+import { sendRequestClosedCCEmail } from '@/lib/database-email-templates';
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: 'Invalid request id' }, { status: 400 });
     }
 
-    const { status, notes, attachmentIds } = await request.json();
+    const { status, notes, attachmentIds, sendEmail, emailTemplate } = await request.json();
     
     // Handle different status mappings
     let actualStatus = status;
@@ -30,7 +31,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     const actor = await prisma.users.findFirst({ where: { emp_email: session.user.email } });
     if (!actor) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    if (!actor.isTechnician) return NextResponse.json({ error: 'Only technicians can update status' }, { status: 403 });
 
     const existing = await prisma.request.findUnique({ where: { id: requestId } });
     if (!existing) return NextResponse.json({ error: 'Request not found' }, { status: 404 });
@@ -77,6 +77,61 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       actorType: 'user',
       details: `Status changed from ${oldStatusLabel} to ${newStatusLabel}` + (notes ? `\nNotes : ${notes.replace(/<[^>]*>/g, '').trim()}` : ''),
     });
+
+    // Send email notification if requested
+    if (sendEmail && emailTemplate === 'acknowledge-cc-closed') {
+      try {
+        // Get the request with user data for email
+        const requestWithUser = await prisma.request.findUnique({
+          where: { id: requestId },
+          include: {
+            user: true
+          }
+        });
+
+        if (requestWithUser) {
+          // Get email recipients from formData['10'] (E-mail Id(s) To Notify)
+          const formData = requestWithUser.formData as any;
+          const emailNotifyField = formData?.['10'];
+          let emailRecipients: string[] = [];
+
+          if (Array.isArray(emailNotifyField)) {
+            emailRecipients = emailNotifyField.filter(email => typeof email === 'string' && email.trim());
+          } else if (typeof emailNotifyField === 'string' && emailNotifyField.trim()) {
+            emailRecipients = [emailNotifyField.trim()];
+          }
+
+          // Send email notification if there are recipients
+          if (emailRecipients.length > 0) {
+            // Prepare email variables for the closed CC email template
+            const requesterName = `${requestWithUser.user.emp_fname} ${requestWithUser.user.emp_lname}`.trim();
+            const requestSubject = formData?.['8'] || 'IT Helpdesk Request';
+            const requestDescription = formData?.['9'] || 'No description provided';
+            
+            const emailVariables = {
+              Request_ID: requestId.toString(),
+              Request_Status: newStatusLabel,
+              Request_Subject: requestSubject,
+              Request_Description: requestDescription,
+              Requester_Name: requesterName,
+              Requester_Email: requestWithUser.user.emp_email,
+              Request_Title: requestSubject,
+              Emails_To_Notify: emailRecipients.join(', ')
+            };
+
+            // Send the closed CC email using the dedicated function
+            const emailSent = await sendRequestClosedCCEmail(emailRecipients, emailVariables);
+            
+            if (!emailSent) {
+              console.error('Failed to send closed CC email notification');
+            }
+          }
+        }
+      } catch (emailError) {
+        console.error('Error sending email notification:', emailError);
+        // Don't fail the request if email fails
+      }
+    }
 
     return NextResponse.json({ 
       success: true, 

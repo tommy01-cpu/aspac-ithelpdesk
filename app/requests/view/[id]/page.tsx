@@ -9,6 +9,7 @@ import {
   ArrowLeft, 
   Clock, 
   AlertCircle, 
+  AlertTriangle,
   CheckCircle, 
   User, 
   Mail,
@@ -567,6 +568,9 @@ export default function RequestViewPage() {
   const [showSlaTimerModal, setShowSlaTimerModal] = useState(false);
   const [slaTimerAction, setSlaTimerAction] = useState<'start' | 'stop'>('stop');
   const [isUpdatingSla, setIsUpdatingSla] = useState(false);
+
+  // Close request loading state
+  const [isClosingRequest, setIsClosingRequest] = useState(false);
 
   // Resolution attachment deletion - mark for deletion (don't delete until save)
   const handleDeleteResolutionAttachment = async (attachmentId: string, attachmentName: string) => {
@@ -2488,14 +2492,16 @@ export default function RequestViewPage() {
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-lg">Request Details</CardTitle>
                         <div className="flex items-center gap-2">
-                        
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => setShowActionsModal(true)}
-                          >
-                            Actions
-                          </Button>
+                          {/* Only show Close button if current user is the requester and status is resolved */}
+                          {session?.user?.id && String(session.user.id) === String(requestData.user.id) && requestData.status === 'resolved' && (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => setShowActionsModal(true)}
+                            >
+                              Close This Request
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </CardHeader>
@@ -4805,96 +4811,80 @@ export default function RequestViewPage() {
           <Dialog open={showActionsModal} onOpenChange={setShowActionsModal}>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>Actions</DialogTitle>
+                <DialogTitle>Close Request</DialogTitle>
                 <DialogDescription>
-                  Change request status and manage SLA timer.
+                  Do you want to close this request?
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
-                <div>
-                  <label className="text-sm text-gray-700 mb-2 block">Request Status</label>
-                  <select
-                    className="w-full border rounded px-2 py-2 text-sm"
-                    value={newRequestStatus}
-                    onChange={(e) => setNewRequestStatus(e.target.value)}
-                  >
-                    <option value="">Select Status</option>
-                    <option value="for_approval">For Approval</option>
-                    <option value="open">Open</option>
-                    <option value="on_hold">On Hold</option>
-                    <option value="resolved">Resolved</option>
-                    <option value="closed">Closed</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="text-sm text-gray-700 mb-2 block">SLA Timer</label>
-                  <div className="flex gap-2">
-                    <Button
-                      variant={slaAction === 'start' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setSlaAction('start')}
-                      className="flex-1"
-                    >
-                      Start Timer
-                    </Button>
-                    <Button
-                      variant={slaAction === 'stop' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setSlaAction('stop')}
-                      className="flex-1"
-                    >
-                      Stop Timer
-                    </Button>
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                    <span className="font-medium text-amber-800">Confirm Close Request</span>
                   </div>
+                  <p className="text-sm text-amber-700">
+                    This action will close the request and mark it as completed. 
+                  </p>
                 </div>
               </div>
               
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowActionsModal(false)}>
-                  Cancel
+                  No, Cancel
                 </Button>
                 <Button 
-                  disabled={!newRequestStatus}
+                  disabled={isClosingRequest}
                   onClick={async () => {
                     try {
-                      // Update request status and SLA
-                      const response = await fetch(`/api/requests/${requestId}`, {
-                        method: 'PATCH',
+                      setIsClosingRequest(true);
+                      
+                      // Update request status to closed and send email notification
+                      const response = await fetch(`/api/requests/${requestId}/status`, {
+                        method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                          status: newRequestStatus,
-                          slaAction: slaAction
+                          status: 'closed',
+                          sendEmail: true,
+                          emailTemplate: 'acknowledge-cc-closed'
                         }),
                       });
                       
                       if (response.ok) {
                         toast({
-                          title: "Updated",
-                          description: "Request status and SLA have been updated.",
-                          className: "bg-yellow-50 border-yellow-200 text-yellow-800"
+                          title: "Request Closed",
+                          description: "The request has been successfully closed and notification emails sent.",
+                          className: "bg-green-50 border-green-200 text-green-800"
                         });
                         // Refresh request data
                         await fetchRequestData();
                         setShowActionsModal(false);
-                        setNewRequestStatus('');
-                        setSlaAction('');
                       } else {
-                        throw new Error('Failed to update request');
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Failed to close request');
                       }
                     } catch (error) {
+                      console.error('Error closing request:', error);
                       toast({
                         title: "Error",
-                        description: "Failed to update request.",
+                        description: error instanceof Error ? error.message : "Failed to close request.",
                         variant: "destructive"
                       });
+                    } finally {
+                      setIsClosingRequest(false);
                     }
                   }}
+                  className="bg-red-600 hover:bg-red-700 text-white"
                 >
-                  Apply Changes
+                  {isClosingRequest ? (
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Closing...
+                    </div>
+                  ) : (
+                    "Yes, Close Request"
+                  )}
                 </Button>
               </DialogFooter>
             </DialogContent>
