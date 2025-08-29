@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '25');
     const search = searchParams.get('search') || '';
     const type = searchParams.get('type'); // 'service' or 'incident'
+    const categoryId = searchParams.get('categoryId'); // Category filter
 
     const skip = (page - 1) * limit;
 
@@ -29,6 +30,9 @@ export async function GET(req: NextRequest) {
     }
     if (type) {
       where.type = type;
+    }
+    if (categoryId) {
+      where.categoryId = parseInt(categoryId);
     }
 
     // Get total count
@@ -45,6 +49,14 @@ export async function GET(req: NextRequest) {
             id: true,
             emp_fname: true,
             emp_lname: true,
+          },
+        },
+        category: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            icon: true,
           },
         },
         slaService: {

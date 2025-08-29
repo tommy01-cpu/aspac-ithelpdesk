@@ -831,10 +831,12 @@ export default function RequestViewPage() {
   // Load templates by category for change type modal
   const loadTemplatesByCategory = async (categoryId: string) => {
     try {
-      const res = await fetch(`/api/templates?categoryId=${categoryId}`);
+      // Only load service type templates for change type modal (changing to service)
+      const res = await fetch(`/api/templates?categoryId=${categoryId}&type=service`);
       if (res.ok) {
         const data = await res.json();
         setCategoryTemplates(data.templates || []);
+        console.log(`Loaded ${data.templates?.length || 0} service templates for category ${categoryId}`);
       } else {
         setCategoryTemplates([]);
       }
@@ -4770,35 +4772,34 @@ export default function RequestViewPage() {
         {/* Change Type Modal */}
         {showChangeTypeModal && (
           <Dialog open={showChangeTypeModal} onOpenChange={setShowChangeTypeModal}>
-            <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden bg-white border border-gray-200 shadow-xl">
-              <div className="bg-white">
-                <DialogHeader className="bg-white border-b border-gray-100 pb-4">
-                  <DialogTitle className="flex items-center gap-2 text-gray-900">
-                    <Tag className="h-5 w-5 text-blue-600" />
-                    Change Request Type
-                  </DialogTitle>
-                  <DialogDescription className="text-gray-600">
-                    Select a service category and then choose a template to change the request type.
-                  </DialogDescription>
-                </DialogHeader>
-                
-                <div className="flex h-[500px] bg-white pt-4">
-                  {/* Categories List */}
-                  <div className="w-1/2 border-r border-gray-200 pr-4 bg-white">
-                    <div className="mb-3">
-                      <h3 className="text-sm font-medium text-gray-700 mb-2">Service Categories</h3>
-                      <div className="relative">
-                        <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <Input
-                          placeholder="Search categories..."
-                          className="pl-10 text-sm bg-white border-gray-300 text-gray-900"
-                          value=""
-                          onChange={() => {}}
-                        />
-                      </div>
+            <DialogContent className="max-w-4xl max-h-[85vh] bg-white border border-gray-200 shadow-xl flex flex-col">
+              <DialogHeader className="bg-white border-b border-gray-100 pb-4 flex-shrink-0">
+                <DialogTitle className="flex items-center gap-2 text-gray-900">
+                  <Tag className="h-5 w-5 text-blue-600" />
+                  Change Request Type
+                </DialogTitle>
+                <DialogDescription className="text-gray-600">
+                  Select a service category and then choose a template to change the request type.
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="flex flex-1 min-h-0 bg-white pt-4">
+                {/* Categories List */}
+                <div className="w-1/2 border-r border-gray-200 pr-4 bg-white flex flex-col">
+                  <div className="mb-3 flex-shrink-0">
+                    <h3 className="text-sm font-medium text-gray-700 mb-2">Service Categories</h3>
+                    <div className="relative">
+                      <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        placeholder="Search categories..."
+                        className="pl-10 text-sm bg-white border-gray-300 text-gray-900"
+                        value=""
+                        onChange={() => {}}
+                      />
                     </div>
-                    
-                    <div className="space-y-2 overflow-y-auto max-h-[420px] bg-white">
+                  </div>
+                  
+                  <div className="space-y-2 overflow-y-auto flex-1 bg-white pb-4">
                       {availableCategories.map((category: any) => (
                         <div
                           key={category.id}
@@ -4842,8 +4843,8 @@ export default function RequestViewPage() {
                   </div>
 
                   {/* Templates List */}
-                  <div className="w-1/2 pl-4 bg-white">
-                    <div className="mb-3">
+                  <div className="w-1/2 pl-4 bg-white flex flex-col">
+                    <div className="mb-3 flex-shrink-0">
                       <h3 className="text-sm font-medium text-gray-700 mb-2">Templates</h3>
                       {selectedCategory ? (
                         <p className="text-xs text-gray-500">
@@ -4854,7 +4855,7 @@ export default function RequestViewPage() {
                       )}
                     </div>
                     
-                    <div className="space-y-2 overflow-y-auto max-h-[420px] bg-white">
+                    <div className="space-y-2 overflow-y-auto flex-1 bg-white pb-4">
                       {selectedCategory ? (
                         categoryTemplates.length > 0 ? (
                           categoryTemplates.map((template: any) => (
@@ -4885,6 +4886,9 @@ export default function RequestViewPage() {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="font-medium text-sm text-gray-900">{template.name}</div>
+                                  {template.description && (
+                                    <div className="text-xs text-gray-500 mt-1">{template.description}</div>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -4905,15 +4909,29 @@ export default function RequestViewPage() {
                   </div>
                 </div>
 
-                <DialogFooter className="bg-white border-t border-gray-200 pt-4 mt-4">
+                <DialogFooter className="bg-white border-t border-gray-200 pt-4 mt-4 flex-shrink-0">
                   <Button variant="outline" onClick={() => setShowChangeTypeModal(false)} className="bg-white border-gray-300 text-gray-700 hover:bg-gray-50">
                     Cancel
                   </Button>
                   <Button 
                     disabled={!selectedTemplate}
                     onClick={async () => {
+                      // Show confirmation dialog
+                      const confirmed = window.confirm(
+                        'Are you sure you want to change the request type?\n\n' +
+                        'This will:\n' +
+                        '• Change the request template and type\n' +
+                        '• Update the request status\n' +
+                        '• Reset approvals if the new template requires them\n' +
+                        '• All existing request data will be updated\n\n' +
+                        'This action cannot be undone. Do you want to continue?'
+                      );
+                      
+                      if (!confirmed) {
+                        return;
+                      }
+
                       try {
-                        // Here you would implement the change type logic
                         const response = await fetch(`/api/requests/${requestId}/change-type`, {
                           method: 'POST',
                           headers: {
@@ -4926,33 +4944,37 @@ export default function RequestViewPage() {
                         });
                         
                         if (response.ok) {
+                          const result = await response.json();
                           toast({
-                            title: "Type Changed",
-                            description: "Request type has been changed successfully.",
+                            title: "Type Changed Successfully",
+                            description: `Request type changed to ${result.newType}. Status updated to ${result.newStatus === 'for_approval' ? 'For Approval' : 'Open'}.`,
                             className: "bg-green-50 border-green-200 text-green-800"
                           });
-                          // Refresh request data
+                          
+                          // Refresh request data to show changes
                           await fetchRequestData();
                           setShowChangeTypeModal(false);
                           setSelectedCategory('');
                           setSelectedTemplate('');
                         } else {
-                          throw new Error('Failed to change request type');
+                          const errorData = await response.json();
+                          throw new Error(errorData.error || 'Failed to change request type');
                         }
                       } catch (error) {
+                        console.error('Error changing request type:', error);
                         toast({
                           title: "Error",
-                          description: "Failed to change request type.",
+                          description: error instanceof Error ? error.message : "Failed to change request type.",
                           variant: "destructive"
                         });
                       }
                     }}
-                    className="bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300"
+                    className="bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500"
                   >
-                    Change Type
+                    <Tag className="h-4 w-4 mr-2" />
+                    Change Request Type
                   </Button>
                 </DialogFooter>
-              </div>
             </DialogContent>
           </Dialog>
         )}
