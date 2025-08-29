@@ -63,6 +63,9 @@ export async function POST(
     const technicianEmail = technician.emp_email;
     const formData = existingRequest.formData as any;
     
+    // Store previous technician before updating
+    const previousTechnician = formData.assignedTechnician || 'None';
+    
     // Update assignment
     formData.assignedTechnicianId = technicianId;
     formData.assignedTechnician = technicianName;
@@ -82,7 +85,7 @@ export async function POST(
     await addHistory(prisma as any, {
       requestId: requestId,
       action: 'Technician-Reassigned',
-      details: `Assigned to : ${technicianName}\nPrevious Technician : ${formData.assignedTechnician || 'None'}\nTechnician Email : ${technicianEmail}`,
+      details: `Assigned to : ${technicianName}\nPrevious Technician : ${previousTechnician}`,
       actorId: user.id,
       actorName: actorName,
       actorType: "user"

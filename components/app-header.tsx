@@ -223,7 +223,7 @@ export default function AppHeader() {
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link href="/technician/requests?assignedToCurrentUser=true&viewMode=assigned_to_me&status=open,on_hold" className="w-full text-white hover:text-white hover:bg-black/20">
+                      <Link href="/technician/requests" className="w-full text-white hover:text-white hover:bg-black/20">
                         All Requests
                       </Link>
                     </DropdownMenuItem>

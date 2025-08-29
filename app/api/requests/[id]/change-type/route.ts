@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { addHistory } from '@/lib/history';
+import { notifyApprovalRequired } from '@/lib/notifications';
 
 export async function POST(
   request: NextRequest,
@@ -98,7 +99,22 @@ export async function POST(
         requestType: newTemplate.type,
         category: newTemplate.categoryId?.toString(),
         template: newTemplate.id.toString(),
+        // Update field '4' which is used for displaying request type
+        '4': newTemplate.type,
+        // Clear assigned technician when changing type
+        assignedTechnician: null,
+        assignedTechnicianId: null,
+        assignedTechnicianEmail: null,
       };
+
+      // Remove SLA-related fields from formData as they will be recalculated
+      delete updatedFormData.slaId;
+      delete updatedFormData.slaName;
+      delete updatedFormData.slaHours;
+      delete updatedFormData.slaSource;
+      delete updatedFormData.slaDueDate;
+      delete updatedFormData.slaStartAt;
+      delete updatedFormData.slaCalculatedAt;
 
       await tx.request.update({
         where: { id: requestId },
@@ -185,7 +201,7 @@ export async function POST(
                     data: {
                       requestId: requestId,
                       level: levelNumber,
-                      name: approverName,
+                      name: level.displayName, // Use template displayName instead of approver name
                       approverId: actualApproverId,
                       approverName: approverName,
                       approverEmail: approverEmail,
@@ -204,18 +220,18 @@ export async function POST(
       // 5. Add history entries
       const technicianName = `${technician.emp_fname} ${technician.emp_lname}`;
 
-      // History for type change
+      // Create one combined history entry for the entire change
+      const changeDetails = [];
+      
+      // Helper function to capitalize type names
+      const capitalizeType = (type: string) => {
+        return type.charAt(0).toUpperCase() + type.slice(1);
+      };
+      
       if (oldType !== newType) {
-        await addHistory(tx, {
-          requestId: requestId,
-          action: 'Updated',
-          details: `Type Change from ${oldType} to ${newType}`,
-          actorName: technicianName,
-          actorType: 'technician'
-        });
+        changeDetails.push(`Type Change from ${capitalizeType(oldType)} to ${capitalizeType(newType)}`);
       }
-
-      // History for status change
+      
       if (oldStatus !== newStatus) {
         const statusDisplayMap: { [key: string]: string } = {
           'open': 'Open',
@@ -225,36 +241,101 @@ export async function POST(
           'closed': 'Closed',
           'on_hold': 'On Hold'
         };
-
-        await addHistory(tx, {
-          requestId: requestId,
-          action: 'Updated',
-          details: `Status Change from ${statusDisplayMap[oldStatus] || oldStatus} to ${statusDisplayMap[newStatus] || newStatus}`,
-          actorName: technicianName,
-          actorType: 'technician'
-        });
+        changeDetails.push(`Status Change from ${statusDisplayMap[oldStatus] || oldStatus} to ${statusDisplayMap[newStatus] || newStatus}`);
       }
+      
+      changeDetails.push(`Template changed from "${currentTemplate?.name || 'Unknown'}" to "${newTemplate.name}"`);
 
-      // History for approvals initiated
-      if (hasApprovals) {
-        await addHistory(tx, {
-          requestId: requestId,
-          action: 'Updated',
-          details: 'Approvals Initiated',
-          actorName: technicianName,
-          actorType: 'technician'
-        });
-      }
-
-      // History for template change
+      // Add single combined history entry
       await addHistory(tx, {
         requestId: requestId,
         action: 'Updated',
-        details: `Template changed from "${currentTemplate?.name || 'Unknown'}" to "${newTemplate.name}"`,
+        details: changeDetails.join('\n'),
         actorName: technicianName,
         actorType: 'technician'
       });
+
+      // Add "Approvals Initiated" history AFTER the main change (if approvals exist)
+      if (hasApprovals) {
+        // Get the approval workflow configuration to show displayName instead of approver names
+        const approvalConfig = newTemplate.approvalWorkflow as any;
+        let approvalDisplayNames: string[] = [];
+        
+        if (approvalConfig?.levels && Array.isArray(approvalConfig.levels) && approvalConfig.levels.length > 0) {
+          const level1 = approvalConfig.levels[0];
+          if (level1?.displayName) {
+            // Use the displayName from the workflow level (e.g., "level 1", "level 2")
+            // Capitalize it properly
+            const displayName = level1.displayName;
+            const capitalizedDisplayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
+            approvalDisplayNames.push(capitalizedDisplayName);
+          }
+        }
+        
+        // Fallback to "Level 1" if no displayName is found
+        if (approvalDisplayNames.length === 0) {
+          approvalDisplayNames.push('Level 1');
+        }
+        
+        // Show the displayName(s) for Level 1
+        await addHistory(tx, {
+          requestId: requestId,
+          action: 'Approvals Initiated',
+          details: `Approver(s) : ${approvalDisplayNames.join(', ')}\nLevel : ${approvalDisplayNames[0]}`,
+          actorName: 'System',
+          actorType: 'system'
+        });
+      }
     });
+
+    // 6. Send approval notifications after transaction completes (if approvals exist)
+    if (hasApprovals) {
+      try {
+        // Get the updated request with user data for notifications
+        const requestWithUser = await prisma.request.findUnique({
+          where: { id: requestId },
+          include: {
+            user: {
+              select: {
+                id: true,
+                emp_email: true,
+                emp_fname: true,
+                emp_lname: true,
+                department: true,
+              }
+            }
+          }
+        });
+
+        // Get level 1 approvers to send notifications
+        const levelOneApprovals = await prisma.requestApproval.findMany({
+          where: { 
+            requestId: requestId,
+            level: 1
+          },
+          include: {
+            approver: {
+              select: {
+                id: true,
+                emp_email: true,
+                emp_fname: true,
+                emp_lname: true
+              }
+            }
+          }
+        });
+
+        // Send email notifications to level 1 approvers
+        for (const approval of levelOneApprovals) {
+          if (approval.approver && approval.approver.emp_email && requestWithUser) {
+            await notifyApprovalRequired(requestWithUser, newTemplate, approval.approver, approval.id);
+          }
+        }
+      } catch (notificationError) {
+        console.error('Error sending approval notifications after type change:', notificationError);
+        // Don't fail the type change if notifications fail
+      }
+    }
 
     return NextResponse.json({ 
       success: true, 

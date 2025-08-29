@@ -821,7 +821,15 @@ export default function RequestViewPage() {
       const res = await fetch('/api/technicians?limit=100');
       if (res.ok) {
         const data = await res.json();
-        setAvailableTechnicians(data.technicians || []);
+        let technicians = data.technicians || [];
+        
+        // Filter out currently assigned technician if one is assigned
+        if (requestData?.formData?.assignedTechnicianId) {
+          const assignedUserId = requestData.formData.assignedTechnicianId;
+          technicians = technicians.filter((tech: any) => tech.userId !== assignedUserId);
+        }
+        
+        setAvailableTechnicians(technicians);
       }
     } catch (e) {
       console.error('Failed to load technicians', e);
@@ -4574,6 +4582,11 @@ export default function RequestViewPage() {
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>Assign Technician</DialogTitle>
+                {requestData?.formData?.assignedTechnician && (
+                  <div className="text-sm text-gray-600 mt-2">
+                    Currently assigned to: <span className="font-medium">{requestData.formData.assignedTechnician}</span>
+                  </div>
+                )}
               </DialogHeader>
               <div className="space-y-4">
                 <div>

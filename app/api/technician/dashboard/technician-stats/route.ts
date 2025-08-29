@@ -141,13 +141,13 @@ export async function GET(request: NextRequest) {
                 {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    equals: tech.id
+                    equals: tech.userId
                   }
                 },
                 {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    equals: tech.id.toString()
+                    equals: tech.userId.toString()
                   }
                 },
                 {
@@ -168,13 +168,13 @@ export async function GET(request: NextRequest) {
                 {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    equals: tech.id
+                    equals: tech.userId
                   }
                 },
                 {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    equals: tech.id.toString()
+                    equals: tech.userId.toString()
                   }
                 },
                 {
@@ -195,13 +195,13 @@ export async function GET(request: NextRequest) {
                 {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    equals: tech.id
+                    equals: tech.userId
                   }
                 },
                 {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    equals: tech.id.toString()
+                    equals: tech.userId.toString()
                   }
                 },
                 {
@@ -224,7 +224,7 @@ export async function GET(request: NextRequest) {
         const totalAssigned = onHold + open;
 
         return {
-          id: tech.id,
+          id: tech.userId, // Use userId instead of tech.id for consistency with formData
           name: techName,
           onHold,
           open,

@@ -18,7 +18,9 @@ import {
   Tag,
   Calendar,
   User,
-  Info
+  Info,
+  ShoppingCart,
+  Ticket
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -100,6 +102,7 @@ interface PaginationData {
   total: number;
   pages: number;
   current: number;
+  limit?: number;
 }
 
 // Utility function to capitalize each word
@@ -260,16 +263,47 @@ export default function MyRequestsPage() {
   const [pagination, setPagination] = useState<PaginationData>({ total: 0, pages: 0, current: 1 });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  
+  // Initialize filters from URL parameters
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const statusParam = searchParams?.get('status');
+    console.log('URL status parameter:', statusParam); // Debug log
+    if (statusParam) {
+      // Direct mapping since URL params now match the filter values
+      const result = statusParam === 'for_approval' || statusParam === 'open' || 
+             statusParam === 'on_hold' || statusParam === 'resolved' || 
+             statusParam === 'closed' || statusParam === 'cancelled' 
+             ? statusParam : 'all';
+      console.log('Setting status filter to:', result); // Debug log
+      return result;
+    }
+    return 'all';
+  });
+  
   const [typeFilter, setTypeFilter] = useState('all');
-  const [approvalStatusFilter, setApprovalStatusFilter] = useState('ALL');
+  
+  const [approvalStatusFilter, setApprovalStatusFilter] = useState(() => {
+    const approvalParam = searchParams?.get('approvals');
+    if (approvalParam) {
+      // Direct mapping since URL params now match the filter values
+      return approvalParam === 'for_clarification' || approvalParam === 'pending_approval' ||
+             approvalParam === 'approved' || approvalParam === 'rejected'
+             ? approvalParam : 'ALL';
+    }
+    return 'ALL';
+  });
+  
   const [currentPage, setCurrentPage] = useState(1);
+  
+  // Simple view mode: my assigned requests vs all requests
+  const [viewMode, setViewMode] = useState<'assigned' | 'all'>('assigned');
 
   // Process URL parameters for filtering
   useEffect(() => {
-    const urlStatus = searchParams.get('status');
-    const urlAssignedTechnicianId = searchParams.get('assignedTechnicianId');
-    const urlAssignedToCurrentUser = searchParams.get('assignedToCurrentUser');
+    const urlStatus = searchParams?.get('status');
+    const urlAssignedTechnicianId = searchParams?.get('assignedTechnicianId');
+    const urlAssignedToCurrentUser = searchParams?.get('assignedToCurrentUser');
     
     // Set status filter from URL
     if (urlStatus) {
@@ -282,37 +316,72 @@ export default function MyRequestsPage() {
     }
   }, [searchParams]);
 
+  // Debounce search term with faster response
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300); // Reduced from 500ms to 300ms for faster response
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   useEffect(() => {
     if (session) {
+      console.log('Session user:', session.user); // Debug log
+      console.log('Current statusFilter:', statusFilter); // Debug log
+      console.log('Current URL params:', Object.fromEntries(searchParams?.entries() || [])); // Debug log
       fetchRequests();
     }
-  }, [session, currentPage, searchParams]);
+  }, [session, currentPage, viewMode, statusFilter, typeFilter, searchParams]); // Removed debouncedSearchTerm and approvalStatusFilter since we're doing client-side filtering
 
   const fetchRequests = async () => {
     try {
       setLoading(true);
       
-      // Build query parameters
-      const queryParams = new URLSearchParams();
-      queryParams.set('page', currentPage.toString());
-      queryParams.set('limit', '10');
+      // Build query parameters based on filter mode
+      let queryParams = `page=${currentPage}&limit=10`;
       
-      // Add URL filtering parameters
-      const urlStatus = searchParams.get('status');
-      const urlAssignedTechnicianId = searchParams.get('assignedTechnicianId');
-      const urlAssignedToCurrentUser = searchParams.get('assignedToCurrentUser');
+      if (viewMode === 'assigned') {
+        // Get URL filtering parameters for technician-specific filtering
+        const urlStatus = searchParams?.get('status');
+        const urlAssignedTechnicianId = searchParams?.get('assignedTechnicianId');
+        const urlAssignedToCurrentUser = searchParams?.get('assignedToCurrentUser');
+        
+        if (urlStatus) {
+          queryParams += `&status=${urlStatus}`;
+        }
+        if (urlAssignedTechnicianId) {
+          queryParams += `&assignedTechnicianId=${urlAssignedTechnicianId}`;
+        }
+        if (urlAssignedToCurrentUser) {
+          queryParams += `&assignedToCurrentUser=${urlAssignedToCurrentUser}`;
+        } else {
+          // Default to current user's assigned requests when in "assigned" mode
+          queryParams += `&assignedToCurrentUser=true`;
+        }
+      }
       
-      if (urlStatus) {
-        queryParams.set('status', urlStatus);
-      }
-      if (urlAssignedTechnicianId) {
-        queryParams.set('assignedTechnicianId', urlAssignedTechnicianId);
-      }
-      if (urlAssignedToCurrentUser) {
-        queryParams.set('assignedToCurrentUser', urlAssignedToCurrentUser);
+      // Add status filter if specified and not using URL filtering for assigned view
+      if (statusFilter && statusFilter !== 'all' && viewMode !== 'assigned') {
+        queryParams += `&status=${statusFilter}`;
       }
       
-      const response = await fetch(`/api/technician/requests?${queryParams.toString()}`);
+      // Add approval status filter if specified
+      // Remove approval status filter from API call since we're doing client-side filtering
+      // if (approvalStatusFilter && approvalStatusFilter !== 'ALL') {
+      //   queryParams += `&approvals=${approvalStatusFilter}`;
+      // }
+      
+      // Remove search term from API call since we're doing client-side filtering
+      // if (debouncedSearchTerm.trim()) {
+      //   queryParams += `&search=${encodeURIComponent(debouncedSearchTerm.trim())}`;
+      // }
+      
+      console.log('🔍 Final query params:', queryParams);
+      
+      // Choose the API endpoint based on view mode
+      const apiEndpoint = viewMode === 'all' ? '/api/requests' : '/api/technician/requests';
+      const response = await fetch(`${apiEndpoint}?${queryParams}`);
       
       if (!response.ok) {
         throw new Error('Failed to fetch requests');
@@ -333,20 +402,20 @@ export default function MyRequestsPage() {
     }
   };
 
+  // Apply client-side filtering similar to requests/view page
   const filteredRequests = requests.filter(request => {
-    const matchesSearch = searchTerm === '' || 
-      request.templateName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      request.id.toString().includes(searchTerm) ||
-      (request.subject && request.subject.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesSearch = debouncedSearchTerm === '' || 
+      (request.templateName && request.templateName.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+      request.id.toString().includes(debouncedSearchTerm) ||
+      (request.formData?.['8'] && request.formData['8'].toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+      (request.user && `${request.user.emp_fname} ${request.user.emp_lname}`.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
     
-    // Skip status filtering if URL parameters are present (server-side filtering)
-    const urlStatus = searchParams.get('status');
-    const urlAssignedTechnicianId = searchParams.get('assignedTechnicianId');
-    const urlAssignedToCurrentUser = searchParams.get('assignedToCurrentUser');
-    const hasUrlFiltering = urlStatus || urlAssignedTechnicianId || urlAssignedToCurrentUser;
+    const matchesStatus = statusFilter === 'all' || request.status === statusFilter;
     
-    const matchesStatus = hasUrlFiltering || statusFilter === 'all' || request.status === statusFilter;
-    const matchesType = typeFilter === 'all' || request.type === typeFilter;
+    // Check type filter - get type from formData[4] first, then fallback to request.type
+    const requestType = (request.formData?.['4']?.toLowerCase() || request.type?.toLowerCase() || 'service');
+    const filterType = typeFilter.toLowerCase();
+    const matchesType = typeFilter === 'all' || requestType === filterType;
     
     // Check approval status filter
     const { status: currentApprovalStatus } = getCurrentApprovalStatus(request.approvals);
@@ -368,6 +437,11 @@ export default function MyRequestsPage() {
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
   };
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [viewMode, statusFilter, typeFilter, approvalStatusFilter, debouncedSearchTerm]);
 
   if (loading) {
     return (
@@ -409,9 +483,14 @@ export default function MyRequestsPage() {
               <div className="flex items-center gap-4">
                 <div>
                   <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-                    All Requests
+                    {viewMode === 'assigned' ? 'My Assigned Requests' : 'All Requests'}
                   </h1>
-                  <p className="text-sm text-slate-600">View and manage your service requests</p>
+                  <p className="text-sm text-slate-600">
+                    {viewMode === 'assigned' 
+                      ? 'View and manage requests assigned to you' 
+                      : 'View and manage all service requests'
+                    }
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -433,7 +512,7 @@ export default function MyRequestsPage() {
             <div style={{ zoom: '0.8' }}>
               <div className="space-y-6 p-6">
                 {/* URL Filter Indicators */}
-                {searchParams.get('assignedToCurrentUser') === 'true' && (
+                {searchParams?.get('assignedToCurrentUser') === 'true' && (
                   <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded">
                     <strong>Showing: My Assigned Requests</strong>
                     {searchParams.get('status') && (
@@ -441,7 +520,7 @@ export default function MyRequestsPage() {
                     )}
                   </div>
                 )}
-                {searchParams.get('assignedTechnicianId') && searchParams.get('assignedToCurrentUser') !== 'true' && (
+                {searchParams?.get('assignedTechnicianId') && searchParams?.get('assignedToCurrentUser') !== 'true' && (
                   <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded">
                     <strong>Showing: Requests assigned to {searchParams.get('technicianName') || `technician ID ${searchParams.get('assignedTechnicianId')}`}</strong>
                     {searchParams.get('status') && (
@@ -451,82 +530,108 @@ export default function MyRequestsPage() {
                 )}
 
                 {/* Filters */}
-                <div className="flex flex-col md:flex-row gap-4">
-                  <div className="flex-1">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                      <Input
-                        placeholder="Search requests..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10 bg-white/50"
-                      />
+                <div className="flex-shrink-0">
+                  {/* Enhanced Filters */}
+                  <div className="flex flex-col md:flex-row gap-4">
+                    {/* View Mode Filters + Search Row */}
+                    <div className="flex gap-2 items-center flex-1">
+                      {/* View Mode Filters - Inline */}
+                      <Filter className="h-4 w-4 text-gray-500" />
+                      <Select value={viewMode} onValueChange={(value: 'assigned' | 'all') => setViewMode(value)}>
+                        <SelectTrigger className="w-60 bg-white/50">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="assigned">My Assigned Requests</SelectItem>
+                          <SelectItem value="all">All Requests</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      
+                      <div className="w-px h-6 bg-gray-300 mx-1"></div>
+                      
+                      {/* Search Input */}
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                        <Input
+                          placeholder="Search requests..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          onBlur={() => {
+                            // Trigger immediate search on blur if there's a difference
+                            if (searchTerm !== debouncedSearchTerm) {
+                              setDebouncedSearchTerm(searchTerm);
+                            }
+                          }}
+                          className="pl-10 bg-white/50"
+                        />
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="w-32 bg-white/50">
-                        <SelectValue placeholder="Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Status</SelectItem>
-                        <SelectItem value="for_approval">For Approval</SelectItem>
-                        <SelectItem value="open">Open</SelectItem>
-                        <SelectItem value="on_hold">On Hold</SelectItem>
-                        <SelectItem value="resolved">Resolved</SelectItem>
-                        <SelectItem value="closed">Closed</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    <Select value={typeFilter} onValueChange={setTypeFilter}>
-                      <SelectTrigger className="w-32 bg-white/50">
-                        <SelectValue placeholder="Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Types</SelectItem>
-                        <SelectItem value="service">Service</SelectItem>
-                        <SelectItem value="incident">Incident</SelectItem>
-                      </SelectContent>
-                    </Select>
                     
+                    {/* Other Filters */}
+                    <div className="flex gap-2">
+                      <Select value={statusFilter} onValueChange={setStatusFilter}>
+                        <SelectTrigger className="w-32 bg-white/50">
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Status</SelectItem>
+                          <SelectItem value="for_approval">For Approval</SelectItem>
+                          <SelectItem value="open">Open</SelectItem>
+                          <SelectItem value="on_hold">On Hold</SelectItem>
+                          <SelectItem value="resolved">Resolved</SelectItem>
+                          <SelectItem value="closed">Closed</SelectItem>
+                          <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
 
-                    {/* <Select value={approvalStatusFilter} onValueChange={setApprovalStatusFilter}>
-                      <SelectTrigger className="w-40 bg-white/50">
-                        <SelectValue placeholder="Approval Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ALL">All Approvals</SelectItem>
-                        <SelectItem value="pending_approval">Pending Approval</SelectItem>
-                        <SelectItem value="for_clarification">For Clarification</SelectItem>
-                        <SelectItem value="approved">Approved</SelectItem>
-                        <SelectItem value="rejected">Rejected</SelectItem>
-                      </SelectContent>
-                    </Select> */}
+                      <Select value={typeFilter} onValueChange={setTypeFilter}>
+                        <SelectTrigger className="w-32 bg-white/50">
+                          <SelectValue placeholder="Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Types</SelectItem>
+                          <SelectItem value="service">Service</SelectItem>
+                          <SelectItem value="incident">Incident</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <Select value={approvalStatusFilter} onValueChange={setApprovalStatusFilter}>
+                        <SelectTrigger className="w-40 bg-white/50">
+                          <SelectValue placeholder="Approval Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ALL">All Approvals</SelectItem>
+                          <SelectItem value="pending_approval">Pending Approval</SelectItem>
+                          <SelectItem value="for_clarification">For Clarification</SelectItem>
+                          <SelectItem value="approved">Approved</SelectItem>
+                          <SelectItem value="rejected">Rejected</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </div>
 
-                {/* Requests Table with Fixed Header */}
-                <div className="bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto min-w-full">
+                {/* Requests Table - Dynamic height with at least 1% bottom margin */}
+                <div className="bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg overflow-hidden" 
+                     style={{ height: 'calc(100vh - 190px)' }}>
+                  <div className="h-full flex flex-col">
                     {filteredRequests.length === 0 ? (
-                    <div className="p-12 text-center">
-                      <FileText className="h-12 w-12 mx-auto text-slate-400 mb-4" />
-                      <p className="text-slate-600 mb-2">No requests found</p>
-                      <p className="text-sm text-slate-500">
-                        {searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || approvalStatusFilter !== 'ALL'
-                          ? 'Try adjusting your filters or search terms'
-                          : 'Create your first request to get started'
-                        }
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      {/* Table Container with Fixed Header */}
-                      <div className="overflow-hidden">
+                      <div className="flex-1 flex items-center justify-center p-12">
+                        <div className="text-center">
+                          <FileText className="h-12 w-12 mx-auto text-slate-400 mb-4" />
+                          <p className="text-slate-600 mb-2">No requests found</p>
+                          <p className="text-sm text-slate-500">
+                            {debouncedSearchTerm || statusFilter !== 'all' || typeFilter !== 'all' || approvalStatusFilter !== 'ALL'
+                              ? 'Try adjusting your filters or search terms'
+                              : 'Create your first request to get started'
+                            }
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
                         {/* Fixed Header */}
-                        <div className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
+                        <div className="bg-slate-50 border-b border-slate-200 flex-shrink-0">
                           <div
                             className="grid gap-2 px-3 py-3 text-sm font-medium text-slate-700"
                             style={{
@@ -547,7 +652,7 @@ export default function MyRequestsPage() {
                         </div>
 
                         {/* Scrollable Content */}
-                        <div className="max-h-[500px] overflow-y-auto">
+                        <div className="flex-1 overflow-y-auto">
                           <div className="divide-y divide-slate-200">
                             {filteredRequests.map((request) => {
                               const { status: currentApprovalStatus } =
@@ -573,7 +678,24 @@ export default function MyRequestsPage() {
                                     title="Click to view request details"
                                   >
                                     {/* ID */}
-                                    <div className="flex items-center">
+                                    <div className="flex items-center gap-2">
+                                      {/* Type Icon - Get type from formData[4] */}
+                                      {(() => {
+                                        const requestType = request.formData?.['4']?.toLowerCase() || request.type?.toLowerCase() || 'unknown';
+                                        
+                                        // Debug logging for first few requests
+                                        if (requests.indexOf(request) < 3) {
+                                          console.log(`Request ${request.id}: formData[4]="${request.formData?.['4']}", type="${request.type}", using="${requestType}"`);
+                                        }
+                                        
+                                        if (requestType === 'service') {
+                                          return <ShoppingCart className="h-4 w-4 text-blue-600" />;
+                                        } else if (requestType === 'incident') {
+                                          return <Ticket className="h-4 w-4 text-red-600" />;
+                                        } else {
+                                          return <FileText className="h-4 w-4 text-gray-500" />;
+                                        }
+                                      })()}
                                       <span className="text-sm font-mono font-medium">
                                         #{request.id}
                                       </span>
@@ -583,7 +705,7 @@ export default function MyRequestsPage() {
                                     <div className="flex items-center">
                                       <Tooltip>
                                         <TooltipTrigger asChild>
-                                          <p className="font-medium text-sm truncate cursor-help">
+                                          <p className="font-medium text-sm break-words cursor-help">
                                             {request.formData?.["8"] ||
                                               request.subject ||
                                               request.templateName ||
@@ -600,14 +722,14 @@ export default function MyRequestsPage() {
 
                                     {/* Requester */}
                                     <div>
-                                      <p className="font-medium text-sm truncate">
+                                      <p className="font-medium text-sm break-words">
                                         {request.user ? 
                                           `${request.user.emp_fname} ${request.user.emp_lname}` :
                                           request.requesterName ||
                                           request.formData?.["1"] ||
                                           "-"}
                                       </p>
-                                      <p className="text-xs text-gray-500 truncate">
+                                      <p className="text-xs text-gray-500 break-words">
                                         {request.user?.department || "-"}
                                       </p>
                                     </div>
@@ -618,7 +740,7 @@ export default function MyRequestsPage() {
                                         <Badge
                                           className={`${getApprovalStatusColor(
                                             currentApprovalStatus
-                                          )} border-0 text-xs`}
+                                          )} border-0 text-xs px-1.5 py-0.5`}
                                         >
                                           {capitalizeWords(currentApprovalStatus)}
                                         </Badge>
@@ -632,7 +754,7 @@ export default function MyRequestsPage() {
                                       <Badge
                                         className={`${getStatusColor(
                                           request.status
-                                        )} border-0 text-xs`}
+                                        )} border-0 text-xs px-1.5 py-0.5`}
                                       >
                                         <span className="flex items-center gap-1">
                                           {getStatusIcon(request.status)}
@@ -648,7 +770,7 @@ export default function MyRequestsPage() {
                                           request.formData?.["2"] ||
                                             request.priority ||
                                             "Medium"
-                                        )} border-0 text-xs`}
+                                        )} border-0 text-xs px-1.5 py-0.5`}
                                       >
                                         {capitalizeWords(
                                           request.formData?.["2"] ||
@@ -659,9 +781,9 @@ export default function MyRequestsPage() {
                                     </div>
 
                                     {/* DueBy Date */}
-                                    <div className="flex items-center gap-1 text-xs text-gray-600">
-                                      <Calendar className="h-3 w-3" />
-                                      <span>
+                                    <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
+                                      <Calendar className="h-3 w-3 flex-shrink-0" />
+                                      <span className="text-sm break-words">
                                         {request.formData?.slaDueDate
                                           ? formatDate(request.formData.slaDueDate)
                                           : "-"}
@@ -669,15 +791,15 @@ export default function MyRequestsPage() {
                                     </div>
 
                                     {/* Created Date */}
-                                    <div className="flex items-center gap-1 text-xs text-gray-600">
-                                      <Calendar className="h-3 w-3" />
-                                      <span>{formatDate(request.createdAt)}</span>
+                                    <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
+                                      <Calendar className="h-3 w-3 flex-shrink-0" />
+                                      <span className="text-sm break-words">{formatDate(request.createdAt)}</span>
                                     </div>
 
                                     {/* Assigned To */}
-                                    <div className="flex items-center gap-1">
-                                      <User className="h-3 w-3 text-gray-500" />
-                                      <span className="text-xs truncate">
+                                    <div className="flex items-center gap-1 leading-tight">
+                                      <User className="h-3 w-3 text-gray-500 flex-shrink-0" />
+                                      <span className="text-sm break-words">
                                         {request.assignedTechnician?.displayName ||
                                           request.assignedTechnician?.fullName ||
                                           request.formData?.assignedTechnician ||
@@ -690,19 +812,17 @@ export default function MyRequestsPage() {
                             })}
                           </div>
                         </div>
-                      </div>
-                    </div>
-
-                  )}
+                      </>
+                    )}
                   </div>
                 </div>
 
-                {/* Pagination */}
+                {/* Pagination - Fixed at bottom */}
                 {pagination.pages > 1 && (
-                  <div className="bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg p-4">
+                  <div className="flex-shrink-0 bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg p-4">
                     <div className="flex items-center justify-between">
                       <p className="text-sm text-slate-600">
-                        Showing {((currentPage - 1) * 10) + 1} to {Math.min(currentPage * 10, pagination.total)} of {pagination.total} requests
+                        Showing {((currentPage - 1) * (pagination.limit || 10)) + 1} to {Math.min(currentPage * (pagination.limit || 10), pagination.total)} of {pagination.total} requests
                       </p>
                       <div className="flex items-center gap-2">
                         <Button
@@ -714,9 +834,78 @@ export default function MyRequestsPage() {
                         >
                           Previous
                         </Button>
-                        <span className="text-sm text-slate-600">
-                          Page {currentPage} of {pagination.pages}
-                        </span>
+                        
+                        {/* Page Numbers */}
+                        {pagination.pages <= 7 ? (
+                          // Show all pages if 7 or fewer
+                          Array.from({ length: pagination.pages }, (_, i) => i + 1).map((page) => (
+                            <Button
+                              key={page}
+                              variant={currentPage === page ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => handlePageChange(page)}
+                              className={currentPage === page 
+                                ? "bg-blue-600 text-white" 
+                                : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                              }
+                            >
+                              {page}
+                            </Button>
+                          ))
+                        ) : (
+                          // Show condensed pagination for many pages
+                          <>
+                            {currentPage > 3 && (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handlePageChange(1)}
+                                  className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                                >
+                                  1
+                                </Button>
+                                {currentPage > 4 && <span className="text-slate-500">...</span>}
+                              </>
+                            )}
+                            
+                            {Array.from({ length: Math.min(5, pagination.pages) }, (_, i) => {
+                              const page = Math.max(1, Math.min(pagination.pages - 4, currentPage - 2)) + i;
+                              if (page <= pagination.pages) {
+                                return (
+                                  <Button
+                                    key={page}
+                                    variant={currentPage === page ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => handlePageChange(page)}
+                                    className={currentPage === page 
+                                      ? "bg-blue-600 text-white" 
+                                      : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                                    }
+                                  >
+                                    {page}
+                                  </Button>
+                                );
+                              }
+                              return null;
+                            })}
+                            
+                            {currentPage < pagination.pages - 2 && (
+                              <>
+                                {currentPage < pagination.pages - 3 && <span className="text-slate-500">...</span>}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handlePageChange(pagination.pages)}
+                                  className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                                >
+                                  {pagination.pages}
+                                </Button>
+                              </>
+                            )}
+                          </>
+                        )}
+                        
                         <Button
                           variant="outline"
                           size="sm"

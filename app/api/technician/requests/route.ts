@@ -43,11 +43,18 @@ export async function GET(request: Request) {
     const statusFilter = searchParams.get('status');
     const assignedTechnicianId = searchParams.get('assignedTechnicianId');
     const assignedToCurrentUser = searchParams.get('assignedToCurrentUser');
+    const departmentId = searchParams.get('departmentId');
+    const departmentHead = searchParams.get('departmentHead');
+    const approvalFilter = searchParams.get('approvals');
+    const searchTerm = searchParams.get('search');
 
     console.log('Filtering parameters:', {
       statusFilter,
       assignedTechnicianId,
-      assignedToCurrentUser
+      assignedToCurrentUser,
+      departmentId,
+      departmentHead,
+      approvalFilter
     });
 
     // Get current user's technician record
@@ -57,10 +64,16 @@ export async function GET(request: Request) {
           emp_email: session.user.email
         },
         isActive: true
+      },
+      include: {
+        user: true  // Include user data to get the user ID
       }
     });
 
     console.log('Current technician:', currentTechnician);
+
+    // Get the current user ID (this is what's stored in assignedTechnicianId)
+    const currentUserId = parseInt(session.user.id);
 
     // Build the where clause for filtering
     let whereClause: any = {};
@@ -76,20 +89,44 @@ export async function GET(request: Request) {
       }
     }
     
-    // Technician assignment filtering
-    if (assignedToCurrentUser === 'true' && currentTechnician) {
-      // Filter by current user's technician ID
+    // Department filtering (for "All Requests" view)
+    if (departmentId && departmentId !== 'all') {
+      whereClause.user = {
+        department: departmentId
+      };
+    } else if (departmentHead && departmentHead !== 'all') {
+      // Get all departments managed by this department head
+      const managedDepartments = await prisma.user.findUnique({
+        where: { id: parseInt(departmentHead) },
+        select: {
+          departmentsManaged: {
+            select: { id: true }
+          }
+        }
+      });
+      
+      if (managedDepartments?.departmentsManaged?.length) {
+        const deptIds = managedDepartments.departmentsManaged.map(d => d.id);
+        whereClause.user = {
+          department: { in: deptIds }
+        };
+      }
+    }
+    
+    // Technician assignment filtering (for "Technician Assigned" view)
+    else if (assignedToCurrentUser === 'true') {
+      // Filter by current user's ID (not technician record ID)
       whereClause.OR = [
         {
           formData: {
             path: ['assignedTechnicianId'],
-            equals: currentTechnician.id
+            equals: currentUserId
           }
         },
         {
           formData: {
             path: ['assignedTechnicianId'],
-            equals: currentTechnician.id.toString()
+            equals: currentUserId.toString()
           }
         }
       ];
@@ -130,9 +167,48 @@ export async function GET(request: Request) {
       ];
     }
 
+    // Add search functionality
+    if (searchTerm) {
+      const searchConditions = [
+        {
+          formData: {
+            path: ['8'], // Subject field
+            string_contains: searchTerm,
+            mode: 'insensitive'
+          }
+        },
+        {
+          formData: {
+            path: ['1'], // Requester name field
+            string_contains: searchTerm,
+            mode: 'insensitive'
+          }
+        },
+        {
+          id: isNaN(parseInt(searchTerm)) ? -1 : parseInt(searchTerm) // Search by ID if numeric
+        }
+      ];
+
+      // Combine existing where clause with search conditions
+      if (Object.keys(whereClause).length > 0) {
+        whereClause = {
+          AND: [
+            whereClause,
+            {
+              OR: searchConditions
+            }
+          ]
+        };
+      } else {
+        whereClause = {
+          OR: searchConditions
+        };
+      }
+    }
+
     console.log('Where clause:', JSON.stringify(whereClause, null, 2));
 
-    // For now, let's just return filtered requests
+    // Get requests with all data for front-end filtering
     const requests = await prisma.request.findMany({
       where: whereClause,
       include: {
@@ -169,8 +245,7 @@ export async function GET(request: Request) {
       orderBy: {
         createdAt: 'desc',
       },
-      take: limit,
-      skip,
+      take: 100, // Get more records for front-end filtering
     });
 
     // Enhance requests with template information
@@ -247,37 +322,9 @@ export async function GET(request: Request) {
       })
     );
 
-    // Get total count for pagination
+    // Get total count for pagination based on the same where clause
     const totalCount = await prisma.request.count({
-      where: {
-        OR: [
-          {
-            formData: {
-              path: ['assignedTechnicianId'],
-              equals: session.user.id.toString()
-            }
-          },
-          {
-            formData: {
-              path: ['assignedTechnicianId'],
-              equals: session.user.id
-            }
-          },
-          ...(session.user.email ? [{
-            formData: {
-              path: ['assignedTechnicianEmail'],
-              equals: session.user.email
-            }
-          }] : []),
-          // Also check if the technician name matches
-          ...(session.user.name ? [{
-            formData: {
-              path: ['assignedTechnician'],
-              string_contains: session.user.name
-            }
-          }] : [])
-        ]
-      }
+      where: whereClause
     });
 
     console.log(`Found ${enhancedRequests.length} requests assigned to technician`);
