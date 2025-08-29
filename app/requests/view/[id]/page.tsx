@@ -1194,8 +1194,8 @@ export default function RequestViewPage() {
     const nowStr = formatForDatetimeLocal(new Date());
     setWlStartTime(nowStr);
     setWlEndTime(nowStr);
-    setWlHours('');
-    setWlMinutes('');
+    setWlHours('00');
+    setWlMinutes('00');
     setWlIncludeNonOp(false);
     setWlDescription(''); // Reset description field
   };
@@ -1205,19 +1205,45 @@ export default function RequestViewPage() {
     setShowWorkLogModal(true);
   };
 
+  // Effect to ensure work log form is properly initialized when modal opens for new work log
+  useEffect(() => {
+    if (showWorkLogModal && !editingWorkLog) {
+      // For new work logs, ensure the form is properly initialized with current time
+      const nowStr = formatForDatetimeLocal(new Date());
+      setWlStartTime(nowStr);
+      setWlEndTime(nowStr);
+      setWlOwnerName(session?.user?.name || '');
+      setWlOwnerId(session?.user?.id ? parseInt(String(session.user.id)) : null);
+    }
+  }, [showWorkLogModal, editingWorkLog, session?.user]);
+
   const openEditWorkLog = (wl: any) => {
     setEditingWorkLog(wl);
     setShowWorkLogModal(true);
     setWlOwnerName(wl.ownerName || '');
-  setWlOwnerId(typeof wl.ownerId === 'number' ? wl.ownerId : null);
-  setWlOwnerPickerOpen(false);
-  setTechSearch('');
-    setWlStartTime(wl.startTime || '');
-    setWlEndTime(wl.endTime || '');
+    setWlOwnerId(typeof wl.ownerId === 'number' ? wl.ownerId : null);
+    setWlOwnerPickerOpen(false);
+    setTechSearch('');
+    
+    // Set times with proper formatting for datetime-local inputs
+    if (wl.startTime) {
+      const startDate = new Date(wl.startTime);
+      setWlStartTime(formatForDatetimeLocal(startDate));
+    } else {
+      setWlStartTime(formatForDatetimeLocal(new Date()));
+    }
+    
+    if (wl.endTime) {
+      const endDate = new Date(wl.endTime);
+      setWlEndTime(formatForDatetimeLocal(endDate));
+    } else {
+      setWlEndTime(formatForDatetimeLocal(new Date()));
+    }
+    
     const hrs = Math.floor((wl.timeTakenMinutes || 0) / 60);
     const mins = (wl.timeTakenMinutes || 0) % 60;
-    setWlHours(hrs ? String(hrs).padStart(2, '0') : '');
-    setWlMinutes(mins ? String(mins).padStart(2, '0') : '');
+    setWlHours(hrs ? String(hrs).padStart(2, '0') : '00');
+    setWlMinutes(mins ? String(mins).padStart(2, '0') : '00');
     setWlIncludeNonOp(!!wl.includeNonOperational);
     setWlDescription(wl.description || '');
   };
@@ -2156,7 +2182,19 @@ export default function RequestViewPage() {
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  onClick={() => router.push('/requests/view')} 
+                  onClick={() => {
+                    // Check if there's history to go back to
+                    if (window.history.length > 1) {
+                      router.back();
+                    } else {
+                      // Fallback: try to determine the appropriate page based on user role
+                      if (session?.user?.isTechnician) {
+                        router.push('/technician/requests');
+                      } else {
+                        router.push('/requests/view');
+                      }
+                    }
+                  }} 
                   className="text-gray-600 hover:text-gray-900"
                 >
                   <ArrowLeft className="h-4 w-4 mr-2" />
@@ -2996,85 +3034,68 @@ export default function RequestViewPage() {
                                 </div>
                               </div>
 
-                          {/* Status + Add Work Log */}
+                          {/* Actions Section */}
                           <div className="border rounded">
-                            <div className="px-3 py-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                              <div className="md:col-span-2">
-                                {requestData?.status === 'resolved' ? (
-                                  <div>
-                                    <label className="text-sm text-gray-700">Request Status</label>
-                                    <div className="w-full border rounded px-2 py-2 mt-1 text-sm bg-green-50 border-green-200 text-green-800 font-medium">
-                                      ✓ Resolved (editing resolution content)
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div>
-                                    <label className="text-sm text-gray-700">Update request status to</label>
-                                    <select
-                                      className="w-full border rounded px-2 py-2 mt-1 text-sm"
-                                      value={resStatus}
-                                      onChange={(e) => {
-                                        const v = e.target.value;
-                                        setResStatus(v);
-                                        if (v === 'resolved') {
-                                          // Check if there are worklogs before allowing resolution
-                                          const fd: any = requestData?.formData || {};
-                                          const worklogs = Array.isArray(fd.worklogs) ? fd.worklogs : [];
-                                          const hasWorkLogs = worklogs.length > 0;
-                                          
-                                          if (!hasWorkLogs) {
-                                            // Reset the dropdown to previous value
-                                            setResStatus('open');
-                                            
-                                            // Show warning toast
-                                            toast({
-                                              title: "Worklog Required",
-                                              description: "You must add at least one worklog before resolving the request.",
-                                              variant: "destructive",
-                                            });
-                                            
-                                            // Show worklog modal
-                                            setShowWorkLogModal(true);
-                                            return;
-                                          }
-                                          
-                                          // Show Resolve modal if worklogs exist
-                                          setShowResolveModal(true);
-                                        }
-                                      }}
+                            <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium text-gray-700">Request Actions</div>
+                            <div className="p-4">
+                              {requestData?.status === 'resolved' ? (
+                                <div className="w-full border rounded px-3 py-2 text-sm bg-green-50 border-green-200 text-green-800 font-medium text-center">
+                                  ✓ Request Resolved
+                                </div>
+                              ) : (
+                                <div className="space-y-3">
+                                  <div className="flex flex-col sm:flex-row gap-3">
+                                    <Button
+                                      onClick={() => setShowWorkLogModal(true)}
+                                      variant="outline"
+                                      className="flex items-center justify-center gap-2 flex-1"
                                     >
-                                      <option value="open">Open</option>
-                                      <option value="on_hold">On-hold</option>
-                                      <option value="resolved">Resolved</option>
-                                    </select>
+                                      <Plus className="h-4 w-4" />
+                                      Add Work Log
+                                    </Button>
+                                    <Button
+                                      onClick={() => {
+                                        // Check if resolution notes are provided first
+                                        if (!resNotes || htmlToText(resNotes).trim().length === 0) {
+                                          toast({
+                                            title: "Resolution Notes Required",
+                                            description: "Please provide resolution notes before resolving the request.",
+                                            variant: "destructive",
+                                          });
+                                          return;
+                                        }
+                                        
+                                        // Then check if there are worklogs
+                                        const fd: any = requestData?.formData || {};
+                                        const worklogs = Array.isArray(fd.worklogs) ? fd.worklogs : [];
+                                        const hasWorkLogs = worklogs.length > 0;
+                                        
+                                        if (!hasWorkLogs) {
+                                          toast({
+                                            title: "Worklog Required",
+                                            description: "You must add at least one worklog before resolving the request.",
+                                            variant: "destructive",
+                                          });
+                                          
+                                          // Show worklog modal
+                                          setShowWorkLogModal(true);
+                                          return;
+                                        }
+                                        
+                                        // Show Resolve modal if both resolution notes and worklogs exist
+                                        setShowResolveModal(true);
+                                      }}
+                                      className="bg-green-600 hover:bg-green-700 text-white flex items-center justify-center gap-2 flex-1"
+                                    >
+                                      <CheckCircle className="h-4 w-4" />
+                                      Resolve Request
+                                    </Button>
                                   </div>
-                                )}
-                              </div>
-                              <div className="flex items-end">
-                                {session?.user?.isTechnician && (() => {
-                                  // Check if there are existing work logs
-                                  const fd: any = requestData?.formData || {};
-                                  const worklogs = Array.isArray(fd.worklogs) ? fd.worklogs : [];
-                                  const hasWorkLogs = worklogs.length > 0;
-                                  
-                                  // Only show the button if there are no work logs yet
-                                  if (!hasWorkLogs) {
-                                    return (
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => setShowWorkLogModal(true)}
-                                        className="flex items-center gap-2"
-                                      >
-                                        <Plus className="h-4 w-4" />
-                                        Add Work Log
-                                      </Button>
-                                    );
-                                  }
-                                  
-                                  return null;
-                                })()}
-                              </div>
+                                  <div className="text-xs text-gray-500 text-center">
+                                    Add work logs to document your progress, then resolve when complete
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </>
@@ -4432,6 +4453,28 @@ export default function RequestViewPage() {
                   try {
                     setSavingResolve(true);
                     
+                    // Validate required fields
+                    if (!resolveClosureCode.trim()) {
+                      toast({
+                        title: "Validation Error",
+                        description: "Please select a closure code before resolving.",
+                        variant: "destructive"
+                      });
+                      return;
+                    }
+                    
+                    // Check if resolution notes are provided in the Resolution tab
+                    if (!resNotes || htmlToText(resNotes).trim().length === 0) {
+                      toast({
+                        title: "Validation Error", 
+                        description: "Please provide resolution notes in the Resolution tab before resolving.",
+                        variant: "destructive"
+                      });
+                      setShowResolveModal(false);
+                      handleTabChange('resolution'); // Switch to resolution tab
+                      return;
+                    }
+                    
                     // Include uploaded attachments from the Resolution tab
                     let uploaded: any[] = [];
                     console.log('Resolve Modal - Checking for new files to upload:', resFiles.length);
@@ -4484,13 +4527,16 @@ export default function RequestViewPage() {
                       }
                     }
                     
+                    // Use resolution notes from the Resolution tab instead of resolve comments
+                    const finalComments = resNotes || resolveComments;
+                    
                     const res = await fetch(`/api/requests/${requestId}/resolve`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         fcr: resolveFcr,
                         closureCode: resolveClosureCode,
-                        closureComments: resolveComments,
+                        closureComments: finalComments,
                         attachmentIds: allAttachmentIds  // Include attachment IDs
                       })
                     });

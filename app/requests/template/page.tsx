@@ -126,12 +126,27 @@ export default function UserPortalPage() {
             <div className="w-80 flex-shrink-0 bg-white/90 backdrop-blur-sm border-r border-slate-200/60">
               <div className="sticky top-16 z-30 h-[calc(100vh-4rem)] overflow-y-auto">
               <div className="flex items-center gap-4 mt-2">
-                <Link href="/requests/view">
-                  <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900 hover:bg-slate-100">
-                    <ArrowLeft className="h-4 w-4 mr-2" />
-                    Back to Requests
-                  </Button>
-                </Link>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  onClick={() => {
+                    // Check if there's history to go back to
+                    if (window.history.length > 1) {
+                      router.back();
+                    } else {
+                      // Fallback: try to determine the appropriate page based on user role
+                      if (session?.user?.isTechnician) {
+                        router.push('/technician/requests');
+                      } else {
+                        router.push('/requests/view');
+                      }
+                    }
+                  }}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back
+                </Button>
              
               </div>
                 
