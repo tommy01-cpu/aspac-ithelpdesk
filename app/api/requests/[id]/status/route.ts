@@ -21,11 +21,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     
     // Handle different status mappings
     let actualStatus = status;
-    if (status === 'close') {
-      actualStatus = 'closed'; // Map 'close' to 'closed'
-    }
+    // No need to map anything - cancelled is already valid
     
-    const allowed: Array<keyof typeof RequestStatus> = ['open', 'on_hold', 'for_approval', 'resolved', 'closed'] as any;
+    const allowed: Array<keyof typeof RequestStatus> = ['open', 'on_hold', 'for_approval', 'resolved', 'closed', 'cancelled'] as any;
     if (!actualStatus || !allowed.includes(actualStatus)) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
     }
@@ -61,7 +59,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const statusLabels: { [key: string]: string } = {
       'on_hold': 'On Hold',
       'open': 'Open',
-      'close': 'Closed',
+      'cancelled': 'Cancelled',
       'closed': 'Closed',
       'for_approval': 'For Approval',
       'resolved': 'Resolved'

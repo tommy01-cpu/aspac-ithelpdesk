@@ -563,6 +563,11 @@ export default function RequestViewPage() {
   const [selectedStatus, setSelectedStatus] = useState('');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // SLA Timer modal states
+  const [showSlaTimerModal, setShowSlaTimerModal] = useState(false);
+  const [slaTimerAction, setSlaTimerAction] = useState<'start' | 'stop'>('stop');
+  const [isUpdatingSla, setIsUpdatingSla] = useState(false);
+
   // Resolution attachment deletion - mark for deletion (don't delete until save)
   const handleDeleteResolutionAttachment = async (attachmentId: string, attachmentName: string) => {
     if (!confirm(`Are you sure you want to remove "${attachmentName}"? It will be deleted when you save.`)) {
@@ -3965,6 +3970,33 @@ export default function RequestViewPage() {
                     <div className="space-y-3">
                       <Button
                         variant="outline"
+                        onClick={() => {
+                          if (!requestData) return;
+                          
+                          // Determine action based on current status
+                          const currentStatus = requestData.status;
+                          if (currentStatus === 'open') {
+                            setSlaTimerAction('stop');
+                          } else if (currentStatus === 'on_hold') {
+                            setSlaTimerAction('start');
+                          } else {
+                            toast({
+                              title: "Invalid Status",
+                              description: "SLA Timer can only be managed when status is 'Open' or 'On Hold'.",
+                              variant: "destructive"
+                            });
+                            return;
+                          }
+                          
+                          setShowSlaTimerModal(true);
+                        }}
+                        className="w-full flex items-center justify-center gap-2"
+                      >
+                        <Clock className="h-4 w-4" />
+                        SLA Timer
+                      </Button>
+                      <Button
+                        variant="outline"
                         onClick={() => setShowChangeStatusModal(true)}
                         className="w-full flex items-center justify-center gap-2"
                       >
@@ -4517,7 +4549,7 @@ export default function RequestViewPage() {
                     );
                     
                     // Combine new and existing attachments
-                    const allAttachmentIds = [...new Set([...newAttachmentIds, ...existingAttachmentsNotDeleted])];
+                    const allAttachmentIds = Array.from(new Set([...newAttachmentIds, ...existingAttachmentsNotDeleted]));
                     
                     console.log('Resolve Modal - New attachment IDs:', newAttachmentIds);
                     console.log('Resolve Modal - Existing attachments (not deleted):', existingAttachmentsNotDeleted);
@@ -5098,7 +5130,7 @@ export default function RequestViewPage() {
                 >
                   <option value="">Select Status</option>
                   <option value="on_hold">On Hold</option>
-                  <option value="close">Close</option>
+                  <option value="cancelled">Cancelled</option>
                   <option value="open">Open</option>
                 </select>
               </div>
@@ -5114,7 +5146,7 @@ export default function RequestViewPage() {
                   // Show confirmation dialog
                   const statusLabels: { [key: string]: string } = {
                     'on_hold': 'On Hold',
-                    'close': 'Close',
+                    'cancelled': 'Cancelled',
                     'open': 'Open'
                   };
                   
@@ -5175,6 +5207,104 @@ export default function RequestViewPage() {
                   </div>
                 ) : (
                   "Update Status"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* SLA Timer Modal */}
+        <Dialog open={showSlaTimerModal} onOpenChange={setShowSlaTimerModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>SLA Timer</DialogTitle>
+              <DialogDescription>
+                {slaTimerAction === 'stop' 
+                  ? 'This will pause the SLA timer and change status to On Hold.'
+                  : 'This will resume the SLA timer and change status to Open.'
+                }
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="h-5 w-5 text-yellow-600" />
+                  <span className="font-medium text-yellow-800">
+                    {slaTimerAction === 'stop' ? 'Stop SLA Timer?' : 'Start SLA Timer?'}
+                  </span>
+                </div>
+                <p className="text-sm text-yellow-700">
+                  {slaTimerAction === 'stop' 
+                    ? 'The remaining SLA time will be calculated and saved. The request status will change to "On Hold".'
+                    : 'The SLA timer will resume with the remaining time. The request status will change to "Open".'
+                  }
+                </p>
+                {requestData?.formData?.slaDueDate && (
+                  <div className="mt-2 text-xs text-yellow-600">
+                    <strong>Current SLA Due:</strong> {formatDbTimestamp(requestData.formData.slaDueDate)}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowSlaTimerModal(false)}>
+                Cancel
+              </Button>
+              <Button 
+                disabled={isUpdatingSla}
+                onClick={async () => {
+                  try {
+                    setIsUpdatingSla(true);
+                    
+                    const response = await fetch(`/api/requests/${requestId}/sla-timer`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        action: slaTimerAction
+                      }),
+                    });
+                    
+                    if (response.ok) {
+                      const result = await response.json();
+                      toast({
+                        title: "SLA Timer Updated",
+                        description: `SLA timer has been ${slaTimerAction === 'stop' ? 'paused' : 'resumed'}. Status changed to ${result.newStatus}.`,
+                        className: "bg-green-50 border-green-200 text-green-800"
+                      });
+                      
+                      // Refresh request data to show changes
+                      await fetchRequestData();
+                      setShowSlaTimerModal(false);
+                    } else {
+                      const errorData = await response.json();
+                      throw new Error(errorData.error || 'Failed to update SLA timer');
+                    }
+                  } catch (error) {
+                    console.error('Error updating SLA timer:', error);
+                    toast({
+                      title: "Error",
+                      description: error instanceof Error ? error.message : "Failed to update SLA timer.",
+                      variant: "destructive"
+                    });
+                  } finally {
+                    setIsUpdatingSla(false);
+                  }
+                }}
+                className={slaTimerAction === 'stop' ? 'bg-orange-600 hover:bg-orange-700' : 'bg-green-600 hover:bg-green-700'}
+              >
+                {isUpdatingSla ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Updating...
+                  </div>
+                ) : (
+                  <>
+                    <Clock className="h-4 w-4 mr-2" />
+                    {slaTimerAction === 'stop' ? 'Stop Timer' : 'Start Timer'}
+                  </>
                 )}
               </Button>
             </DialogFooter>
