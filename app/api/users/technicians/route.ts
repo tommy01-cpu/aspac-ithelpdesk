@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: users,
+      users: users,
       total: users.length
     });
     

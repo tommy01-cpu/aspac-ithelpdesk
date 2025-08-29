@@ -407,9 +407,8 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();
     const requestUrl = `${baseUrl}/requests/view/${requestId}`;
-    const technicianUrl = `${baseUrl}/technician/requests/${requestId}`;
+    // Use the same standard request URL for both requester and technician
     const encodedRequestUrl = encodeURIComponent(requestUrl);
-    const encodedTechnicianUrl = encodeURIComponent(technicianUrl);
 
     // Email variables for requester
     const requesterEmailVariables: RequestEmailVariables = {
@@ -446,11 +445,10 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
       Clarification: '', // Not applicable for assignment
       Technician_Name: technicianName,
       Due_By_Date: dueDate,
-      Request_URL: technicianUrl,
-      Request_Link: technicianUrl,
+      Request_URL: requestUrl,
+      Request_Link: requestUrl,
       Base_URL: baseUrl,
       Encoded_Request_URL: encodedRequestUrl,
-      Encoded_Technician_URL: encodedTechnicianUrl,
     };
 
     // Send email to requester (4.1.8)
@@ -618,7 +616,7 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();
     const requestUrl = `${baseUrl}/requests/view/${requestId}`;
-    const technicianUrl = `${baseUrl}/technician/requests/${requestId}`;
+    const technicianUrl = `${baseUrl}/requests/view/${requestId}`; // Use same URL as requester
     const encodedRequestUrl = encodeURIComponent(requestUrl);
     const encodedTechnicianUrl = encodeURIComponent(technicianUrl);
 

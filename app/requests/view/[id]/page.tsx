@@ -34,7 +34,10 @@ import {
   ChevronUp,
   Upload,
   Plus,
-  Info
+  Info,
+  Play,
+  Pause,
+  RotateCcw
 } from 'lucide-react';
 import { Search as SearchIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -553,6 +556,7 @@ export default function RequestViewPage() {
   const [assignedTechnician, setAssignedTechnician] = useState('');
   const [newRequestStatus, setNewRequestStatus] = useState('');
   const [slaAction, setSlaAction] = useState(''); // 'start' or 'stop'
+  const [isAssigning, setIsAssigning] = useState(false);
 
   // Resolution attachment deletion - mark for deletion (don't delete until save)
   const handleDeleteResolutionAttachment = async (attachmentId: string, attachmentName: string) => {
@@ -824,6 +828,22 @@ export default function RequestViewPage() {
     }
   };
 
+  // Load templates by category for change type modal
+  const loadTemplatesByCategory = async (categoryId: string) => {
+    try {
+      const res = await fetch(`/api/templates?categoryId=${categoryId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCategoryTemplates(data.templates || []);
+      } else {
+        setCategoryTemplates([]);
+      }
+    } catch (e) {
+      console.error('Failed to load templates by category', e);
+      setCategoryTemplates([]);
+    }
+  };
+
   // Filter templates based on request type and category
   useEffect(() => {
     console.log('Filtering templates:', {
@@ -987,12 +1007,49 @@ export default function RequestViewPage() {
 
   // Initialize assigned technician when assign modal opens
   useEffect(() => {
-    if (showAssignModal && requestData?.formData?.assignedTechnician) {
-      setAssignedTechnician(requestData.formData.assignedTechnician);
-    } else if (showAssignModal) {
-      setAssignedTechnician(''); // Reset if no technician assigned
+    if (showAssignModal) {
+      // Load technicians when assign modal opens
+      loadTechnicians();
     }
   }, [showAssignModal, requestData]);
+
+  // Set the selected technician after technicians are loaded
+  useEffect(() => {
+    if (showAssignModal && requestData?.formData?.assignedTechnicianId && availableTechnicians.length > 0) {
+      // The assignedTechnicianId is actually a userId, so find the technician with matching userId
+      const assignedUserId = requestData.formData.assignedTechnicianId;
+      const matchingTechnician = availableTechnicians.find(tech => tech.userId === assignedUserId);
+      
+      if (matchingTechnician) {
+        const technicianId = String(matchingTechnician.id);
+        setAssignedTechnician(technicianId);
+      } else {
+        setAssignedTechnician('');
+      }
+    } else if (showAssignModal && !requestData?.formData?.assignedTechnicianId) {
+      setAssignedTechnician(''); // Reset if no technician assigned
+    }
+  }, [showAssignModal, requestData, availableTechnicians]);
+
+  // Load categories when change type modal opens
+  useEffect(() => {
+    if (showChangeTypeModal) {
+      loadCategories();
+      setSelectedCategory('');
+      setSelectedTemplate('');
+      setCategoryTemplates([]);
+    }
+  }, [showChangeTypeModal]);
+
+  // Load templates when a category is selected
+  useEffect(() => {
+    if (selectedCategory) {
+      loadTemplatesByCategory(selectedCategory);
+      setSelectedTemplate(''); // Reset template selection when category changes
+    } else {
+      setCategoryTemplates([]);
+    }
+  }, [selectedCategory]);
 
   const handleEditRequest = () => {
     // Don't open modal if data isn't loaded yet
@@ -2373,20 +2430,7 @@ export default function RequestViewPage() {
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-lg">Request Details</CardTitle>
                         <div className="flex items-center gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => setShowChangeTypeModal(true)}
-                          >
-                            Change Type
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => setShowAssignModal(true)}
-                          >
-                            Assign
-                          </Button>
+                        
                           <Button 
                             variant="outline" 
                             size="sm"
@@ -3849,7 +3893,37 @@ export default function RequestViewPage() {
                 </CardContent>
               </Card>
 
-           
+              {/* Actions */}
+              {session?.user?.isTechnician && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Settings className="h-4 w-4" />
+                      Actions
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowAssignModal(true)}
+                        className="w-full flex items-center justify-center gap-2"
+                      >
+                        <UserCheck className="h-4 w-4" />
+                        Assign Technician
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowChangeTypeModal(true)}
+                        className="w-full flex items-center justify-center gap-2"
+                      >
+                        <Tag className="h-4 w-4" />
+                        Change Type
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Template and SLA Information */}
               {/* {templateData && (
@@ -4406,377 +4480,8 @@ export default function RequestViewPage() {
           </Dialog>
         )}
 
-        {/* Edit Request Modal */}
-        {showEditModal && (
-          <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Edit Request</DialogTitle>
-                <DialogDescription>
-                  Update request properties. Changes will update the request and add history entries.
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="space-y-6">
-                {/* Request Type - TOP PRIORITY */}
-                <div className="border rounded p-4 bg-blue-50">
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Request Type</label>
-                  <select
-                    className="w-full border rounded px-3 py-2 text-sm font-medium bg-white border-blue-200"
-                    value={editForm.type}
-                    onChange={e => {
-                      const newType = e.target.value;
-                      setEditForm(prev => ({...prev, type: newType, template: '', category: ''}));
-                      // Reload templates for the new type
-                      loadTemplates();
-                    }}
-                  >
-                    <option value="service">Service</option>
-                    <option value="incident">Incident</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Category Selection */}
-                  <div>
-                    <label className="text-sm text-gray-700 mb-2 block">Category</label>
-                    <select
-                      className="w-full border rounded px-2 py-2 text-sm"
-                      value={editForm.category}
-                      onChange={e => {
-                        const newCategory = e.target.value;
-                        setEditForm(prev => ({...prev, category: newCategory, template: ''}));
-                        // Reload templates for the new category
-                        loadTemplates();
-                      }}
-                    >
-                      <option value="">Select Category</option>
-                      {availableCategories.map((category: any) => (
-                        <option key={category.id} value={category.id}>
-                          {category.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Template Selection */}
-                  <div>
-                    <label className="text-sm text-gray-700 mb-2 block">Template</label>
-                    <select
-                      className="w-full border rounded px-2 py-2 text-sm"
-                      value={editForm.template}
-                      onChange={e => setEditForm(prev => ({...prev, template: e.target.value}))}
-                    >
-                      <option value="">Select Template</option>
-                      {filteredTemplates.map((template: any) => (
-                        <option key={template.id} value={template.id}>
-                          {template.name}
-                        </option>
-                      ))}
-                    </select>
-                    {editForm.type && editForm.category && filteredTemplates.length === 0 && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        No templates found for {editForm.type} requests in selected category
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Add Approver Section - Only for Service Requests */}
-                {editForm.type.toLowerCase() === 'service' && (
-                  <div className="border rounded p-4 bg-green-50">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-medium text-gray-700">Approval Workflow</h3>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowAddApprovalModal(true)}
-                      >
-                        <Plus className="h-4 w-4 mr-1" />
-                        Add Approver
-                      </Button>
-                    </div>
-                    <div className="text-xs text-gray-600 space-y-1">
-                      <p>Service requests require approval. Current approvers include:</p>
-                      {requestData?.user?.reportingTo && (
-                        <p>• Reporting To: {requestData.user.reportingTo.emp_fname} {requestData.user.reportingTo.emp_lname}</p>
-                      )}
-                      {requestData?.user?.departmentHead && (
-                        <p>• Department Head: {requestData.user.departmentHead.emp_fname} {requestData.user.departmentHead.emp_lname}</p>
-                      )}
-                      {templateData?.approvalWorkflow && (
-                        <p>• Template Approvers: {JSON.stringify(templateData.approvalWorkflow)}</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Technician Assignment with Search */}
-                <div>
-                  <label className="text-sm text-gray-700 mb-2 block">Assigned Technician</label>
-                  <div className="relative">
-                    <Input
-                      type="text"
-                      placeholder="Search technicians..."
-                      value={technicianSearch}
-                      onChange={(e) => {
-                        setTechnicianSearch(e.target.value);
-                        setShowTechnicianDropdown(true);
-                      }}
-                      onFocus={() => setShowTechnicianDropdown(true)}
-                      className="pr-10"
-                    />
-                    {selectedTechnicianId && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-                        onClick={() => {
-                          setSelectedTechnicianId('');
-                          setTechnicianSearch('');
-                        }}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    )}
-                    
-                    {/* Technician Dropdown */}
-                    {showTechnicianDropdown && (technicianResults.length > 0 || availableTechnicians.length > 0) && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                        {technicianSearch ? (
-                          technicianResults.map((tech: any) => (
-                            <div
-                              key={tech.id}
-                              className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                              onClick={() => {
-                                setSelectedTechnicianId(tech.id);
-                                setTechnicianSearch(`${tech.emp_fname} ${tech.emp_lname}`);
-                                setEditForm(prev => ({...prev, technician: `${tech.emp_fname} ${tech.emp_lname}`}));
-                                setShowTechnicianDropdown(false);
-                              }}
-                            >
-                              <div className="font-medium">{tech.emp_fname} {tech.emp_lname}</div>
-                              <div className="text-gray-500">{tech.emp_email}</div>
-                            </div>
-                          ))
-                        ) : (
-                          availableTechnicians.slice(0, 10).map((tech: any) => (
-                            <div
-                              key={tech.id}
-                              className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                              onClick={() => {
-                                setSelectedTechnicianId(tech.id);
-                                setTechnicianSearch(`${tech.emp_fname} ${tech.emp_lname}`);
-                                setEditForm(prev => ({...prev, technician: `${tech.emp_fname} ${tech.emp_lname}`}));
-                                setShowTechnicianDropdown(false);
-                              }}
-                            >
-                              <div className="font-medium">{tech.emp_fname} {tech.emp_lname}</div>
-                              <div className="text-gray-500">{tech.emp_email}</div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Email Notifications with Search */}
-                <div>
-                  <label className="text-sm text-gray-700 mb-2 block">E-mail ID(s) To Notify</label>
-                  
-                  {/* Selected Email Users */}
-                  {emailUsers.length > 0 && (
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      {emailUsers.map((user: any, index: number) => (
-                        <div key={index} className="flex items-center bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                          <span>{user.emp_email}</span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="ml-1 h-4 w-4 p-0"
-                            onClick={() => {
-                              const updated = emailUsers.filter((_, i) => i !== index);
-                              setEmailUsers(updated);
-                              setEditForm(prev => ({...prev, emailNotify: updated.map(u => u.emp_email).join(', ')}));
-                            }}
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Email Search Input */}
-                  <div className="relative">
-                    <Input
-                      type="text"
-                      placeholder="Search users by name or email, or type email directly..."
-                      value={emailSearch}
-                      onChange={(e) => setEmailSearch(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const emailValue = emailSearch.trim();
-                          if (emailValue && emailValue.includes('@')) {
-                            // Add as direct email
-                            const newUser = {
-                              emp_email: emailValue,
-                              emp_fname: emailValue.split('@')[0],
-                              emp_lname: ''
-                            };
-                            const updated = [...emailUsers, newUser];
-                            setEmailUsers(updated);
-                            setEditForm(prev => ({...prev, emailNotify: updated.map(u => u.emp_email).join(', ')}));
-                            setEmailSearch('');
-                            setEmailSearchResults([]);
-                          }
-                        }
-                      }}
-                    />
-                    
-                    {/* Email Search Results */}
-                    {emailSearchResults.length > 0 && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                        {emailSearchResults.map((user: any) => (
-                          <div
-                            key={user.id}
-                            className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                            onClick={() => {
-                              if (!emailUsers.find(u => u.emp_email === user.emp_email)) {
-                                const updated = [...emailUsers, user];
-                                setEmailUsers(updated);
-                                setEditForm(prev => ({...prev, emailNotify: updated.map(u => u.emp_email).join(', ')}));
-                              }
-                              setEmailSearch('');
-                              setEmailSearchResults([]);
-                            }}
-                          >
-                            <div className="font-medium">{user.emp_fname} {user.emp_lname}</div>
-                            <div className="text-gray-500">{user.emp_email}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Priority - Depends on Template */}
-                  <div>
-                    <label className="text-sm text-gray-700 mb-2 block">Priority</label>
-                    <select
-                      className="w-full border rounded px-2 py-2 text-sm"
-                      value={editForm.priority}
-                      onChange={e => setEditForm(prev => ({...prev, priority: e.target.value}))}
-                      disabled={!!templatePriority}
-                    >
-                      <option value="Low">Low</option>
-                      <option value="Medium">Medium</option>
-                      <option value="High">High</option>
-                      <option value="Top">Top</option>
-                    </select>
-                    {templatePriority && (
-                      <p className="text-xs text-gray-500 mt-1">Priority set by template</p>
-                    )}
-                  </div>
-                  
-                  {/* Status - Depends on Template */}
-                  <div>
-                    <label className="text-sm text-gray-700 mb-2 block">Status</label>
-                    <select
-                      className="w-full border rounded px-2 py-2 text-sm"
-                      value={editForm.status}
-                      onChange={e => setEditForm(prev => ({...prev, status: e.target.value}))}
-                      disabled={!!templateStatus}
-                    >
-                      <option value="for_approval">For Approval</option>
-                      <option value="open">Open</option>
-                      <option value="on_hold">On Hold</option>
-                      <option value="resolved">Resolved</option>
-                      <option value="cancelled">Cancelled</option>
-                      <option value="closed">Closed</option>
-                    </select>
-                    {templateStatus && (
-                      <p className="text-xs text-gray-500 mt-1">Status set by template</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-xs text-gray-500 mt-4">
-                <strong>Note:</strong> Changing template or request type will remove current approvals and add a history entry with change details.
-              </div>
-
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowEditModal(false)}>Cancel</Button>
-                <Button onClick={handleSaveEdit} disabled={savingEdit}>
-                  {savingEdit ? 'Saving...' : 'Save Changes'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
-
-        {/* Add Approver Modal */}
-        {showAddApprovalModal && (
-          <Dialog open={showAddApprovalModal} onOpenChange={setShowAddApprovalModal}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Add Approver</DialogTitle>
-                <DialogDescription>
-                  Add new approvers to the request workflow.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm text-gray-700">Search Users</label>
-                  <input
-                    type="text"
-                    className="w-full border rounded px-2 py-2 mt-1 text-sm"
-                    value={userSearchTerm}
-                    onChange={e => setUserSearchTerm(e.target.value)}
-                    placeholder="Search by name, email..."
-                  />
-                </div>
-                
-                {/* Selected Users */}
-                {selectedUsers.length > 0 && (
-                  <div>
-                    <label className="text-sm text-gray-700">Selected Approvers:</label>
-                    <div className="mt-2 space-y-2">
-                      {selectedUsers.map((user: any) => (
-                        <div key={user.id} className="flex items-center justify-between bg-blue-50 p-2 rounded">
-                          <span className="text-sm">{user.emp_fname} {user.emp_lname}</span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedUsers(prev => prev.filter(u => u.id !== user.id))}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowAddApprovalModal(false)}>
-                  Cancel
-                </Button>
-                <Button disabled={selectedUsers.length === 0}>
-                  Add Approvers
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
+     
+       
 
         {/* Change Type Modal */}
         {showChangeTypeModal && (
@@ -4785,7 +4490,7 @@ export default function RequestViewPage() {
               <DialogHeader>
                 <DialogTitle>Change Type</DialogTitle>
                 <DialogDescription>
-                  Select Service category to change the request type.
+                 Change Incident to Service Template
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -4870,7 +4575,7 @@ export default function RequestViewPage() {
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm text-gray-700 mb-2 block">Technician</label>
+                
                   <select
                     className="w-full border rounded px-2 py-2 text-sm"
                     value={assignedTechnician}
@@ -4879,7 +4584,7 @@ export default function RequestViewPage() {
                     <option value="">Not Assigned</option>
                     {availableTechnicians.map(tech => (
                       <option key={tech.id} value={tech.id}>
-                        {tech.displayName || `${tech.emp_fname} ${tech.emp_lname}`}
+                        {tech.displayName || `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim() || tech.user?.emp_email || 'Unknown Technician'}
                       </option>
                     ))}
                   </select>
@@ -4893,17 +4598,32 @@ export default function RequestViewPage() {
                 <Button 
                   onClick={async () => {
                     try {
-                      // Update the assigned technician in formData
-                      const response = await fetch(`/api/requests/${requestId}`, {
-                        method: 'PATCH',
+                      setIsAssigning(true);
+                      
+                      // Find the selected technician and get their userId
+                      const selectedTech = availableTechnicians.find(tech => tech.id === assignedTechnician);
+                      
+                      if (!selectedTech) {
+                        toast({
+                          title: "Error",
+                          description: "Please select a valid technician.",
+                          variant: "destructive"
+                        });
+                        return;
+                      }
+                      
+                      const userIdToSave = selectedTech.userId;
+                      const technicianName = selectedTech.displayName || `${selectedTech.user?.emp_fname || ''} ${selectedTech.user?.emp_lname || ''}`.trim();
+                      const technicianEmail = selectedTech.user?.emp_email;
+                      
+                      // Use the dedicated assign endpoint
+                      const response = await fetch(`/api/requests/${requestId}/assign`, {
+                        method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                          formData: {
-                            ...requestData.formData,
-                            assignedTechnician: assignedTechnician
-                          }
+                          technicianId: userIdToSave
                         }),
                       });
                       
@@ -4926,10 +4646,20 @@ export default function RequestViewPage() {
                         description: "Failed to assign technician.",
                         variant: "destructive"
                       });
+                    } finally {
+                      setIsAssigning(false);
                     }
                   }}
+                  disabled={isAssigning}
                 >
-                  Assign
+                  {isAssigning ? (
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Assigning Technician...
+                    </div>
+                  ) : (
+                    "Assign"
+                  )}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -5033,6 +4763,196 @@ export default function RequestViewPage() {
                   Apply Changes
                 </Button>
               </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Change Type Modal */}
+        {showChangeTypeModal && (
+          <Dialog open={showChangeTypeModal} onOpenChange={setShowChangeTypeModal}>
+            <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden bg-white border border-gray-200 shadow-xl">
+              <div className="bg-white">
+                <DialogHeader className="bg-white border-b border-gray-100 pb-4">
+                  <DialogTitle className="flex items-center gap-2 text-gray-900">
+                    <Tag className="h-5 w-5 text-blue-600" />
+                    Change Request Type
+                  </DialogTitle>
+                  <DialogDescription className="text-gray-600">
+                    Select a service category and then choose a template to change the request type.
+                  </DialogDescription>
+                </DialogHeader>
+                
+                <div className="flex h-[500px] bg-white pt-4">
+                  {/* Categories List */}
+                  <div className="w-1/2 border-r border-gray-200 pr-4 bg-white">
+                    <div className="mb-3">
+                      <h3 className="text-sm font-medium text-gray-700 mb-2">Service Categories</h3>
+                      <div className="relative">
+                        <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Input
+                          placeholder="Search categories..."
+                          className="pl-10 text-sm bg-white border-gray-300 text-gray-900"
+                          value=""
+                          onChange={() => {}}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2 overflow-y-auto max-h-[420px] bg-white">
+                      {availableCategories.map((category: any) => (
+                        <div
+                          key={category.id}
+                          className={`p-3 rounded-lg cursor-pointer transition-colors border ${
+                            selectedCategory === String(category.id)
+                              ? 'bg-blue-50 border-blue-200 text-blue-700'
+                              : 'hover:bg-gray-50 border-gray-200 bg-white'
+                          }`}
+                          onClick={() => setSelectedCategory(String(category.id))}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="flex-shrink-0">
+                              {category.icon ? (
+                                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center p-1">
+                                  <img 
+                                    src={`/serviceicons/${category.icon}`} 
+                                    alt={category.name}
+                                    className="w-full h-full object-contain"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                                  <Tag className="h-4 w-4 text-blue-600" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm text-gray-900">{category.name}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      
+                      {availableCategories.length === 0 && (
+                        <div className="text-center py-8 text-gray-500 bg-white">
+                          <Tag className="h-8 w-8 mx-auto text-gray-300 mb-2" />
+                          <p className="text-sm">No categories available</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Templates List */}
+                  <div className="w-1/2 pl-4 bg-white">
+                    <div className="mb-3">
+                      <h3 className="text-sm font-medium text-gray-700 mb-2">Templates</h3>
+                      {selectedCategory ? (
+                        <p className="text-xs text-gray-500">
+                          {categoryTemplates.length} template(s) available
+                        </p>
+                      ) : (
+                        <p className="text-xs text-gray-500">Select a category to view templates</p>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-2 overflow-y-auto max-h-[420px] bg-white">
+                      {selectedCategory ? (
+                        categoryTemplates.length > 0 ? (
+                          categoryTemplates.map((template: any) => (
+                            <div
+                              key={template.id}
+                              className={`p-3 rounded-lg cursor-pointer transition-colors border ${
+                                selectedTemplate === String(template.id)
+                                  ? 'bg-green-50 border-green-200 text-green-700'
+                                  : 'hover:bg-gray-50 border-gray-200 bg-white'
+                              }`}
+                              onClick={() => setSelectedTemplate(String(template.id))}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="flex-shrink-0">
+                                  {template.icon ? (
+                                    <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center p-1">
+                                      <img 
+                                        src={`/serviceicons/${template.icon}`} 
+                                        alt={template.name}
+                                        className="w-full h-full object-contain"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                                      <FileText className="h-4 w-4 text-green-600" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-sm text-gray-900">{template.name}</div>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-center py-8 text-gray-500 bg-white">
+                            <FileText className="h-8 w-8 mx-auto text-gray-300 mb-2" />
+                            <p className="text-sm">No templates in this category</p>
+                          </div>
+                        )
+                      ) : (
+                        <div className="text-center py-8 text-gray-500 bg-white">
+                          <FileText className="h-8 w-8 mx-auto text-gray-300 mb-2" />
+                          <p className="text-sm">Select a category first</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <DialogFooter className="bg-white border-t border-gray-200 pt-4 mt-4">
+                  <Button variant="outline" onClick={() => setShowChangeTypeModal(false)} className="bg-white border-gray-300 text-gray-700 hover:bg-gray-50">
+                    Cancel
+                  </Button>
+                  <Button 
+                    disabled={!selectedTemplate}
+                    onClick={async () => {
+                      try {
+                        // Here you would implement the change type logic
+                        const response = await fetch(`/api/requests/${requestId}/change-type`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({
+                            templateId: selectedTemplate,
+                            categoryId: selectedCategory
+                          }),
+                        });
+                        
+                        if (response.ok) {
+                          toast({
+                            title: "Type Changed",
+                            description: "Request type has been changed successfully.",
+                            className: "bg-green-50 border-green-200 text-green-800"
+                          });
+                          // Refresh request data
+                          await fetchRequestData();
+                          setShowChangeTypeModal(false);
+                          setSelectedCategory('');
+                          setSelectedTemplate('');
+                        } else {
+                          throw new Error('Failed to change request type');
+                        }
+                      } catch (error) {
+                        toast({
+                          title: "Error",
+                          description: "Failed to change request type.",
+                          variant: "destructive"
+                        });
+                      }
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300"
+                  >
+                    Change Type
+                  </Button>
+                </DialogFooter>
+              </div>
             </DialogContent>
           </Dialog>
         )}

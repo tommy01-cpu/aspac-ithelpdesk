@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { notifyRequestAssigned } from '@/lib/notifications';
+import { addHistory } from '@/lib/history';
 
 export async function POST(
   request: NextRequest,
@@ -58,11 +60,13 @@ export async function POST(
     }
 
     const technicianName = `${technician.emp_fname} ${technician.emp_lname}`.trim();
+    const technicianEmail = technician.emp_email;
     const formData = existingRequest.formData as any;
     
     // Update assignment
     formData.assignedTechnicianId = technicianId;
     formData.assignedTechnician = technicianName;
+    formData.assignedTechnicianEmail = technicianEmail;
     formData.assignedAt = new Date().toISOString();
 
     await prisma.request.update({
@@ -73,20 +77,55 @@ export async function POST(
       }
     });
 
-    // Add history entry
-    await prisma.requestHistory.create({
-      data: {
-        requestId: requestId,
-        userId: user.id,
-        action: 'assign',
-        details: {
-          assignedTo: technicianName,
-          assignedById: user.id,
-          assignedBy: `${user.emp_fname} ${user.emp_lname}`.trim(),
-          timestamp: new Date().toISOString()
-        }
-      }
+    // Add history entry following the standard format with proper Philippine time
+    const actorName = `${user.emp_fname} ${user.emp_lname}`.trim();
+    await addHistory(prisma as any, {
+      requestId: requestId,
+      action: 'Technician-Reassigned',
+      details: `Assigned to : ${technicianName}\nPrevious Technician : ${formData.assignedTechnician || 'None'}\nTechnician Email : ${technicianEmail}`,
+      actorId: user.id,
+      actorName: actorName,
+      actorType: "user"
     });
+
+    // Send email notifications to both requester and technician
+    try {
+      // Get the updated request with user data for notifications
+      const requestWithUser = await prisma.request.findUnique({
+        where: { id: requestId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              emp_email: true,
+              emp_fname: true,
+              emp_lname: true,
+              department: true,
+            }
+          }
+        }
+      });
+
+      // Get template data if available
+      let templateData = null;
+      if (requestWithUser?.templateId) {
+        templateData = await prisma.template.findUnique({
+          where: { id: parseInt(requestWithUser.templateId) },
+          select: {
+            id: true,
+            name: true,
+            description: true,
+          }
+        });
+      }
+
+      if (requestWithUser) {
+        await notifyRequestAssigned(requestWithUser, templateData, technician);
+      }
+    } catch (notificationError) {
+      console.error('Error sending assignment notifications:', notificationError);
+      // Don't fail the assignment if notifications fail
+    }
 
     return NextResponse.json({ 
       success: true,
