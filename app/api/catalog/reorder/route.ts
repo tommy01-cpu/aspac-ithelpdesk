@@ -17,21 +17,29 @@ interface ReorderRequest {
   }>;
 }
 
-export async function PUT(request: NextRequest) {
+export async function POST(request: NextRequest) {
+  console.log('🔄 POST /api/catalog/reorder - Starting reorder request');
+  
   try {
+    console.log('Getting session...');
     const session = await getServerSession(authOptions);
+    console.log('Session:', session ? 'Found' : 'Not found');
     
     if (!session?.user?.id) {
+      console.log('❌ Unauthorized - no session or user ID');
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
+    console.log('Parsing request body...');
     const body: ReorderRequest = await request.json();
     const { type, items } = body;
+    console.log('Request body parsed:', { type, itemCount: items?.length });
 
     if (!type || !items || !Array.isArray(items)) {
+      console.log('❌ Invalid request format');
       return NextResponse.json(
         { error: 'Invalid request format' },
         { status: 400 }
@@ -43,12 +51,14 @@ export async function PUT(request: NextRequest) {
 
     // Validate type before proceeding
     if (!['service-categories', 'service-catalog', 'incident-catalog'].includes(type)) {
+      console.log('❌ Invalid type:', type);
       return NextResponse.json(
         { error: 'Invalid type. Must be: service-categories, service-catalog, or incident-catalog' },
         { status: 400 }
       );
     }
 
+    console.log('Starting database transaction...');
     // Execute all updates using transaction
     await prisma.$transaction(async (tx) => {
       switch (type) {
@@ -98,21 +108,26 @@ export async function PUT(request: NextRequest) {
 
     console.log(`✅ Successfully reordered ${items.length} ${type} items`);
 
-    return NextResponse.json({
+    const successResponse = {
       success: true,
       message: `Successfully reordered ${items.length} ${type.replace('-', ' ')} items`,
       itemsUpdated: items.length
-    });
+    };
+    
+    console.log('Sending success response:', successResponse);
+    return NextResponse.json(successResponse);
 
   } catch (error) {
     console.error('❌ Catalog reordering error:', error);
-    return NextResponse.json(
-      { 
-        error: 'Failed to reorder items',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    );
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    
+    const errorResponse = { 
+      error: 'Failed to reorder items',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    };
+    
+    console.log('Sending error response:', errorResponse);
+    return NextResponse.json(errorResponse, { status: 500 });
   }
 }
 

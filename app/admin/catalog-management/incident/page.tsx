@@ -289,8 +289,13 @@ export default function IncidentCatalogTab() {
         sortOrder: index + 1
       }));
 
+      console.log('🔄 Sending reorder request for incident catalog:', {
+        type: 'incident-catalog',
+        items: reorderData
+      });
+
       const response = await fetch('/api/catalog/reorder', {
-        method: 'PUT',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -300,19 +305,33 @@ export default function IncidentCatalogTab() {
         }),
       });
 
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Incident order updated successfully",
-        });
-      } else {
-        throw new Error('Failed to update order');
+      console.log('📡 Response status:', response.status);
+      console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Response not OK. Status:', response.status, 'Text:', errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
+
+      const responseData = await response.json();
+      console.log('✅ Success response data:', responseData);
+
+      toast({
+        title: "Success",
+        description: "Incident order updated successfully",
+      });
     } catch (error) {
-      console.error('Error updating incident order:', error);
+      console.error('❌ Error updating incident order:', error);
+      
+      let errorMessage = "Failed to update incident order";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Error",
-        description: "Failed to update incident order",
+        description: errorMessage,
         variant: "destructive",
       });
       // Revert local changes

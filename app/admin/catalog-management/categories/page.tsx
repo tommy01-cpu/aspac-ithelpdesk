@@ -613,6 +613,16 @@ export default function ServiceCategoriesTab() {
                   });
 
                   console.log('Reorder response status:', response.status); // Debug log
+                  console.log('Reorder response headers:', Object.fromEntries(response.headers.entries())); // Debug log
+                  
+                  // Check if response is JSON
+                  const contentType = response.headers.get('content-type');
+                  if (!contentType || !contentType.includes('application/json')) {
+                    const textResponse = await response.text();
+                    console.error('Non-JSON response:', textResponse);
+                    throw new Error(`Expected JSON response but got ${contentType || 'unknown'}. Response: ${textResponse.substring(0, 200)}`);
+                  }
+
                   const responseData = await response.json();
                   console.log('Reorder response data:', responseData); // Debug log
 

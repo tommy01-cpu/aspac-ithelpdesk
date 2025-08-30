@@ -454,9 +454,11 @@ class SafeSLAMonitoringService {
       await prisma.requestHistory.create({
         data: {
           requestId: request.id,
-          status: 'closed',
-          notes: 'Auto-closed after 10 days in resolved status',
-          actionBy: 1, // System user ID
+          action: 'Status Changed to Closed',
+          details: 'Auto-closed after 10 days in resolved status',
+          actorId: 1, // System user ID
+          actorName: 'System',
+          actorType: 'system',
           timestamp: new Date()
         }
       });
@@ -536,9 +538,11 @@ class SafeSLAMonitoringService {
       await prisma.requestHistory.create({
         data: {
           requestId,
-          status: 'open', // Keep current status
-          notes: `SLA escalation triggered - ${slaStatus.hoursOverdue} hours overdue`,
-          actionBy: 1, // System user ID
+          action: 'SLA Escalation',
+          details: `SLA escalation triggered - ${slaStatus.hoursOverdue} hours overdue`,
+          actorId: 1, // System user ID
+          actorName: 'System',
+          actorType: 'system',
           timestamp: new Date()
         }
       });

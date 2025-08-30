@@ -159,9 +159,9 @@ export async function POST(request: NextRequest) {
           success: true,
           action: 'Test Assignment',
           result: assignmentResult,
-          message: assignmentResult ? 
-            `Successfully assigned to ${assignmentResult.assignedTechnician.name}` : 
-            'No technician could be assigned'
+          message: assignmentResult && assignmentResult.success ? 
+            `Successfully assigned to ${assignmentResult.technicianName || 'Unknown Technician'}` : 
+            assignmentResult?.error || 'No technician could be assigned'
         });
 
       case 'check-group-technicians':

@@ -284,8 +284,13 @@ export default function ServiceCatalogTab() {
         sortOrder: index + 1
       }));
 
+      console.log('🔄 Sending reorder request for service catalog:', {
+        type: 'service-catalog',
+        items: reorderData
+      });
+
       const response = await fetch('/api/catalog/reorder', {
-        method: 'PUT',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -295,19 +300,33 @@ export default function ServiceCatalogTab() {
         }),
       });
 
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Service order updated successfully",
-        });
-      } else {
-        throw new Error('Failed to update order');
+      console.log('📡 Response status:', response.status);
+      console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Response not OK. Status:', response.status, 'Text:', errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
+
+      const responseData = await response.json();
+      console.log('✅ Success response data:', responseData);
+
+      toast({
+        title: "Success",
+        description: "Service order updated successfully",
+      });
     } catch (error) {
-      console.error('Error updating service order:', error);
+      console.error('❌ Error updating service order:', error);
+      
+      let errorMessage = "Failed to update service order";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Error",
-        description: "Failed to update service order",
+        description: errorMessage,
         variant: "destructive",
       });
       // Revert local changes
