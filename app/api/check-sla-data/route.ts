@@ -13,7 +13,6 @@ export async function GET(request: NextRequest) {
       },
       select: {
         id: true,
-        priority: true,
         createdAt: true,
         updatedAt: true,
         formData: true
@@ -28,7 +27,7 @@ export async function GET(request: NextRequest) {
       const formData = req.formData as any || {};
       return {
         id: req.id,
-        priority: req.priority,
+        priority: (req.formData as any)?.priority || 'Medium',
         createdAt: req.createdAt.toISOString(),
         updatedAt: req.updatedAt.toISOString(),
         slaData: {

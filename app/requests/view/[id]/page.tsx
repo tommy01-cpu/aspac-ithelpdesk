@@ -567,6 +567,7 @@ export default function RequestViewPage() {
   // SLA Timer modal states
   const [showSlaTimerModal, setShowSlaTimerModal] = useState(false);
   const [slaTimerAction, setSlaTimerAction] = useState<'start' | 'stop'>('stop');
+  const [slaStopReason, setSlaStopReason] = useState('');
   const [isUpdatingSla, setIsUpdatingSla] = useState(false);
 
   // Close request loading state
@@ -716,7 +717,7 @@ export default function RequestViewPage() {
   useEffect(() => {
     if (showWorkLogModal && session?.user) {
       // Set current user as default owner when opening work log modal
-      const currentUserName = session.user.name || `${session.user.firstName || ''} ${session.user.lastName || ''}`.trim() || session.user.email || '';
+      const currentUserName = session.user.name || session.user.email || '';
       const currentUserId = parseInt(session.user.id) || null;
       
       setWlOwnerName(currentUserName);
@@ -2710,7 +2711,8 @@ export default function RequestViewPage() {
                                       );
                                       
                                       // Combine new and existing attachments
-                                      const allAttachmentIds = [...new Set([...attachmentIds, ...existingAttachmentsNotDeleted])];
+                                      const combinedAttachments = new Set([...attachmentIds, ...existingAttachmentsNotDeleted]);
+                                      const allAttachmentIds = Array.from(combinedAttachments);
                                       
                                       console.log('Attachment IDs - New:', attachmentIds);
                                       console.log('Attachment IDs - Existing (not deleted):', existingAttachmentsNotDeleted);
@@ -5235,14 +5237,34 @@ export default function RequestViewPage() {
                   </div>
                 )}
               </div>
+              
+              {slaTimerAction === 'stop' && (
+                <div className="space-y-2">
+                  <label htmlFor="slaStopReason" className="text-sm font-medium">
+                    Reason for stopping <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    id="slaStopReason"
+                    value={slaStopReason}
+                    onChange={(e) => setSlaStopReason(e.target.value)}
+                    placeholder="Please provide a reason for stopping the SLA timer..."
+                    className="w-full p-3 border border-gray-300 rounded-md resize-none"
+                    rows={3}
+                    required
+                  />
+                </div>
+              )}
             </div>
             
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowSlaTimerModal(false)}>
+              <Button variant="outline" onClick={() => {
+                setShowSlaTimerModal(false);
+                setSlaStopReason(''); // Clear reason when canceling
+              }}>
                 Cancel
               </Button>
               <Button 
-                disabled={isUpdatingSla}
+                disabled={isUpdatingSla || (slaTimerAction === 'stop' && !slaStopReason.trim())}
                 onClick={async () => {
                   try {
                     setIsUpdatingSla(true);
@@ -5253,7 +5275,8 @@ export default function RequestViewPage() {
                         'Content-Type': 'application/json',
                       },
                       body: JSON.stringify({
-                        action: slaTimerAction
+                        action: slaTimerAction,
+                        ...(slaTimerAction === 'stop' && { reason: slaStopReason.trim() })
                       }),
                     });
                     
@@ -5268,6 +5291,7 @@ export default function RequestViewPage() {
                       // Refresh request data to show changes
                       await fetchRequestData();
                       setShowSlaTimerModal(false);
+                      setSlaStopReason(''); // Clear reason after successful action
                     } else {
                       const errorData = await response.json();
                       throw new Error(errorData.error || 'Failed to update SLA timer');

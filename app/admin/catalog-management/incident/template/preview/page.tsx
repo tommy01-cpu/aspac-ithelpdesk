@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { SessionWrapper } from '@/components/session-wrapper';
 // Predefined options for special field types
 const PRIORITY_OPTIONS = [
   'Low',
@@ -313,21 +314,27 @@ export default function IncidentTemplatePreviewPage() {
               <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
             </SelectTrigger>
             <SelectContent>
-              {selectOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {field.type === 'priority' && (
-                    <div className="flex items-center gap-2">
-                      <Star className={`w-3 h-3 ${
-                        option.label === 'Critical' ? 'text-red-500' :
-                        option.label === 'High' ? 'text-orange-500' :
-                        option.label === 'Medium' ? 'text-yellow-500' : 'text-green-500'
-                      }`} />
-                      {option.label}
-                    </div>
-                  )}
-                  {field.type !== 'priority' && option.label}
-                </SelectItem>
-              ))}
+              {selectOptions.map((option) => {
+                // Handle both string and object formats
+                const optionValue = typeof option === 'string' ? option : option.value;
+                const optionLabel = typeof option === 'string' ? option : option.label;
+                
+                return (
+                  <SelectItem key={optionValue} value={optionValue}>
+                    {field.type === 'priority' && (
+                      <div className="flex items-center gap-2">
+                        <Star className={`w-3 h-3 ${
+                          optionLabel === 'Critical' ? 'text-red-500' :
+                          optionLabel === 'High' ? 'text-orange-500' :
+                          optionLabel === 'Medium' ? 'text-yellow-500' : 'text-green-500'
+                        }`} />
+                        {optionLabel}
+                      </div>
+                    )}
+                    {field.type !== 'priority' && optionLabel}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         );
@@ -808,11 +815,13 @@ export default function IncidentTemplatePreviewPage() {
                         Template: {templateData.selectedTemplate}
                       </Badge>
                     )}
+                    {/* TODO: Add approvalEnabled to TemplateData interface if needed
                     {templateData.approvalEnabled && (
                       <Badge className="bg-amber-100 text-amber-800">
                         Approval Required
                       </Badge>
                     )}
+                    */}
                   </div>
                 </div>
                 <div className="text-right">
@@ -834,7 +843,7 @@ export default function IncidentTemplatePreviewPage() {
             </CardHeader>
           </Card>
 
-          {/* Approval Workflow Info */}
+          {/* Approval Workflow Info - TODO: Implement approval workflow for incidents
           {templateData.approvalEnabled && templateData.approvalLevels && templateData.approvalLevels.length > 0 && (
             <Card className="border-0 bg-white/70 backdrop-blur-sm hover:shadow-lg transition-all duration-300 mb-6">
               <CardHeader>
@@ -863,6 +872,7 @@ export default function IncidentTemplatePreviewPage() {
               </CardContent>
             </Card>
           )}
+          */}
 
           {/* Form Preview */}
           <div className="space-y-6">

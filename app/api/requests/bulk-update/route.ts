@@ -74,13 +74,10 @@ export async function POST(request: NextRequest) {
         await prisma.requestHistory.create({
           data: {
             requestId: req.id,
-            userId: user.id,
+            actorId: user.id,
             action: 'bulk_update',
-            details: {
-              changes: updates,
-              updatedBy: `${user.emp_fname} ${user.emp_lname}`.trim(),
-              timestamp: new Date().toISOString()
-            }
+            details: `Bulk updated: ${Object.keys(updates).join(', ')} by ${`${user.emp_fname} ${user.emp_lname}`.trim()}`,
+            actorName: `${user.emp_fname} ${user.emp_lname}`.trim()
           }
         });
       }
@@ -100,13 +97,10 @@ export async function POST(request: NextRequest) {
         await prisma.requestHistory.create({
           data: {
             requestId: requestId,
-            userId: user.id,
+            actorId: user.id,
             action: 'bulk_update',
-            details: {
-              changes: updates,
-              updatedBy: `${user.emp_fname} ${user.emp_lname}`.trim(),
-              timestamp: new Date().toISOString()
-            }
+            details: `Bulk updated: ${Object.keys(updates).join(', ')} by ${`${user.emp_fname} ${user.emp_lname}`.trim()}`,
+            actorName: `${user.emp_fname} ${user.emp_lname}`.trim()
           }
         });
       }

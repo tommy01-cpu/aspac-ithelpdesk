@@ -798,7 +798,7 @@ export default function MyRequestsPage() {
                                   <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
                                     <Calendar className="h-3 w-3 flex-shrink-0" />
                                     <span className="text-sm break-words">
-                                      {formatDate(new Date(new Date(request.createdAt).getTime() - 8 * 60 * 60 * 1000))}
+                                      {formatDate(new Date(new Date(request.createdAt).getTime() - 8 * 60 * 60 * 1000).toISOString())}
                                     </span>
                                         
                                   </div>

@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     console.log('=== EMAIL TEMPLATES API DEBUG ===');
     console.log('Fetching email templates with Prisma...');
     
-    const templates = await prisma.emailTemplates.findMany({
+    const templates = await prisma.email_templates.findMany({
       orderBy: {
         title: 'asc'
       }
@@ -28,9 +28,9 @@ export async function GET(request: NextRequest) {
       id: template.id,
       name: template.title,
       subject: template.subject,
-      type: template.templateKey || 'unknown',
-      status: template.isActive ? 'active' : 'inactive',
-      lastModified: template.updatedAt ? new Date(template.updatedAt).toLocaleDateString() : 'Unknown'
+      type: template.template_key || 'unknown',
+      status: template.is_active ? 'active' : 'inactive',
+      lastModified: template.updated_at ? new Date(template.updated_at).toLocaleDateString() : 'Unknown'
     }));
     
     console.log('Transformed templates:', transformedTemplates);
@@ -68,13 +68,13 @@ export async function POST(request: NextRequest) {
     console.log('Data:', { name, subject, type, isActive });
     
     // Create new email template using Prisma
-    const newTemplate = await prisma.emailTemplates.create({
+    const newTemplate = await prisma.email_templates.create({
       data: {
         title: name,
         subject: subject,
-        contentHtml: contentHtml,
-        templateKey: type,
-        isActive: isActive,
+        content_html: contentHtml,
+        template_key: type,
+        is_active: isActive,
       }
     });
     
@@ -82,9 +82,9 @@ export async function POST(request: NextRequest) {
       id: newTemplate.id,
       name: newTemplate.title,
       subject: newTemplate.subject,
-      type: newTemplate.templateKey || 'unknown',
-      status: newTemplate.isActive ? 'active' : 'inactive',
-      lastModified: new Date(newTemplate.updatedAt).toLocaleDateString()
+      type: newTemplate.template_key || 'unknown',
+      status: newTemplate.is_active ? 'active' : 'inactive',
+      lastModified: newTemplate.updated_at ? new Date(newTemplate.updated_at).toLocaleDateString() : 'Unknown'
     };
     
     console.log('Template created successfully:', transformedTemplate);

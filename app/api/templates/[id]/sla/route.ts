@@ -28,7 +28,7 @@ export async function GET(
             description: true,
             priority: true,
             responseTime: true,
-            resolutionTime: true,
+            resolutionHours: true,
             operationalHours: true,
             excludeHolidays: true,
             excludeWeekends: true

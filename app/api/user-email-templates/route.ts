@@ -44,35 +44,35 @@ export async function POST(request: NextRequest) {
     const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
 
     // Save or update email template
-    const emailTemplate = await prisma.emailTemplates.upsert({
-      where: { templateKey: templateKey },
+    const emailTemplate = await prisma.email_templates.upsert({
+      where: { template_key: templateKey },
       create: {
-        templateKey: templateKey,
+        template_key: templateKey,
         title,
         description: description || '',
         subject,
-        headerHtml: headerHtml || '',
-        contentHtml: contentHtml,
-        footerHtml: footerHtml || '',
-        toField: toField || '',
-        ccField: ccField || '',
-        createdAt: philippineTime,
-        updatedAt: philippineTime,
-        createdBy: user.id,
-        updatedBy: user.id,
-        isActive: true
+        header_html: headerHtml || '',
+        content_html: contentHtml,
+        footer_html: footerHtml || '',
+        to_field: toField || '',
+        cc_field: ccField || '',
+        created_at: philippineTime,
+        updated_at: philippineTime,
+        created_by: user.id,
+        updated_by: user.id,
+        is_active: true
       },
       update: {
         title,
         description: description || '',
         subject,
-        headerHtml: headerHtml || '',
-        contentHtml: contentHtml,
-        footerHtml: footerHtml || '',
-        toField: toField || '',
-        ccField: ccField || '',
-        updatedAt: philippineTime,
-        updatedBy: user.id
+        header_html: headerHtml || '',
+        content_html: contentHtml,
+        footer_html: footerHtml || '',
+        to_field: toField || '',
+        cc_field: ccField || '',
+        updated_at: philippineTime,
+        updated_by: user.id
       }
     });
 
@@ -104,10 +104,10 @@ export async function GET(request: NextRequest) {
 
     if (templateKey) {
       // Get specific template
-      const template = await prisma.emailTemplates.findUnique({
-        where: { 
-          templateKey: templateKey,
-          isActive: true 
+      const template = await prisma.email_templates.findUnique({
+        where: {
+          template_key: templateKey,
+          is_active: true
         }
       });
 
@@ -118,8 +118,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ template });
     } else {
       // Get all active templates
-      const templates = await prisma.emailTemplates.findMany({
-        where: { isActive: true },
+      const templates = await prisma.email_templates.findMany({
+        where: { is_active: true },
         orderBy: { title: 'asc' }
       });
 

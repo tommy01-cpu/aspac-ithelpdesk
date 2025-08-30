@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
         skip,
         take: limit,
         orderBy: {
-          date: 'asc',
+          date: 'desc',
         },
       }),
       prisma.holiday.count({ where: whereClause }),

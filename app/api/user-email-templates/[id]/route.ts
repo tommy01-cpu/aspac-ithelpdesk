@@ -12,10 +12,10 @@ export async function GET(
     // Check if identifier is numeric (ID) or string (templateKey)
     const isNumericId = !isNaN(Number(identifier));
     
-    const template = await prisma.emailTemplates.findFirst({
+    const template = await prisma.email_templates.findFirst({
       where: isNumericId 
         ? { id: parseInt(identifier) }
-        : { templateKey: identifier }
+        : { template_key: identifier }
     });
 
     if (!template) {
@@ -57,21 +57,21 @@ export async function PUT(
     const isNumericId = !isNaN(Number(identifier));
 
     // Update the template
-    const updatedTemplate = await prisma.emailTemplates.update({
-      where: isNumericId 
+    const updatedTemplate = await prisma.email_templates.update({
+      where: isNumericId
         ? { id: parseInt(identifier) }
-        : { templateKey: identifier },
+        : { template_key: identifier },
       data: {
         title,
         description,
         subject,
-        toField,
-        ccField,
-        headerHtml,
-        contentHtml,
-        footerHtml,
-        isActive,
-        updatedAt: new Date()
+        to_field: toField,
+        cc_field: ccField,
+        header_html: headerHtml,
+        content_html: contentHtml,
+        footer_html: footerHtml,
+        is_active: isActive,
+        updated_at: new Date()
       }
     });
 
@@ -99,10 +99,10 @@ export async function DELETE(
     // Check if identifier is numeric (ID) or string (templateKey)
     const isNumericId = !isNaN(Number(identifier));
 
-    await prisma.emailTemplates.delete({
-      where: isNumericId 
+    await prisma.email_templates.delete({
+      where: isNumericId
         ? { id: parseInt(identifier) }
-        : { templateKey: identifier }
+        : { template_key: identifier }
     });
 
     return NextResponse.json({ 

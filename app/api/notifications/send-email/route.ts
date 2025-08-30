@@ -73,10 +73,10 @@ export async function POST(request: NextRequest) {
 
     // Parse email_to_notify from form data (field number 10)
     console.log('📧 Checking form data for email notifications...');
-    console.log('Form data field 10:', requestData.formData?.['10']);
+    console.log('Form data field 10:', (requestData.formData as any)?.['10']);
     
     let emailsToNotify = [];
-    const emailField = requestData.formData?.['10'];
+    const emailField = (requestData.formData as any)?.['10'];
     
     if (emailField) {
       if (Array.isArray(emailField)) {
@@ -115,8 +115,8 @@ export async function POST(request: NextRequest) {
     // Prepare email variables
     console.log('📝 Preparing email variables...');
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
-    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
-    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    const requestSubject = (requestData.formData as any)?.['8'] || templateData?.name || 'IT Helpdesk Request';
+    const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     console.log('👤 Requester:', requesterName);
     console.log('📑 Request subject:', requestSubject);
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
       Requester_Name: requesterName,
-      Requester_Email: requestData.user.emp_email,
+      Requester_Email: requestData.user.emp_email || '',
       Request_Title: requestSubject,
       Emails_To_Notify: emailsToNotify.join(', '),
       Approval_Link: 'http://192.168.1.85:3000/requests/approvals'

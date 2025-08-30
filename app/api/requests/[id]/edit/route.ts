@@ -118,26 +118,29 @@ export async function POST(
     let slaData = null;
     if (type === 'incident' || !newSLAService) {
       const prioritySLA = await prisma.prioritySLA.findUnique({
-        where: { priority: priority } // Use priority as-is (capitalized)
+        where: { priority: priority }, // Use priority as-is (capitalized)
+        include: {
+          slaIncident: true
+        }
       });
       if (prioritySLA) {
         slaData = {
           name: `${priority} Priority SLA`,
-          responseTime: prioritySLA.responseTime,
-          resolutionTime: prioritySLA.resolutionTime,
-          escalationTime: prioritySLA.escalationTime,
-          operationalHours: prioritySLA.operationalHours,
-          slaHours: prioritySLA.resolutionTime // Add slaHours field
+          responseTime: prioritySLA.slaIncident.responseHours,
+          resolutionTime: prioritySLA.slaIncident.resolutionHours,
+          escalationTime: prioritySLA.slaIncident.escalateHours,
+          operationalHours: prioritySLA.slaIncident.operationalHoursEnabled,
+          slaHours: prioritySLA.slaIncident.resolutionHours // Add slaHours field
         };
       }
     } else if (newSLAService) {
       slaData = {
         name: newSLAService.name,
         responseTime: newSLAService.responseTime,
-        resolutionTime: newSLAService.resolutionTime,
+        resolutionTime: newSLAService.resolutionHours,
         escalationTime: newSLAService.escalationTime,
         operationalHours: newSLAService.operationalHours,
-        slaHours: newSLAService.resolutionTime
+        slaHours: newSLAService.resolutionHours
       };
     }
 
@@ -152,10 +155,9 @@ export async function POST(
       
       newSLADueDate = await calculateSLADueDate(
         slaStartTime,
-        slaData.resolutionTime,
+        slaData.resolutionTime || 8,
         {
-          useOperationalHours: slaData.operationalHours,
-          includeHolidays: false
+          useOperationalHours: slaData.operationalHours
         }
       );
     }
@@ -204,6 +206,7 @@ export async function POST(
         data: {
           requestId: requestId,
           action: 'request_edited',
+          actorName: session.user.name || 'Unknown User',
           details: `Request properties updated: ${changes.join(', ')}`,
           timestamp: philippineTime,
           actorId: parseInt(session.user.id),

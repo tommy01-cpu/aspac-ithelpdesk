@@ -73,13 +73,12 @@ export async function POST(request: Request) {
     const newRequest = await prisma.request.create({
       data: {
         templateId: String(templateId),
-        templateName,
-        type,
         status: formData.status || 'open',
-        priority: formData.priority || 'medium',
         userId: parseInt(session.user.id),
         formData: formData,
         attachments: attachments || [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
     });
 

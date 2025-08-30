@@ -96,7 +96,7 @@ export async function GET(request: Request) {
       };
     } else if (departmentHead && departmentHead !== 'all') {
       // Get all departments managed by this department head
-      const managedDepartments = await prisma.user.findUnique({
+      const managedDepartments = await prisma.users.findUnique({
         where: { id: parseInt(departmentHead) },
         select: {
           departmentsManaged: {

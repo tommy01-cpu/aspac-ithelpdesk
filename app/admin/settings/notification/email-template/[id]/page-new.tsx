@@ -12,8 +12,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import RichTextEditor from '@/components/ui/rich-text-editor';
-import VariableAutocomplete from '@/components/admin/VariableAutocomplete';
 import Link from 'next/link';
 import { SessionWrapper } from '@/components/session-wrapper';
 
@@ -427,7 +425,7 @@ export default function EmailTemplateEditorPage() {
                         }}
                       />
 
-                      {/* Variable Autocomplete */}
+                      {/* Variable Autocomplete - TODO: Implement component
                       <VariableAutocomplete
                         isVisible={showVariableAutocomplete}
                         position={autocompletePosition}
@@ -435,6 +433,7 @@ export default function EmailTemplateEditorPage() {
                         onClose={closeVariableAutocomplete}
                         searchTerm={searchTerm}
                       />
+                      */}
                     </div>
                   </div>
                 </div>

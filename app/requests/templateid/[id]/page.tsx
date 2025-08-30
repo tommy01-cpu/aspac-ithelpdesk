@@ -1167,8 +1167,8 @@ export default function RequestPage() {
 
     try {
       // Validate required fields
-      const templateFields = Array.isArray(templateData?.fields) ? templateData.fields : [];
-      const requiredFields = templateFields.filter(field => field.required && !field.technicianOnly);
+      const templateFields = Array.isArray(templateData?.fields) ? templateData?.fields : [];
+      const requiredFields = templateFields?.filter(field => field.required && !field.technicianOnly);
       const missingFields = requiredFields?.filter(field => !formData[field.id] || formData[field.id] === '');
       
       if (missingFields && missingFields.length > 0) {
@@ -1275,7 +1275,7 @@ export default function RequestPage() {
       }
 
       // Send approver notification email (send to current level approver)
-      if (result.request?.id && templateData?.requiresApproval) {
+      if (result.request?.id && (templateData as any)?.requiresApproval) {
         try {
           console.log('Sending approver notification email...');
           
@@ -1887,7 +1887,7 @@ export default function RequestPage() {
                   <AlertDescription className="flex items-center justify-between text-amber-900">
                     <div>
                       <strong>{templateData.type === 'service' ? 'Service' : 'Incident'} Template:</strong> {templateData.name} |
-                      <strong> Category:</strong> {templateData.category?.name || 'General'} |
+                      <strong> Category:</strong> {(templateData.category as any)?.name || templateData.category || 'General'} |
                       {templateData.type === 'service' && templateData.slaService && (
                         <>
                           <strong> SLA:</strong> {templateData.slaService.name}

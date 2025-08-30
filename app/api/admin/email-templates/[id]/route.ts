@@ -92,7 +92,7 @@ export async function PUT(
       subject: updatedTemplate.subject,
       type: updatedTemplate.template_key || 'unknown',
       status: updatedTemplate.is_active ? 'active' : 'inactive',
-      lastModified: new Date(updatedTemplate.updated_at).toLocaleDateString()
+      lastModified: updatedTemplate.updated_at ? new Date(updatedTemplate.updated_at).toLocaleDateString() : 'Unknown'
     };
     
     return NextResponse.json(transformedTemplate);

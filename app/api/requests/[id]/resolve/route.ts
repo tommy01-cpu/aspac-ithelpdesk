@@ -71,7 +71,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     });
     
     // Merge existing and new attachments (avoid duplicates)
-    const allAttachments = [...new Set([...existingAttachments, ...newAttachments])];
+    const uniqueAttachments = new Set([...existingAttachments, ...newAttachments]);
+    const allAttachments = Array.from(uniqueAttachments);
     console.log('ATTACHMENT DEBUG - All merged attachments:', allAttachments);
     
     const updatedForm = {

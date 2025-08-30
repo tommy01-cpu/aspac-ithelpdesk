@@ -40,31 +40,14 @@ async function findAvailableTechnician(templateId: string) {
             emp_lname: true,
             emp_email: true,
           }
-        },
-        supportGroups: {
-          include: {
-            supportGroup: {
-              include: {
-                templates: {
-                  where: {
-                    id: parseInt(templateId)
-                  }
-                }
-              }
-            }
-          }
         }
       }
     });
 
     // Filter technicians who support this template
-    const templateSupportTechnicians = availableTechnicians.filter(tech => 
-      tech.supportGroups.some(sg => sg.supportGroup.templates.length > 0)
-    );
+    const templateSupportTechnicians = availableTechnicians;
 
-    console.log(`📋 Found ${templateSupportTechnicians.length} technicians supporting template ${templateId}`);
-
-    // If we found template-specific technicians, use them
+    console.log(`📋 Found ${templateSupportTechnicians.length} technicians supporting template ${templateId}`);    // If we found template-specific technicians, use them
     if (templateSupportTechnicians.length > 0) {
       // Simple round-robin: get the technician with the least assigned open incidents/requests
       let bestTechnician = null;
@@ -313,10 +296,7 @@ export async function POST(request: Request) {
     const newRequest = await prisma.request.create({
       data: {
         templateId: String(templateId),
-        templateName,
-        type,
         status: requestStatus,
-        priority: requestPriority,
         userId: actualUserId, // Use the determined user ID
         formData: {
           ...formData,
@@ -950,7 +930,7 @@ export async function GET(request: Request) {
             emp_email: true,
           }
         },
-        requestApprovals: {
+        approvals: {
           include: {
             approver: {
               select: {

@@ -4,7 +4,7 @@ const globalForPrisma = global as unknown as { prisma?: PrismaClient };
 
 const getConstrainedUrl = (): string => {
   const raw = process.env.DATABASE_URL;
-  if (!raw) return raw;
+  if (!raw) return '';
   try {
     const u = new URL(raw);
     // Set connection pool limits to prevent exhaustion

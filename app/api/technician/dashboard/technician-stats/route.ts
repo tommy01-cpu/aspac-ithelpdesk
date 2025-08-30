@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,20 +47,20 @@ export async function GET(request: NextRequest) {
                 {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    equals: null
+                    equals: Prisma.JsonNull
                   }
                 },
                 {
                   formData: {
                     path: ['assignedTechnician'],
-                    equals: null
+                    equals: Prisma.JsonNull
                   }
                 },
                 {
                   NOT: {
                     formData: {
                       path: ['assignedTechnicianId'],
-                      not: null
+                      not: Prisma.JsonNull
                     }
                   }
                 }
@@ -78,20 +79,20 @@ export async function GET(request: NextRequest) {
                 {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    equals: null
+                    equals: Prisma.JsonNull
                   }
                 },
                 {
                   formData: {
                     path: ['assignedTechnician'],
-                    equals: null
+                    equals: Prisma.JsonNull
                   }
                 },
                 {
                   NOT: {
                     formData: {
                       path: ['assignedTechnicianId'],
-                      not: null
+                      not: Prisma.JsonNull
                     }
                   }
                 }
@@ -268,13 +269,13 @@ export async function GET(request: NextRequest) {
               {
                 formData: {
                   path: ['assignedTechnicianId'],
-                  not: null
+                  not: Prisma.JsonNull
                 }
               },
               {
                 formData: {
                   path: ['assignedTechnician'],
-                  not: null
+                  not: Prisma.JsonNull
                 }
               }
             ]
@@ -316,13 +317,13 @@ export async function GET(request: NextRequest) {
               {
                 formData: {
                   path: ['assignedTechnicianId'],
-                  not: null
+                  not: Prisma.JsonNull
                 }
               },
               {
                 formData: {
                   path: ['assignedTechnician'],
-                  not: null
+                  not: Prisma.JsonNull
                 }
               }
             ]
@@ -341,20 +342,20 @@ export async function GET(request: NextRequest) {
               {
                 formData: {
                   path: ['assignedTechnicianId'],
-                  equals: null
+                  equals: Prisma.JsonNull
                 }
               },
               {
                 formData: {
                   path: ['assignedTechnician'],
-                  equals: null
+                  equals: Prisma.JsonNull
                 }
               },
               {
                 NOT: {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    not: null
+                    not: Prisma.JsonNull
                   }
                 }
               }
@@ -373,20 +374,20 @@ export async function GET(request: NextRequest) {
               {
                 formData: {
                   path: ['assignedTechnicianId'],
-                  equals: null
+                  equals: Prisma.JsonNull
                 }
               },
               {
                 formData: {
                   path: ['assignedTechnician'],
-                  equals: null
+                  equals: Prisma.JsonNull
                 }
               },
               {
                 NOT: {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    not: null
+                    not: Prisma.JsonNull
                   }
                 }
               }

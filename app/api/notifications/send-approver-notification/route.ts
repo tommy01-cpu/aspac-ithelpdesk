@@ -21,13 +21,7 @@ export async function POST(request: NextRequest) {
     const serviceRequest = await prisma.request.findUnique({
       where: { id: parseInt(requestId) },
       include: {
-        user: true,
-        template: {
-          include: {
-            service: true,
-            category: true
-          }
-        }
+        user: true
       }
     });
 
@@ -43,12 +37,12 @@ export async function POST(request: NextRequest) {
           approver.name,
           {
             requestId: serviceRequest.id,
-            requestTitle: serviceRequest.title,
+            requestTitle: `Request #${serviceRequest.id}`,
             requesterName: `${serviceRequest.user.emp_fname} ${serviceRequest.user.emp_lname}`,
-            serviceName: serviceRequest.template?.service?.name || 'Service Request',
-            categoryName: serviceRequest.template?.category?.name || 'General',
+            serviceName: 'Service Request',
+            categoryName: 'General',
             level: approver.level,
-            priority: serviceRequest.priority,
+            priority: (serviceRequest.formData as any)?.priority || 'Medium',
             createdAt: serviceRequest.createdAt
           },
           template || 'notify-approver-approval'
@@ -56,7 +50,7 @@ export async function POST(request: NextRequest) {
         return { success: true, email: approver.email };
       } catch (error) {
         console.error(`Failed to send email to ${approver.email}:`, error);
-        return { success: false, email: approver.email, error: error.message };
+        return { success: false, email: approver.email, error: error instanceof Error ? error.message : String(error) };
       }
     });
 

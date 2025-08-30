@@ -208,7 +208,7 @@ export async function POST(request: NextRequest) {
       // For incidents, SLA starts when they become "open" (which is now)
       let slaStartAt: Date;
       
-      if (requestDetails.type === 'service') {
+      if ((requestDetails.formData as any)?.type === 'service') {
         // Service requests: Use the updatedAt time from when status was changed to "open" by approval action
         // This ensures perfect synchronization between updatedAt and slaStartAt
         slaStartAt = new Date(requestDetails.updatedAt);
@@ -316,6 +316,12 @@ export async function POST(request: NextRequest) {
         assignedDate: assignedDatePH, // Ensure this is also in PH format
         slaSource,
         ...(slaId ? { slaId: slaId.toString() } : {}),
+        // Initialize SLA timer management fields
+        slaStoppedAt: null,
+        slaResumedAt: null,
+        remainingSla: null,
+        slaStop: false,
+        slaStopReason: null,
       };
       
       console.log('🔍 ===== CRITICAL DEBUG: EXACT VALUES BEING SAVED =====');
@@ -346,6 +352,12 @@ export async function POST(request: NextRequest) {
             assignedDate: assignedDatePH, // Ensure this is also in PH format
             slaSource,
             ...(slaId ? { slaId: slaId.toString() } : {}),
+            // Initialize SLA timer management fields
+            slaStoppedAt: null,
+            slaResumedAt: null,
+            remainingSla: null,
+            slaStop: false,
+            slaStopReason: null,
           }
         }
       });

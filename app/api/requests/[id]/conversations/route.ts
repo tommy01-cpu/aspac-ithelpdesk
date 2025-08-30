@@ -155,7 +155,7 @@ export async function POST(
           // Get proper request subject and description from form data
           const formData = approval.request.formData as any;
           const requestSubject = formData?.subject || formData?.title || formData?.['8'] || `Request #${approval.request.id}`;
-          const requestDescription = formData?.description || formData?.details || formData?.['9'] || approval.request.description || 'No description provided';
+          const requestDescription = formData?.description || formData?.details || formData?.['9'] || 'No description provided';
           
           // Template variables for clarification response to approver
           const templateVariables = {
@@ -185,18 +185,20 @@ export async function POST(
             
             console.log('✅ Requester response email sent to approver:', approval.approver.emp_email, 'using template: 28');
 
-            // Create in-app notification for the approver
-            await createNotification({
-              userId: approval.approverId,
-              type: 'CLARIFICATION_RESPONSE',
-              title: 'Clarification Response Received',
-              message: `The requester has responded to your clarification request for Request #${approval.request.id}`,
-              data: {
-                requestId: approval.request.id,
-                approvalId: approval.id,
-                message: message.trim()
-              }
-            });
+            if (approval.approverId) {
+              // Create in-app notification for the approver
+              await createNotification({
+                userId: approval.approverId,
+                type: 'CLARIFICATION_RESPONSE',
+                title: 'Clarification Response Received',
+                message: `The requester has responded to your clarification request for Request #${approval.request.id}`,
+                data: {
+                  requestId: approval.request.id,
+                  approvalId: approval.id,
+                  message: message.trim()
+                }
+              });
+            }
           } else {
             console.error('❌ Failed to prepare email content from database template: 28');
           }

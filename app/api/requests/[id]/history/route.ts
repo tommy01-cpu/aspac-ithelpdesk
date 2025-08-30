@@ -42,13 +42,12 @@ export async function GET(
     // Helper: format timestamp that's already in Philippine time
     // Since we store Philippine time directly, we don't need timezone conversion
     const formatStoredPhilippineTime = (d: Date) => {
-      return d.toLocaleString('en-PH', {
+      return d.toLocaleString('en-US', {
         year: 'numeric',
-        month: '2-digit', 
-        day: '2-digit',
-        hour: '2-digit',
+        month: 'short', 
+        day: 'numeric',
+        hour: 'numeric',
         minute: '2-digit',
-        second: '2-digit',
         hour12: true
       });
     };

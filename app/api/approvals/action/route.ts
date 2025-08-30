@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
             await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
           } else {
             // Fallback path mirrors Image 1 entries
-            const priority = (finalRequest.priority || '').toLowerCase();
+            const priority = ((finalRequest.formData as any)?.priority || '').toLowerCase();
             let slaHours = 48; if (priority === 'top') slaHours = 4; else if (priority === 'high') slaHours = 8; else if (priority === 'medium') slaHours = 16;
             
             // SLA should start from approval time, not request creation time
@@ -591,7 +591,7 @@ export async function POST(request: NextRequest) {
                       await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
                     } else {
                       // SLA endpoint failed; fallback
-                      const priority = (finalRequest.priority || '').toLowerCase();
+                      const priority = ((finalRequest.formData as any)?.priority || '').toLowerCase();
                       let slaHours = 48; if (priority === 'top') slaHours = 4; else if (priority === 'high') slaHours = 8; else if (priority === 'medium') slaHours = 16;
                       
                       // SLA should start from approval time, not request creation time
@@ -755,7 +755,7 @@ export async function POST(request: NextRequest) {
 
                 try {
                   // Fallback: compute SLA locally and optionally attempt assignment
-                  const priority = (updatedRequest.priority || '').toLowerCase();
+                  const priority = ((updatedRequest.formData as any)?.priority || '').toLowerCase();
                   let slaHours = 48; // default low
                   if (priority === 'top') slaHours = 4;
                   else if (priority === 'high') slaHours = 8;
@@ -889,7 +889,7 @@ export async function POST(request: NextRequest) {
               console.error('❌ Error triggering SLA and assignment:', slaError);
               // Replace the error entry by producing Image 1 entries via local fallback
               try {
-                const priority = (updatedRequest.priority || '').toLowerCase();
+                const priority = ((updatedRequest.formData as any)?.priority || '').toLowerCase();
                 let slaHours = 48; // default low
                 if (priority === 'top') slaHours = 4;
                 else if (priority === 'high') slaHours = 8;

@@ -4,21 +4,20 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { addHistory } from '@/lib/history';
 
-// Helper function to get current timestamp in Philippine time (YYYY-MM-DD HH:MM:SS format)
-function getPhilippineTimestamp(): string {
+// Helper function to get current timestamp without timezone (YYYY-MM-DD HH:MM:SS format)
+function getCurrentTimestampWithoutTZ(): string {
   const now = new Date();
-  const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
   
-  const year = philippineTime.getUTCFullYear();
-  const month = String(philippineTime.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(philippineTime.getUTCDate()).padStart(2, '0');
-  const hours = String(philippineTime.getUTCHours()).padStart(2, '0');
-  const minutes = String(philippineTime.getUTCMinutes()).padStart(2, '0');
-  const seconds = String(philippineTime.getUTCSeconds()).padStart(2, '0');
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
   
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
-// Helper function to calculate remaining SLA time correctly
+// Helper function to calculate remaining SLA time in hours when stopping
 function calculateRemainingSlaHours(formData: any): number {
   // Get original SLA hours
   const originalSlaHours = parseFloat(formData.slaHours || '0');
@@ -26,10 +25,10 @@ function calculateRemainingSlaHours(formData: any): number {
   // Get SLA start time
   const slaStartAt = formData.slaStartAt;
   if (!slaStartAt) {
-    return originalSlaHours; // If no start time, return full SLA
+    return originalSlaHours;
   }
   
-  // Calculate elapsed time from start to now
+  // Calculate elapsed time from start to now in hours
   const now = new Date();
   const startDate = new Date(slaStartAt);
   const elapsedMs = now.getTime() - startDate.getTime();
@@ -38,8 +37,8 @@ function calculateRemainingSlaHours(formData: any): number {
   // Remaining = Original SLA - Elapsed time
   const remainingHours = originalSlaHours - elapsedHours;
   
-  // Don't return negative values
-  return Math.max(0, remainingHours);
+  // Don't return negative values, and don't exceed original SLA
+  return Math.max(0, Math.min(remainingHours, originalSlaHours));
 }
 
 // Helper function to format time for history display
@@ -60,7 +59,8 @@ function formatTimeForHistory(hours: number): string {
 // Helper function to calculate new SLA due date based on remaining hours
 function calculateNewSlaDueDate(remainingHours: number): string {
   const now = new Date();
-  const newDueDate = new Date(now.getTime() + (remainingHours * 60 * 60 * 1000));
+  const remainingMs = remainingHours * 60 * 60 * 1000; // Convert hours to milliseconds
+  const newDueDate = new Date(now.getTime() + remainingMs);
   
   // Format as MySQL datetime string (YYYY-MM-DD HH:MM:SS)
   const year = newDueDate.getFullYear();
@@ -88,10 +88,15 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid request ID' }, { status: 400 });
     }
 
-    const { action } = await request.json();
+    const { action, reason } = await request.json();
     
     if (!action || !['start', 'stop'].includes(action)) {
       return NextResponse.json({ error: 'Invalid action. Must be "start" or "stop"' }, { status: 400 });
+    }
+
+    // Validate reason for stop action
+    if (action === 'stop' && (!reason || reason.trim() === '')) {
+      return NextResponse.json({ error: 'Reason is required when stopping SLA timer' }, { status: 400 });
     }
 
     // Get current user
@@ -132,23 +137,24 @@ export async function POST(
       }
 
       // Check if SLA data exists
-      if (!formData.slaHours || !formData.slaStartAt) {
+      if (!formData.slaHours || !formData.slaDueDate) {
         return NextResponse.json({ 
           error: 'No SLA data found for this request' 
         }, { status: 400 });
       }
 
-      // Calculate remaining SLA time correctly
+      // Calculate remaining SLA time in hours
       const remainingSlaHours = calculateRemainingSlaHours(formData);
-      const stoppedAt = getPhilippineTimestamp();
+      const stoppedAt = getCurrentTimestampWithoutTZ();
       
       // Update formData
       updatedFormData.remainingSla = remainingSlaHours;
-      updatedFormData.slaIsStop = true;
+      updatedFormData.slaStop = true;
       updatedFormData.slaStoppedAt = stoppedAt;
+      updatedFormData.slaStopReason = reason.trim();
       
       newStatus = 'on_hold';
-      historyDetails = `SLA Timer stopped at ${stoppedAt}. Remaining SLA: ${formatTimeForHistory(remainingSlaHours)}. Status changed to On Hold.`;
+      historyDetails = `SLA Timer stopped at ${stoppedAt}.\nReason: ${reason.trim()}.\nRemaining SLA: ${formatTimeForHistory(remainingSlaHours)}.\nStatus changed to On Hold.`;
 
     } else if (action === 'start') {
       // Validate: can only start when status is 'on_hold'
@@ -165,20 +171,21 @@ export async function POST(
         }, { status: 400 });
       }
 
-      // Calculate new due date based on remaining SLA
+      // Calculate new due date based on remaining SLA hours
       const newSlaDueDate = calculateNewSlaDueDate(formData.remainingSla);
+      const resumedAt = getCurrentTimestampWithoutTZ();
       
       // Update formData
       updatedFormData.slaDueDate = newSlaDueDate;
-      updatedFormData.slaResumedAt = getPhilippineTimestamp();
+      updatedFormData.slaResumedAt = resumedAt;
+      updatedFormData.slaStop = false;
       
-      // Remove slaIsStop flag and remainingSla (it's now incorporated into new due date)
-      delete updatedFormData.slaIsStop;
-      delete updatedFormData.remainingSla;
+      // Keep remainingSla for future reference, remove stopped data
       delete updatedFormData.slaStoppedAt;
+      delete updatedFormData.slaStopReason;
       
       newStatus = 'open';
-      historyDetails = `SLA Timer resumed. New due date: ${newSlaDueDate}. Status changed to Open.`;
+      historyDetails = `SLA Timer resumed at ${resumedAt}.\nNew due date: ${newSlaDueDate}.\nStatus changed to Open.`;
     }
 
     // Update the request
@@ -208,7 +215,11 @@ export async function POST(
       message: `SLA timer ${action === 'stop' ? 'stopped' : 'started'} successfully`,
       newStatus,
       remainingSla: action === 'stop' ? updatedFormData.remainingSla : null,
-      newSlaDueDate: action === 'start' ? updatedFormData.slaDueDate : null
+      newSlaDueDate: action === 'start' ? updatedFormData.slaDueDate : null,
+      slaStop: updatedFormData.slaStop,
+      slaStoppedAt: updatedFormData.slaStoppedAt || null,
+      slaStopReason: updatedFormData.slaStopReason || null,
+      slaResumedAt: updatedFormData.slaResumedAt || null
     });
 
   } catch (error) {

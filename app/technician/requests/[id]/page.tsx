@@ -2962,7 +2962,7 @@ export default function RequestViewPage() {
                               <div className="flex justify-between">
                                 <span className="text-gray-600">Resolution Time</span>
                                 <span className="font-medium">
-                                  {templateData.slaService.resolutionDays || 0}d {templateData.slaService.resolutionHours || 0}h
+                                  {(templateData.slaService as any).resolutionDays || 0}d {(templateData.slaService as any).resolutionHours || 0}h
                                 </span>
                               </div>
                             </div>

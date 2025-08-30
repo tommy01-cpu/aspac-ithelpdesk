@@ -20,9 +20,7 @@ export async function POST(request: NextRequest) {
         id: true,
         formData: true,
         createdAt: true,
-        updatedAt: true,
-        priority: true,
-        type: true
+        updatedAt: true
       }
     });
     

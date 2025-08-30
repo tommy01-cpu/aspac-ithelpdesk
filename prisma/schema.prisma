@@ -94,14 +94,16 @@ model Department {
 }
 
 model Holiday {
-  id          Int      @id @default(autoincrement())
-  name        String
-  date        DateTime @db.Date
-  description String?
-  isRecurring Boolean  @default(false)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            Int       @id @default(autoincrement())
+  name          String
+  date          DateTime  @db.Date
+  description   String?
+  isRecurring   Boolean   @default(false)
+  recurringType String?   // 'yearly', 'monthly', etc.
+  recurringRule Json?     // JSON with specific recurring rules
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@map("holidays")
 }

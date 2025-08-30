@@ -114,7 +114,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
               Request_Subject: requestSubject,
               Request_Description: requestDescription,
               Requester_Name: requesterName,
-              Requester_Email: requestWithUser.user.emp_email,
+              Requester_Email: requestWithUser.user.emp_email || '',
               Request_Title: requestSubject,
               Emails_To_Notify: emailRecipients.join(', ')
             };

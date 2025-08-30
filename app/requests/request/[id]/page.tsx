@@ -1132,8 +1132,8 @@ export default function RequestPage() {
 
     try {
       // Validate required fields
-      const templateFields = Array.isArray(templateData?.fields) ? templateData.fields : [];
-      const requiredFields = templateFields.filter(field => field.required && !field.technicianOnly);
+      const templateFields = Array.isArray(templateData?.fields) ? templateData?.fields : [];
+      const requiredFields = templateFields?.filter(field => field.required && !field.technicianOnly);
       const missingFields = requiredFields?.filter(field => !formData[field.id] || formData[field.id] === '');
       
       if (missingFields && missingFields.length > 0) {

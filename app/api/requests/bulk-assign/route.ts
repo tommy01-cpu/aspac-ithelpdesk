@@ -73,14 +73,10 @@ export async function POST(request: NextRequest) {
       await prisma.requestHistory.create({
         data: {
           requestId: req.id,
-          userId: user.id,
+          actorId: user.id,
           action: 'bulk_assign',
-          details: {
-            assignedTo: technicianName,
-            assignedById: user.id,
-            assignedBy: `${user.emp_fname} ${user.emp_lname}`.trim(),
-            timestamp: new Date().toISOString()
-          }
+          details: `Bulk assigned to ${technicianName} by ${`${user.emp_fname} ${user.emp_lname}`.trim()}`,
+          actorName: `${user.emp_fname} ${user.emp_lname}`.trim()
         }
       });
     }

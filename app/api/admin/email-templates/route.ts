@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       subject: newTemplate.subject,
       type: newTemplate.template_key || 'unknown',
       status: newTemplate.is_active ? 'active' : 'inactive',
-      lastModified: new Date(newTemplate.updated_at).toLocaleDateString()
+      lastModified: newTemplate.updated_at ? new Date(newTemplate.updated_at).toLocaleDateString() : 'Unknown'
     };
     
     console.log('Template created successfully:', transformedTemplate);

@@ -414,7 +414,13 @@ export async function POST(request: Request) {
             }).replace(/(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})/, '$3-$1-$2 $4:$5:$6') : null,
             slaStartAt: philippineTimeString,
             assignedDate: philippineTimeString,
-            slaCalculatedAt: philippineTimeString
+            slaCalculatedAt: philippineTimeString,
+            // Additional SLA timer fields
+            remainingSla: slaHours, // Initialize with full SLA hours
+            slaStop: false, // Timer is running by default
+            slaStoppedAt: null, // No stop time initially
+            slaResumedAt: null, // No resume time initially
+            slaStopReason: null // No stop reason initially
           })
         },
         attachments: attachments || [],
@@ -575,7 +581,13 @@ export async function POST(request: Request) {
                   }).replace(/(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})/, '$3-$1-$2 $4:$5:$6') : null,
                   slaStartAt: philippineTimeString,
                   assignedDate: philippineTimeString,
-                  slaCalculatedAt: philippineTimeString
+                  slaCalculatedAt: philippineTimeString,
+                  // Additional SLA timer fields
+                  remainingSla: slaHours, // Initialize with full SLA hours
+                  slaStop: false, // Timer is running by default
+                  slaStoppedAt: null, // No stop time initially
+                  slaResumedAt: null, // No resume time initially
+                  slaStopReason: null // No stop reason initially
                 })
               },
               updatedAt: philippineTime

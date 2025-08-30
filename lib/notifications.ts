@@ -61,10 +61,10 @@ export interface RequestEmailVariables extends Record<string, string> {
   Approver_Email: string;
   Approval_Comments: string;
   Clarification: string;
-  Request_URL?: string;
-  Request_Link?: string;
-  Base_URL?: string;
-  Encoded_Request_URL?: string;
+  Request_URL: string;
+  Request_Link: string;
+  Base_URL: string;
+  Encoded_Request_URL: string;
 }
 
 // Create in-app notification
@@ -73,7 +73,7 @@ export const createNotification = async (notificationData: NotificationData): Pr
     await prisma.notification.create({
       data: {
         userId: notificationData.userId,
-        type: notificationData.type,
+        type: notificationData.type as any,
         title: notificationData.title,
         message: notificationData.message,
         data: notificationData.data || {},
@@ -151,8 +151,8 @@ export const notifyRequestCreated = async (requestData: any, templateData: any) 
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requesterEmail = requestData.user.emp_email;
-    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
-    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    const requestSubject = (requestData.formData as any)?.['8'] || templateData?.name || 'IT Helpdesk Request';
+    const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
@@ -160,12 +160,12 @@ export const notifyRequestCreated = async (requestData: any, templateData: any) 
     const emailsToNotify = (() => {
       // Use field ID '10' as the primary source for email notifications
       // This is the actual form field that stores emails to notify
-      const emailField = requestData.formData?.['10'] || [];
+      const emailField = (requestData.formData as any)?.['10'] || [];
       
       console.log('🔍 Email notify field check:', {
-        field10: requestData.formData?.['10'],
-        emailNotify: requestData.formData?.emailNotify,
-        emailsToNotify: requestData.formData?.emailsToNotify,
+        field10: (requestData.formData as any)?.['10'],
+        emailNotify: (requestData.formData as any)?.emailNotify,
+        emailsToNotify: (requestData.formData as any)?.emailsToNotify,
         selectedField: emailField,
         note: 'Using field 10 as primary source'
       });
@@ -258,8 +258,8 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
   try {
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
-    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
-    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    const requestSubject = (requestData.formData as any)?.['8'] || templateData?.name || 'IT Helpdesk Request';
+    const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
@@ -332,8 +332,8 @@ export const notifyRequestApprovedRejected = async (
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requesterEmail = requestData.user.emp_email;
-    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
-    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    const requestSubject = (requestData.formData as any)?.['8'] || templateData?.name || 'IT Helpdesk Request';
+    const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
@@ -394,15 +394,15 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requesterEmail = requestData.user.emp_email;
-    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
-    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    const requestSubject = (requestData.formData as any)?.['8'] || templateData?.name || 'IT Helpdesk Request';
+    const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
     
     const technicianName = `${technicianData.emp_fname} ${technicianData.emp_lname}`.trim();
     const technicianEmail = technicianData.emp_email;
-    const dueDate = requestData.formData?.slaDueDate || 'Not specified';
+    const dueDate = (requestData.formData as any)?.slaDueDate || 'Not specified';
 
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();
@@ -496,25 +496,25 @@ export const notifyRequestResolved = async (
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
     const requesterEmail = requestData.user.emp_email;
-    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
-    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    const requestSubject = (requestData.formData as any)?.['8'] || templateData?.name || 'IT Helpdesk Request';
+    const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
     
     const emailsToNotify = (() => {
       // Check multiple possible field names for email notifications
-      const emailField = requestData.formData?.emailNotify || 
-                         requestData.formData?.emailsToNotify ||
-                         requestData.formData?.['10'] ||
-                         requestData.formData?.email_to_notify ||
+      const emailField = (requestData.formData as any)?.emailNotify || 
+                         (requestData.formData as any)?.emailsToNotify ||
+                         (requestData.formData as any)?.['10'] ||
+                         (requestData.formData as any)?.email_to_notify ||
                          [];
       
       console.log('🔍 Email notify field check (resolved):', {
-        emailNotify: requestData.formData?.emailNotify,
-        emailsToNotify: requestData.formData?.emailsToNotify,
-        field10: requestData.formData?.['10'],
-        email_to_notify: requestData.formData?.email_to_notify,
+        emailNotify: (requestData.formData as any)?.emailNotify,
+        emailsToNotify: (requestData.formData as any)?.emailsToNotify,
+        field10: (requestData.formData as any)?.['10'],
+        email_to_notify: (requestData.formData as any)?.email_to_notify,
         selectedField: emailField
       });
       
@@ -603,15 +603,15 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
   try {
     const requestId = requestData.id;
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
-    const requestSubject = requestData.formData?.['8'] || templateData?.name || 'IT Helpdesk Request';
-    const rawRequestDescription = requestData.formData?.['9'] || 'No description provided';
+    const requestSubject = (requestData.formData as any)?.['8'] || templateData?.name || 'IT Helpdesk Request';
+    const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
     
     const technicianName = `${technicianData.emp_fname} ${technicianData.emp_lname}`.trim();
     const technicianEmail = technicianData.emp_email;
-    const dueDate = requestData.formData?.slaDueDate || 'Not specified';
+    const dueDate = (requestData.formData as any)?.slaDueDate || 'Not specified';
 
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();
@@ -698,10 +698,10 @@ export const sendApprovalOutcomeNotification = async (
     }
 
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
-    const requestSubject = requestData.formData?.subject || requestData.formData?.title || `Request #${requestId}`;
-    
+    const requestSubject = (requestData.formData as any)?.subject || (requestData.formData as any)?.title || `Request #${requestId}`;
+
     // Process request description
-    const rawRequestDescription = requestData.formData?.description || requestData.formData?.details || 'No description provided';
+    const rawRequestDescription = (requestData.formData as any)?.description || (requestData.formData as any)?.details || 'No description provided';
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
 
     // Generate base URL and request URLs
@@ -802,10 +802,10 @@ export const sendClarificationRequestNotification = async (
     }
 
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
-    const requestSubject = requestData.formData?.subject || requestData.formData?.title || `Request #${requestId}`;
+    const requestSubject = (requestData.formData as any)?.subject || (requestData.formData as any)?.title || `Request #${requestId}`;
     
     // Process request description
-    const rawRequestDescription = requestData.formData?.description || requestData.formData?.details || requestData.formData?.['9'] || 'No description provided';
+    const rawRequestDescription = (requestData.formData as any)?.description || (requestData.formData as any)?.details || (requestData.formData as any)?.['9'] || 'No description provided';
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
 
     // Generate base URL and request URLs
