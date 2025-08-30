@@ -364,12 +364,33 @@ export async function POST(request: Request) {
       const totalMinutes = resolutionDays * 24 * 60 + resolutionHours * 60 + resolutionMinutes;
       slaHours = Math.round(totalMinutes / 60 * 100) / 100; // Round to 2 decimal places
       
+      // 🔍 DEBUG: SLA calculation parameters
+      console.log('🔍 ===== SLA CALCULATION DEBUG =====');
+      console.log('🔍 Philippine Time (input):', philippineTime.toISOString());
+      console.log('🔍 Philippine Time (local):', philippineTime.toLocaleString());
+      console.log('🔍 SLA Hours:', slaHours);
+      console.log('🔍 Resolution breakdown:', { resolutionDays, resolutionHours, resolutionMinutes });
+      console.log('🔍 Total minutes calculated:', totalMinutes);
+      console.log('🔍 ===== CALLING calculateSLADueDate =====');
+      
+      // 🔧 FIX: Use the Philippine time values directly without timezone conversion
+      // Extract the time components and create a new Date that represents Philippine time
+      const philippineTimeString = philippineTime.toISOString().replace('T', ' ').replace('Z', '');
+      console.log('🔧 Philippine Time String (no TZ):', philippineTimeString);
+      
+      // Create a Date using the Philippine time values as if they were local
+      const philippineTimeForSLA = new Date(philippineTimeString);
+      console.log('🔧 Philippine Time for SLA:', philippineTimeForSLA.toISOString());
+      console.log('🔧 Philippine Time for SLA (local display):', philippineTimeForSLA.toLocaleString());
+      
       // Use proper SLA calculator with operational hours
-      slaDueDate = await calculateSLADueDate(philippineTime, slaHours, { 
+      slaDueDate = await calculateSLADueDate(philippineTimeForSLA, slaHours, { 
         useOperationalHours: true 
       });
       
       console.log('⏰ SLA Due Date calculated with operational hours:', slaDueDate, 'SLA Hours:', slaHours);
+      console.log('🔍 SLA Due Date (local):', slaDueDate.toLocaleString());
+      console.log('🔍 ===== END SLA CALCULATION DEBUG =====');
     }
     
     const newRequest = await prisma.request.create({
@@ -388,7 +409,7 @@ export async function POST(request: Request) {
             slaHours: slaHours?.toString(),
             slaSource: 'incident',
             slaDueDate: slaDueDate ? new Date(slaDueDate).toLocaleString('en-PH', { 
-              timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+              year: 'numeric', month: '2-digit', day: '2-digit',
               hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
             }).replace(/(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})/, '$3-$1-$2 $4:$5:$6') : null,
             slaStartAt: philippineTimeString,
@@ -687,12 +708,13 @@ export async function POST(request: Request) {
                       name: level.displayName || `Level ${levelNumber}`,
                       approverId: actualApproverId,
                       approverName: approverName, // ✅ Add approver name 
-                      approverEmail: templateApprover?.emp_email, // ✅ Add approver email
+                      approverEmail: level.approver?.emp_email, // ✅ Add approver email
                       status: APPROVAL_STATUS.APPROVED,
                       isAutoApproval: true,
                       comments: 'Automatically approved for incident request',
                       sentOn: philippineTime,
                       actedOn: philippineTime,
+                      createdAt: philippineTime,
                       updatedAt: philippineTime,
                     }
                   });
@@ -931,7 +953,6 @@ export async function POST(request: Request) {
                         sentOn: philippineTime, // ✅ Set sentOn since email is sent immediately for Level 1
                         createdAt: philippineTime, // ✅ Use the main philippineTime variable
                         updatedAt: philippineTime, // ✅ Use the main philippineTime variable
-                        updatedAt: philippineTime,
                       }
                     });
                     level1ApproverNames.push(`${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`);

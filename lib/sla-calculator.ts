@@ -502,9 +502,8 @@ export async function calculateSLADueDate(
     
     // Check if this is a holiday or non-working day
     if (await isHoliday(currentPHT) || !isWorkingDay(dayOfWeek, operationalHours)) {
-      // Move to next day at 8 AM
-      currentPHT.setDate(currentPHT.getDate() + 1);
-      currentPHT.setHours(8, 0, 0, 0);
+      // Move to next working day at proper start time
+      currentPHT = await moveToNextWorkingDay(currentPHT, operationalHours);
       continue;
     }
     
@@ -512,9 +511,8 @@ export async function calculateSLADueDate(
     const workingHoursInDay = getWorkingHoursForDay(dayOfWeek, operationalHours);
     
     if (workingHoursInDay === 0) {
-      // Not a working day, move to next day
-      currentPHT.setDate(currentPHT.getDate() + 1);
-      currentPHT.setHours(8, 0, 0, 0);
+      // Not a working day, move to next working day
+      currentPHT = await moveToNextWorkingDay(currentPHT, operationalHours);
       continue;
     }
     
@@ -524,20 +522,68 @@ export async function calculateSLADueDate(
     if (remainingHours <= remainingInDay) {
       // SLA will complete within this day
       // Add the remaining hours to current time (accounting for breaks)
-      currentPHT = addWorkingHoursToTimePHT(currentPHT, remainingHours, operationalHours);
+      currentPHT = await addWorkingHoursToTimePHT(currentPHT, remainingHours, operationalHours);
       remainingHours = 0;
     } else {
       // Use all remaining hours in this day and continue to next working day
       remainingHours -= remainingInDay;
       
-      // Move to next working day at start time (8 AM)
-      currentPHT.setDate(currentPHT.getDate() + 1);
-      currentPHT.setHours(8, 0, 0, 0);
+      // Move to next working day at proper start time
+      currentPHT = await moveToNextWorkingDay(currentPHT, operationalHours);
     }
   }
 
   // Return the result directly as Philippine Time
   return currentPHT;
+}
+
+/**
+ * Get the start time for a working day
+ */
+function getWorkingDayStartTime(dayOfWeek: number, operationalHours: OperationalHours): string {
+  const workingDay = operationalHours.workingDays.find(
+    (day) => day.dayOfWeek === dayOfWeek
+  );
+  
+  if (workingDay && workingDay.scheduleType === 'custom') {
+    return workingDay.customStartTime || '08:00';
+  }
+  
+  return operationalHours.standardStartTime || '08:00';
+}
+
+/**
+ * Move to next working day at proper start time
+ */
+async function moveToNextWorkingDay(
+  currentDate: Date,
+  operationalHours: OperationalHours
+): Promise<Date> {
+  let nextDay = new Date(currentDate);
+  nextDay.setDate(nextDay.getDate() + 1);
+  
+  // Find the next working day
+  for (let i = 0; i < 7; i++) {
+    const dayOfWeek = nextDay.getDay();
+    const workingDay = operationalHours.workingDays.find(
+      (day) => day.dayOfWeek === dayOfWeek
+    );
+    
+    if (workingDay && workingDay.isEnabled && workingDay.scheduleType !== 'not-set') {
+      // Found next working day, set to start time
+      const startTime = getWorkingDayStartTime(dayOfWeek, operationalHours);
+      const [sh, sm] = startTime.split(':').map(n => parseInt(n, 10));
+      nextDay.setHours(sh, sm, 0, 0);
+      return nextDay;
+    }
+    
+    // Try next day
+    nextDay.setDate(nextDay.getDate() + 1);
+  }
+  
+  // Fallback to 8 AM if no working day found
+  nextDay.setHours(8, 0, 0, 0);
+  return nextDay;
 }
 
 /**
@@ -615,7 +661,7 @@ function isWorkingDay(dayOfWeek: number, operationalHours: OperationalHours): bo
   const workingDay = operationalHours.workingDays.find(
     (day) => day.dayOfWeek === dayOfWeek
   );
-  return workingDay?.isEnabled && workingDay.scheduleType !== 'not-set';
+  return !!(workingDay?.isEnabled && workingDay.scheduleType !== 'not-set');
 }
 
 /**
@@ -687,15 +733,14 @@ function getRemainingWorkingHoursInDayPHT(
  * Business rule: Breaks PAUSE SLA time - SLA clock stops during lunch breaks
  * This ensures accurate SLA calculations that respect operational hours and breaks
  */
-function addWorkingHoursToTimePHT(
+async function addWorkingHoursToTimePHT(
   phtDate: Date,
   hoursToAdd: number,
   operationalHours: OperationalHours
-): Date {
+): Promise<Date> {
   let currentPHT = new Date(phtDate);
-  let remainingMinutes = hoursToAdd * 60;
+  let remainingMinutes = Math.round(hoursToAdd * 60);
   
-  // Add time minute by minute, skipping break hours
   while (remainingMinutes > 0) {
     const dayOfWeek = currentPHT.getDay();
     const workingDay = operationalHours.workingDays.find(
@@ -703,9 +748,7 @@ function addWorkingHoursToTimePHT(
     );
     
     if (!workingDay || !workingDay.isEnabled) {
-      // Move to next working day at start time
-      currentPHT.setDate(currentPHT.getDate() + 1);
-      currentPHT.setHours(8, 0, 0, 0);
+      currentPHT = await moveToNextWorkingDay(currentPHT, operationalHours);
       continue;
     }
     
@@ -732,32 +775,66 @@ function addWorkingHoursToTimePHT(
     
     // If after working hours, move to next working day
     if (currentTime >= endTime) {
-      currentPHT.setDate(currentPHT.getDate() + 1);
-      currentPHT.setHours(8, 0, 0, 0);
+      currentPHT = await moveToNextWorkingDay(currentPHT, operationalHours);
       continue;
     }
     
-    // Check if current time is within break hours
+    // Calculate how much time we can use in this day
+    const [ch, cm] = currentTime.split(':').map(n => parseInt(n, 10));
+    const [eh, em] = endTime.split(':').map(n => parseInt(n, 10));
+    let availableMinutes = (eh * 60 + em) - (ch * 60 + cm);
+    
+    // Subtract breaks that are still ahead
     const breakHours = workingDay.breakHours || [];
-    let isInBreak = false;
+    let breakMinutesToSubtract = 0;
     
     for (const breakHour of breakHours) {
-      if (currentTime >= breakHour.startTime && currentTime < breakHour.endTime) {
-        // We're in a break, move to end of break
-        const [beh, bem] = breakHour.endTime.split(':').map(n => parseInt(n, 10));
+      const [bsh, bsm] = breakHour.startTime.split(':').map(n => parseInt(n, 10));
+      const [beh, bem] = breakHour.endTime.split(':').map(n => parseInt(n, 10));
+      const currentMinutes = ch * 60 + cm;
+      const breakStartMinutes = bsh * 60 + bsm;
+      const breakEndMinutes = beh * 60 + bem;
+      
+      if (currentMinutes < breakStartMinutes) {
+        // Break is in the future, subtract it
+        breakMinutesToSubtract += (breakEndMinutes - breakStartMinutes);
+      } else if (currentMinutes >= breakStartMinutes && currentMinutes < breakEndMinutes) {
+        // Currently in break, move to end of break
         currentPHT.setHours(beh, bem, 0, 0);
-        isInBreak = true;
-        break;
+        continue;
       }
     }
     
-    if (isInBreak) {
-      continue;
-    }
+    availableMinutes -= breakMinutesToSubtract;
     
-    // Add one minute and continue
-    currentPHT.setMinutes(currentPHT.getMinutes() + 1);
-    remainingMinutes--;
+    if (remainingMinutes <= availableMinutes) {
+      // We can finish within this day
+      let minutesToAdd = remainingMinutes;
+      
+      // Check if we cross any breaks
+      for (const breakHour of breakHours) {
+        const [bsh, bsm] = breakHour.startTime.split(':').map(n => parseInt(n, 10));
+        const [beh, bem] = breakHour.endTime.split(':').map(n => parseInt(n, 10));
+        const breakStartMinutes = bsh * 60 + bsm;
+        const breakEndMinutes = beh * 60 + bem;
+        const currentMinutes = ch * 60 + cm;
+        const targetMinutes = currentMinutes + minutesToAdd;
+        
+        if (currentMinutes < breakStartMinutes && targetMinutes > breakStartMinutes) {
+          // We cross this break, add break duration to our time
+          const breakDuration = breakEndMinutes - breakStartMinutes;
+          minutesToAdd += breakDuration;
+        }
+      }
+      
+      currentPHT.setMinutes(currentPHT.getMinutes() + minutesToAdd);
+      remainingMinutes = 0;
+      
+    } else {
+      // Use all available time in this day and continue to next working day
+      remainingMinutes -= availableMinutes;
+      currentPHT = await moveToNextWorkingDay(currentPHT, operationalHours);
+    }
   }
   
   return currentPHT;

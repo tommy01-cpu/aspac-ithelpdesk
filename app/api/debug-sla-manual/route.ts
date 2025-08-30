@@ -9,9 +9,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No operational hours configuration found' });
     }
     
-    // Manual calculation: Aug 14, 2025 at 4:00 PM Philippine time with 49 hours SLA
-    const startDatePH = new Date('2025-08-14T16:00:00'); // 4:00 PM
-    let remainingHours = 49;
+    // Manual calculation: Aug 30, 2025 at 10:13 AM (Saturday) with 4 hours SLA
+    const startDatePH = new Date('2025-08-30T10:13:41'); // Your exact case
+    let remainingHours = 4; // Top Priority SLA
     let currentPHT = new Date(startDatePH);
     
     const calculation = [];
@@ -33,7 +33,24 @@ export async function GET(request: NextRequest) {
       if (!isWorkingDay) {
         calculation.push(`${dayName} ${dateStr} - Non-working day, skip to next day`);
         currentPHT.setDate(currentPHT.getDate() + 1);
-        currentPHT.setHours(8, 0, 0, 0);
+        
+        // Find next working day and set to its start time
+        let foundNextWorkingDay = false;
+        for (let i = 0; i < 7 && !foundNextWorkingDay; i++) {
+          const nextDayOfWeek = currentPHT.getDay();
+          const nextWorkingDay = operationalHours.workingDays.find(day => day.dayOfWeek === nextDayOfWeek);
+          
+          if (nextWorkingDay?.isEnabled && nextWorkingDay.scheduleType !== 'not-set') {
+            const nextStartTime = nextWorkingDay.scheduleType === 'custom' 
+              ? (nextWorkingDay.customStartTime || '08:00')
+              : (operationalHours.standardStartTime || '08:00');
+            const [sh, sm] = nextStartTime.split(':').map(n => parseInt(n, 10));
+            currentPHT.setHours(sh, sm, 0, 0);
+            foundNextWorkingDay = true;
+          } else {
+            currentPHT.setDate(currentPHT.getDate() + 1);
+          }
+        }
         continue;
       }
       
@@ -105,7 +122,24 @@ export async function GET(request: NextRequest) {
         calculation.push(`${dayName} ${dateStr} ${timeStr} - Use ${remainingInDay}h of ${workingHours}h net working time - Remaining: ${remainingHours - remainingInDay}h`);
         remainingHours -= remainingInDay;
         currentPHT.setDate(currentPHT.getDate() + 1);
-        currentPHT.setHours(8, 0, 0, 0);
+        
+        // Find next working day and set to its start time
+        let foundNextWorkingDay = false;
+        for (let i = 0; i < 7 && !foundNextWorkingDay; i++) {
+          const nextDayOfWeek = currentPHT.getDay();
+          const nextWorkingDay = operationalHours.workingDays.find(day => day.dayOfWeek === nextDayOfWeek);
+          
+          if (nextWorkingDay?.isEnabled && nextWorkingDay.scheduleType !== 'not-set') {
+            const nextStartTime = nextWorkingDay.scheduleType === 'custom' 
+              ? (nextWorkingDay.customStartTime || '08:00')
+              : (operationalHours.standardStartTime || '08:00');
+            const [sh, sm] = nextStartTime.split(':').map(n => parseInt(n, 10));
+            currentPHT.setHours(sh, sm, 0, 0);
+            foundNextWorkingDay = true;
+          } else {
+            currentPHT.setDate(currentPHT.getDate() + 1);
+          }
+        }
       }
     }
     

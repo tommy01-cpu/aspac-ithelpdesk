@@ -40,7 +40,15 @@ export async function POST(request: NextRequest) {
     // Get the request details
     const requestDetails = await prisma.request.findUnique({
       where: { id: requestId },
-      include: {
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        userId: true,
+        templateId: true,
+        formData: true,
+        attachments: true,
         user: {
           select: {
             emp_fname: true,
@@ -119,7 +127,8 @@ export async function POST(request: NextRequest) {
             }
           } else if (template?.type === 'incident') {
             // Incident template: look up priority-based incident SLA
-            const priorityKey = (requestDetails.priority || '').toString().trim().toLowerCase();
+            const formData = requestDetails.formData as any;
+            const priorityKey = (formData?.priority || formData?.['2'] || '').toString().trim().toLowerCase();
             const capPriority = priorityKey
               ? priorityKey.charAt(0).toUpperCase() + priorityKey.slice(1)
               : 'Medium';
@@ -165,7 +174,9 @@ export async function POST(request: NextRequest) {
 
       if (slaHours == null) {
         // Fallback mapping by priority (hours)
-        switch (requestDetails.priority?.toLowerCase()) {
+        const formData = requestDetails.formData as any;
+        const priority = (formData?.priority || formData?.['2'] || '').toString().toLowerCase();
+        switch (priority) {
           case 'high':
             slaHours = 8; // 8 hours for high priority
             useOperationalHours = true; // Always use operational hours
@@ -295,6 +306,32 @@ export async function POST(request: NextRequest) {
       const slaStartAtForDB = new Date(slaStartAt.getTime() + (8 * 60 * 60 * 1000));
       console.log('🕐 Database updatedAt (PH):', slaStartAtForDB.toISOString());
       
+      // 🔍 DETAILED DEBUG: Values to be saved to database
+      const formDataToSave = {
+        ...(requestDetails.formData as any || {}),
+        slaHours: slaHours.toString(),
+        slaDueDate: slaDueDatePH,
+        slaCalculatedAt: slaCalculatedAtPH,
+        slaStartAt: slaStartAtPH,
+        assignedDate: assignedDatePH, // Ensure this is also in PH format
+        slaSource,
+        ...(slaId ? { slaId: slaId.toString() } : {}),
+      };
+      
+      console.log('🔍 ===== CRITICAL DEBUG: EXACT VALUES BEING SAVED =====');
+      console.log('🔍 Request ID:', requestId);
+      console.log('🔍 Current formData before merge:', JSON.stringify(requestDetails.formData, null, 2));
+      console.log('🔍 New SLA values to merge:');
+      console.log('🔍   - slaHours:', slaHours.toString());
+      console.log('🔍   - slaDueDate:', slaDueDatePH);
+      console.log('🔍   - slaCalculatedAt:', slaCalculatedAtPH);
+      console.log('🔍   - slaStartAt:', slaStartAtPH);
+      console.log('🔍   - assignedDate:', assignedDatePH);
+      console.log('🔍   - slaSource:', slaSource);
+      console.log('🔍   - slaId:', slaId?.toString());
+      console.log('🔍 Final merged formData to save:', JSON.stringify(formDataToSave, null, 2));
+      console.log('🔍 ===== END CRITICAL DEBUG =====');
+      
       // Update updatedAt to Philippine time to match the formData slaStartAt time
       const updateResult = await prisma.request.update({
         where: { id: requestId },
@@ -325,6 +362,26 @@ export async function POST(request: NextRequest) {
       });
       console.log('🔍 Verification - Database updatedAt:', verifyRecord?.updatedAt.toISOString());
       console.log('🔍 Verification - FormData slaStartAt:', (verifyRecord?.formData as any)?.slaStartAt);
+      
+      // 🔍 CRITICAL VERIFICATION: Check exactly what was saved
+      const savedFormData = verifyRecord?.formData as any;
+      console.log('🔍 ===== CRITICAL VERIFICATION: WHAT WAS ACTUALLY SAVED =====');
+      console.log('🔍 Request ID:', requestId);
+      console.log('🔍 Saved SLA values:');
+      console.log('🔍   - slaHours:', savedFormData?.slaHours);
+      console.log('🔍   - slaDueDate:', savedFormData?.slaDueDate);
+      console.log('🔍   - slaCalculatedAt:', savedFormData?.slaCalculatedAt);
+      console.log('🔍   - slaStartAt:', savedFormData?.slaStartAt);
+      console.log('🔍   - assignedDate:', savedFormData?.assignedDate);
+      console.log('🔍   - slaSource:', savedFormData?.slaSource);
+      console.log('🔍   - slaId:', savedFormData?.slaId);
+      console.log('🔍 Comparison:');
+      console.log('🔍   - Expected slaDueDate:', slaDueDatePH);
+      console.log('🔍   - Actual slaDueDate:', savedFormData?.slaDueDate);
+      console.log('🔍   - Match:', slaDueDatePH === savedFormData?.slaDueDate);
+      console.log('🔍   - Time discrepancy:', slaDueDatePH !== savedFormData?.slaDueDate ? 
+        `Expected: ${slaDueDatePH.split(' ')[1]} vs Actual: ${savedFormData?.slaDueDate?.split(' ')[1]}` : 'None');
+      console.log('🔍 ===== END CRITICAL VERIFICATION =====');
 
       // Add SLA history entry (PH-local timestamp)
       await addHistory(prisma as any, {
