@@ -208,12 +208,20 @@ const getStatusIcon = (status: string) => {
 };
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
+  // The database timestamp is already in Philippine time (+8 hours)
+  // So we need to parse it without timezone conversion
+  const date = new Date(dateString);
+
+  
+  
+  // Format directly without timezone conversion since it's already Philippine time
+  return date.toLocaleDateString('en-PH', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    hour12: true
   });
 };
 
@@ -395,10 +403,19 @@ export default function MyRequestsPage() {
       setRequests(data.requests || []);
       setPagination(data.pagination || { total: 0, pages: 0, current: 1 });
       
-      // Debug: Check request types
+      // Debug: Check request types and timestamps
       const requestTypes = Array.from(new Set((data.requests || []).map((r: any) => r.type)));
       console.log('Request types found:', requestTypes);
       console.log('Sample request:', data.requests?.[0]);
+      
+      // Debug timestamp
+      if (data.requests?.[0]) {
+        console.log('Raw createdAt timestamp:', data.requests[0].createdAt);
+        console.log('Parsed Date object:', new Date(data.requests[0].createdAt));
+        console.log('Date toString():', new Date(data.requests[0].createdAt).toString());
+        console.log('Date toISOString():', new Date(data.requests[0].createdAt).toISOString());
+        console.log('Date with Manila timezone:', new Date(data.requests[0].createdAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }));
+      }
     } catch (error) {
       console.error('Error fetching requests:', error);
       toast({
@@ -780,7 +797,10 @@ export default function MyRequestsPage() {
                                   {/* Created Date */}
                                   <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
                                     <Calendar className="h-3 w-3 flex-shrink-0" />
-                                    <span className="text-sm break-words">{formatDate(request.createdAt)}</span>
+                                    <span className="text-sm break-words">
+                                      {formatDate(new Date(new Date(request.createdAt).getTime() - 8 * 60 * 60 * 1000))}
+                                    </span>
+                                        
                                   </div>
 
                                   {/* Assigned To */}

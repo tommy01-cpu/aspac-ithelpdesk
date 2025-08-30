@@ -5,7 +5,7 @@ import { ApprovalStatus, RequestStatus } from '@prisma/client';
 import { addHistory } from '@/lib/history';
 import { calculateSLADueDate } from '@/lib/sla-calculator';
 import { autoAssignTechnician } from '@/lib/load-balancer';
-import { sendApprovalOutcomeNotification, sendClarificationRequestNotification } from '@/lib/notifications';
+import { sendApprovalOutcomeNotification, sendClarificationRequestNotification, notifyApprovalRequired } from '@/lib/notifications';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
         const finalRequest = await prisma.request.update({
           where: { id: approval.requestId },
           data: {
-            status: RequestStatus.resolved,
+            status: RequestStatus.open,
             updatedAt: philippineTime, // Use Philippine time (already UTC+8)
             formData: {
               ...(approval.request.formData as any || {}),
@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
               else lines.push(`DueBy Date set to ${fmt(newDue)}`);
             }
             if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
-            lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Resolved`);
+            lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Open`);
             lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
             await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
           } else {
@@ -237,7 +237,7 @@ export async function POST(request: NextRequest) {
               if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDuePH)}`);
               else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
             }
-            lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Resolved`);
+            lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
             lines.push('Technician Auto Assign : NO');
             await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
           }
@@ -315,23 +315,59 @@ export async function POST(request: NextRequest) {
           try {
             console.log(`📧 Sending email notification to next level (${approval.level + 1}) approvers...`);
             
-            const origin = new URL(request.url).origin;
-            const emailResponse = await fetch(`${origin}/api/notifications/send-email`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
+            // Get next level approvals with approver details
+            const nextLevelApprovals = await prisma.requestApproval.findMany({
+              where: {
                 requestId: approval.requestId,
-                templateKey: 'notify-approver-approval'
-              })
+                level: approval.level + 1,
+                status: ApprovalStatus.pending_approval
+              },
+              include: {
+                approver: {
+                  select: {
+                    id: true,
+                    emp_fname: true,
+                    emp_lname: true,
+                    emp_email: true
+                  }
+                }
+              }
             });
 
-            if (emailResponse.ok) {
-              const emailResult = await emailResponse.json();
-              console.log('✅ Next level approver notification sent successfully:', emailResult);
-            } else {
-              const emailError = await emailResponse.json();
-              console.error('❌ Failed to send next level approver notification:', emailError);
+            // Get request data with user details for notification
+            const requestWithUser = await prisma.request.findUnique({
+              where: { id: approval.requestId },
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    emp_fname: true,
+                    emp_lname: true,
+                    emp_email: true
+                  }
+                }
+              }
+            });
+
+            // Get template data
+            const templateData = await prisma.template.findUnique({
+              where: { id: parseInt(requestWithUser?.templateId || '0') }
+            });
+
+            // Send notification to each next level approver
+            for (const nextApproval of nextLevelApprovals) {
+              if (nextApproval.approver && requestWithUser) {
+                await notifyApprovalRequired(
+                  requestWithUser, 
+                  templateData, 
+                  nextApproval.approver, 
+                  nextApproval.id
+                );
+                console.log(`✅ Approval notification sent to ${nextApproval.approver.emp_fname} ${nextApproval.approver.emp_lname}`);
+              }
             }
+
+            console.log('✅ Next level approver notifications sent successfully');
           } catch (emailError) {
             console.error('❌ Error sending next level approver notification:', emailError);
             // Don't fail the approval process for email issues
@@ -441,23 +477,59 @@ export async function POST(request: NextRequest) {
                 try {
                   console.log(`📧 Sending email notification to level ${approval.level + 2} approvers...`);
                   
-                  const origin = new URL(request.url).origin;
-                  const emailResponse = await fetch(`${origin}/api/notifications/send-email`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
+                  // Get level+2 approvals with approver details
+                  const level2Approvals = await prisma.requestApproval.findMany({
+                    where: {
                       requestId: approval.requestId,
-                      templateKey: 'notify-approver-approval'
-                    })
+                      level: approval.level + 2,
+                      status: ApprovalStatus.pending_approval
+                    },
+                    include: {
+                      approver: {
+                        select: {
+                          id: true,
+                          emp_fname: true,
+                          emp_lname: true,
+                          emp_email: true
+                        }
+                      }
+                    }
                   });
 
-                  if (emailResponse.ok) {
-                    const emailResult = await emailResponse.json();
-                    console.log(`✅ Level ${approval.level + 2} approver notification sent successfully:`, emailResult);
-                  } else {
-                    const emailError = await emailResponse.json();
-                    console.error(`❌ Failed to send level ${approval.level + 2} approver notification:`, emailError);
+                  // Get request data with user details for notification
+                  const requestWithUser = await prisma.request.findUnique({
+                    where: { id: approval.requestId },
+                    include: {
+                      user: {
+                        select: {
+                          id: true,
+                          emp_fname: true,
+                          emp_lname: true,
+                          emp_email: true
+                        }
+                      }
+                    }
+                  });
+
+                  // Get template data
+                  const templateData = await prisma.template.findUnique({
+                    where: { id: parseInt(requestWithUser?.templateId || '0') }
+                  });
+
+                  // Send notification to each level+2 approver
+                  for (const level2Approval of level2Approvals) {
+                    if (level2Approval.approver && requestWithUser) {
+                      await notifyApprovalRequired(
+                        requestWithUser, 
+                        templateData, 
+                        level2Approval.approver, 
+                        level2Approval.id
+                      );
+                      console.log(`✅ Level ${approval.level + 2} approval notification sent to ${level2Approval.approver.emp_fname} ${level2Approval.approver.emp_lname}`);
+                    }
                   }
+
+                  console.log(`✅ Level ${approval.level + 2} approver notifications sent successfully`);
                 } catch (emailError) {
                   console.error(`❌ Error sending level ${approval.level + 2} approver notification:`, emailError);
                   // Don't fail the approval process for email issues
@@ -471,7 +543,7 @@ export async function POST(request: NextRequest) {
                   const finalRequest = await prisma.request.update({
                     where: { id: approval.requestId },
                     data: {
-                      status: RequestStatus.resolved,
+                      status: RequestStatus.open,
                       updatedAt: philippineTime, // Use Philippine time (+8 hours)
                       formData: {
                         ...(approval.request.formData as any || {}),
@@ -514,7 +586,7 @@ export async function POST(request: NextRequest) {
                         else lines.push(`DueBy Date set to ${fmt(newDue)}`);
                       }
                       if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
-                      lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Resolved`);
+                      lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Open`);
                       lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
                       await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
                     } else {
@@ -552,7 +624,7 @@ export async function POST(request: NextRequest) {
                         if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDuePH)}`);
                         else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
                       }
-                      lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Resolved`);
+                      lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
                       lines.push('Technician Auto Assign : NO');
                       await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
                     }
@@ -595,7 +667,7 @@ export async function POST(request: NextRequest) {
             const updatedRequest = await prisma.request.update({
               where: { id: approval.requestId },
               data: { 
-                status: RequestStatus.resolved,
+                status: RequestStatus.open,
                 updatedAt: philippineTime, // Use Philippine time
                 formData: {
                   ...(approval.request.formData as any || {}),
@@ -663,7 +735,7 @@ export async function POST(request: NextRequest) {
                   if (assignedTechName) {
                     lines.push(`Technician : ${assignedTechName}`);
                   }
-                  lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Resolved`);
+                  lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Open`);
                   lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
 
                   await addHistory(prisma, {
@@ -798,7 +870,7 @@ export async function POST(request: NextRequest) {
                     else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
                   }
                   if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
-                  lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Resolved`);
+                  lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
                   lines.push(`Technician Auto Assign : ${assignedTechName ? 'YES' : 'NO'}`);
 
                   await addHistory(prisma, {
