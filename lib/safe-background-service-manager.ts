@@ -1,5 +1,6 @@
 import { generateRecurringHolidays } from '@/lib/recurring-holidays-service';
 import { safeApprovalReminderService } from '@/lib/safe-approval-reminder-service';
+import { safeSLAMonitoringService } from '@/lib/safe-sla-monitoring-service';
 
 /**
  * MASTER background service manager - coordinates all background services
@@ -11,6 +12,8 @@ class SafeBackgroundServiceManager {
   private services: Map<string, any> = new Map();
   private holidayScheduler: NodeJS.Timeout | null = null;
   private approvalScheduler: NodeJS.Timeout | null = null;
+  private slaScheduler: NodeJS.Timeout | null = null;
+  private autoCloseScheduler: NodeJS.Timeout | null = null;
 
   private constructor() {}
 
@@ -51,6 +54,24 @@ class SafeBackgroundServiceManager {
           status: 'running', 
           type: 'approval-scheduler',
           service: safeApprovalReminderService 
+        });
+      });
+
+      await this.initializeServiceSafely('sla-monitoring', () => {
+        this.startSLAScheduler();
+        this.services.set('sla-monitoring', { 
+          status: 'running', 
+          type: 'sla-scheduler',
+          service: safeSLAMonitoringService 
+        });
+      });
+
+      await this.initializeServiceSafely('auto-close', () => {
+        this.startAutoCloseScheduler();
+        this.services.set('auto-close', { 
+          status: 'running', 
+          type: 'auto-close-scheduler',
+          service: safeSLAMonitoringService 
         });
       });
 
@@ -175,8 +196,142 @@ class SafeBackgroundServiceManager {
   }
 
   /**
-   * Start holiday scheduler - runs daily at 12:00 AM
+   * Start SLA monitoring scheduler - runs every 30 minutes
    */
+  private startSLAScheduler(): void {
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    
+    if (isDevelopment) {
+      console.log('⏰ SLA monitoring scheduler started (dev mode - reduced logging)');
+    } else {
+      console.log('⏰ Starting SLA monitoring scheduler (every 30 minutes)...');
+    }
+    
+    this.scheduleNextSLACheck();
+  }
+
+  /**
+   * Schedule next SLA check - every 30 minutes
+   */
+  private scheduleNextSLACheck(): void {
+    try {
+      const intervalMs = 30 * 60 * 1000; // 30 minutes
+      
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      
+      if (!isDevelopment) {
+        console.log(`⏰ Next SLA check scheduled in 30 minutes`);
+      }
+
+      this.slaScheduler = setTimeout(() => {
+        this.runSLAMonitoring();
+        this.scheduleNextSLACheck(); // Schedule next check
+      }, intervalMs);
+
+    } catch (error) {
+      console.error('❌ Error scheduling SLA monitoring (will retry in 1 hour):', error);
+      
+      // Fallback: retry in 1 hour if scheduling fails
+      this.slaScheduler = setTimeout(() => {
+        this.scheduleNextSLACheck();
+      }, 60 * 60 * 1000); // 1 hour
+    }
+  }
+
+  /**
+   * Run SLA monitoring with safety layers
+   */
+  private async runSLAMonitoring(): Promise<void> {
+    try {
+      console.log('⏰ Running SLA compliance monitoring...');
+
+      // SAFETY LAYER: Timeout protection
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('SLA monitoring timeout')), 5 * 60 * 1000) // 5 minutes max
+      );
+
+      const slaPromise = safeSLAMonitoringService.monitorSLACompliance();
+
+      const result = await Promise.race([slaPromise, timeoutPromise]);
+
+      console.log('✅ SLA monitoring completed:', result);
+
+    } catch (error) {
+      console.error('❌ SLA monitoring failed (system protected):', error);
+    }
+  }
+
+  /**
+   * Start auto-close scheduler - runs daily at 12:00 AM
+   */
+  private startAutoCloseScheduler(): void {
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    
+    if (isDevelopment) {
+      console.log('🔄 Auto-close scheduler started (dev mode - reduced logging)');
+    } else {
+      console.log('🔄 Starting auto-close scheduler (12:00 AM daily)...');
+    }
+    
+    this.scheduleNext12AM();
+  }
+
+  /**
+   * Schedule next 12:00 AM run for auto-close
+   */
+  private scheduleNext12AM(): void {
+    try {
+      const now = new Date();
+      const next12AM = new Date(now);
+      
+      // Set to 12:00 AM (midnight)
+      next12AM.setHours(24, 0, 0, 0); // This sets it to 00:00 of next day
+      
+      const timeUntil12AM = next12AM.getTime() - now.getTime();
+
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      
+      if (!isDevelopment) {
+        console.log(`⏰ Next auto-close scheduled for: ${next12AM.toLocaleString()}`);
+      }
+
+      this.autoCloseScheduler = setTimeout(() => {
+        this.runAutoClose();
+        this.scheduleNext12AM(); // Schedule next day
+      }, timeUntil12AM);
+
+    } catch (error) {
+      console.error('❌ Error scheduling 12AM auto-close (will retry in 1 hour):', error);
+      
+      // Fallback: retry in 1 hour if scheduling fails
+      this.autoCloseScheduler = setTimeout(() => {
+        this.scheduleNext12AM();
+      }, 60 * 60 * 1000); // 1 hour
+    }
+  }
+
+  /**
+   * Run auto-close with safety layers
+   */
+  private async runAutoClose(): Promise<void> {
+    try {
+      console.log('🔄 12:00 AM - Running auto-close for resolved requests...');
+
+      // SAFETY LAYER: Timeout protection
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Auto-close timeout')), 3 * 60 * 1000) // 3 minutes max
+      );
+
+      const autoClosePromise = safeSLAMonitoringService.autoCloseResolvedRequests();
+
+      const result = await Promise.race([autoClosePromise, timeoutPromise]);
+
+      console.log('✅ Auto-close completed:', result);
+
+    } catch (error) {
+      console.error('❌ Auto-close failed (system protected):', error);
+    }
+  }
   private startHolidayScheduler(): void {
     const isDevelopment = process.env.NODE_ENV === 'development';
     
@@ -312,6 +467,22 @@ class SafeBackgroundServiceManager {
         };
       }
 
+      // Check SLA monitoring service
+      if (this.services.has('sla-monitoring')) {
+        status.services.slaMonitoring = {
+          status: this.slaScheduler ? 'running' : 'stopped',
+          details: 'Monitors SLA compliance every 30 minutes'
+        };
+      }
+
+      // Check auto-close service
+      if (this.services.has('auto-close')) {
+        status.services.autoClose = {
+          status: this.autoCloseScheduler ? 'running' : 'stopped',
+          details: 'Auto-closes resolved requests at 12:00 AM daily'
+        };
+      }
+
     } catch (error) {
       console.error('Error getting service status (system protected):', error);
       status.services.error = { status: 'error', details: 'Status check failed' };
@@ -334,6 +505,18 @@ class SafeBackgroundServiceManager {
         case 'approvals':
           if (this.services.has('approvals')) {
             return await safeApprovalReminderService.sendDailyReminders();
+          }
+          break;
+
+        case 'sla-monitoring':
+          if (this.services.has('sla-monitoring')) {
+            return await safeSLAMonitoringService.manualTriggerSLA();
+          }
+          break;
+
+        case 'auto-close':
+          if (this.services.has('auto-close')) {
+            return await safeSLAMonitoringService.manualTriggerAutoClose();
           }
           break;
 
@@ -366,6 +549,20 @@ class SafeBackgroundServiceManager {
         clearTimeout(this.approvalScheduler);
         this.approvalScheduler = null;
         console.log('✅ Approval scheduler stopped');
+      }
+
+      // Stop SLA scheduler
+      if (this.slaScheduler) {
+        clearTimeout(this.slaScheduler);
+        this.slaScheduler = null;
+        console.log('✅ SLA scheduler stopped');
+      }
+
+      // Stop auto-close scheduler
+      if (this.autoCloseScheduler) {
+        clearTimeout(this.autoCloseScheduler);
+        this.autoCloseScheduler = null;
+        console.log('✅ Auto-close scheduler stopped');
       }
 
       // Stop other services

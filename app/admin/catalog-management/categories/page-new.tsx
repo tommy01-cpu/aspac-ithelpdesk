@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2, ChevronLeft, ChevronRight, Tags, Upload, Image, ArrowUpDown, List, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Edit, Trash2, ChevronLeft, ChevronRight, Tags, Upload, Image, ArrowUpDown, List } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -106,26 +106,18 @@ export default function ServiceCategoriesTab() {
         page: page.toString(),
         limit: limit.toString(),
         search: search,
-        type: 'service', // Add type parameter for service categories
       });
 
-      const response = await fetch(`/api/service-categories?${queryParams}`);
+      const response = await fetch(`/api/admin/service-categories?${queryParams}`);
       if (!response.ok) {
         throw new Error('Failed to fetch categories');
       }
 
       const data = await response.json();
-      console.log('API Response:', data); // Debug log
-      setCategories(data.categories || []);
-      setPagination(data.pagination || {
-        page: 1,
-        limit: 25,
-        total: 0,
-        pages: 0
-      });
+      setCategories(data.categories);
+      setPagination(data.pagination);
     } catch (error) {
       console.error('Error fetching categories:', error);
-      console.log('Categories state:', categories); // Debug log
       toast({
         title: "Error",
         description: "Failed to fetch categories. Please try again.",
@@ -160,7 +152,7 @@ export default function ServiceCategoriesTab() {
     }
 
     try {
-      const response = await fetch('/api/service-categories', {
+      const response = await fetch('/api/admin/service-categories', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -206,7 +198,7 @@ export default function ServiceCategoriesTab() {
     }
 
     try {
-      const response = await fetch(`/api/service-categories/${editingCategory.id}`, {
+      const response = await fetch(`/api/admin/service-categories/${editingCategory.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -247,7 +239,7 @@ export default function ServiceCategoriesTab() {
     }
 
     try {
-      const response = await fetch(`/api/service-categories/${categoryId}`, {
+      const response = await fetch(`/api/admin/service-categories/${categoryId}`, {
         method: 'DELETE',
       });
 
@@ -428,34 +420,16 @@ export default function ServiceCategoriesTab() {
                         </td>
                         <td className="p-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center p-2">
-                              {category.icon ? (
-                                <img 
-                                  src={`/serviceicons/${category.icon}`} 
-                                  alt={category.name}
-                                  className="w-full h-full object-contain"
-                                  onError={(e) => {
-                                    // Fallback to Tags icon if image fails to load
-                                    const target = e.target as HTMLImageElement;
-                                    target.style.display = 'none';
-                                    const parent = target.parentElement;
-                                    if (parent && !parent.querySelector('.fallback-icon')) {
-                                      const fallbackIcon = document.createElement('div');
-                                      fallbackIcon.className = 'fallback-icon w-5 h-5 text-blue-600';
-                                      fallbackIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
-                                      parent.appendChild(fallbackIcon);
-                                    }
-                                  }}
-                                />
-                              ) : (
-                                <Tags className="w-5 h-5 text-blue-600" />
-                              )}
-                            </div>
+                            {category.icon && (
+                              <img 
+                                src={`/service-icons/${category.icon}`} 
+                                alt="" 
+                                className="w-6 h-6" 
+                              />
+                            )}
                             <div>
                               <div className="font-medium text-slate-900">{category.name}</div>
-                              {category.description && (
-                                <div className="text-sm text-slate-500">{category.description}</div>
-                              )}
+                              <div className="text-sm text-slate-500">{category.description}</div>
                             </div>
                           </div>
                         </td>
@@ -509,121 +483,31 @@ export default function ServiceCategoriesTab() {
                 id: cat.id,
                 name: cat.name,
                 description: cat.description || '',
-                icon: cat.icon,
-                sortOrder: cat.sortOrder || 0,
-                isActive: cat.isActive,
-                serviceCount: cat.serviceCount,
-                createdAt: cat.createdAt,
-                creator: cat.creator
+                sortOrder: cat.sortOrder || 0
               }))}
               type="service-categories"
-              itemRenderer={(item, index, moveUp, moveDown) => (
-                <div className="flex items-center gap-3 p-4">
-                  <div className="flex flex-col gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => moveUp(index)}
-                      disabled={index === 0}
-                      className="h-6 w-6 p-0"
-                    >
-                      <ArrowUp className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => moveDown(index)}
-                      disabled={index === categories.length - 1}
-                      className="h-6 w-6 p-0"
-                    >
-                      <ArrowDown className="h-3 w-3" />
-                    </Button>
-                  </div>
-                  
-                  <div className="flex items-center gap-3 flex-1">
-                    <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center p-2">
-                      {item.icon ? (
-                        <img 
-                          src={`/serviceicons/${item.icon}`} 
-                          alt={item.name}
-                          className="w-full h-full object-contain"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            const fallback = target.nextElementSibling as HTMLElement;
-                            if (fallback) fallback.style.display = 'block';
-                          }}
-                        />
-                      ) : null}
-                      <Tags className={`w-5 h-5 text-blue-600 ${item.icon ? 'hidden' : ''}`} />
-                    </div>
-                    
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <div>
-                          <h4 className="font-medium text-slate-900">{item.name}</h4>
-                          {item.description && (
-                            <p className="text-sm text-slate-500 mt-1">{item.description}</p>
-                          )}
-                        </div>
-                        <div className="ml-auto flex items-center gap-4">
-                          <div className="text-sm text-slate-600">
-                            <span className="font-medium">{item.serviceCount}</span> services
-                          </div>
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            item.isActive 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {item.isActive ? 'Active' : 'Inactive'}
-                          </span>
-                          <div className="text-xs text-slate-400 min-w-0">
-                            <div>{formatDate(item.createdAt)}</div>
-                            <div className="truncate">
-                              {item.creator ? `${item.creator.emp_fname} ${item.creator.emp_lname}` : 'Unknown'}
-                            </div>
-                          </div>
-                          <div className="bg-slate-100 px-2 py-1 rounded text-xs font-medium text-slate-600">
-                            #{index + 1}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
               onReorder={async (reorderedItems) => {
-                console.log('Reordering categories:', reorderedItems); // Debug log
-                const requestData = {
-                  type: 'service-categories',
-                  items: reorderedItems.map((item, index) => ({
-                    id: item.id,
-                    sortOrder: index + 1
-                  }))
-                };
-                console.log('Request data:', requestData); // Debug log
-                
                 try {
                   const response = await fetch('/api/catalog/reorder', {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify(requestData),
+                    body: JSON.stringify({
+                      type: 'service_categories',
+                      items: reorderedItems.map((item, index) => ({
+                        id: item.id,
+                        sortOrder: index + 1
+                      }))
+                    }),
                   });
 
-                  console.log('Reorder response status:', response.status); // Debug log
-                  const responseData = await response.json();
-                  console.log('Reorder response data:', responseData); // Debug log
-
                   if (!response.ok) {
-                    throw new Error(responseData.error || `HTTP error! status: ${response.status}`);
+                    throw new Error('Failed to reorder categories');
                   }
 
-                  // Refresh the categories list with a small delay to ensure DB update is complete
-                  setTimeout(async () => {
-                    await fetchCategories(currentPage, pageSize, searchTerm);
-                  }, 100);
+                  // Refresh the categories list
+                  await fetchCategories(currentPage, pageSize, searchTerm);
                   
                   // Show success message
                   toast({
@@ -636,7 +520,7 @@ export default function ServiceCategoriesTab() {
                   console.error('Error reordering categories:', error);
                   toast({
                     title: "Error",
-                    description: `Failed to reorder categories: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    description: "Failed to reorder categories. Please try again.",
                     variant: "destructive",
                   });
                   return false;
@@ -680,7 +564,7 @@ export default function ServiceCategoriesTab() {
               <div className="flex items-center gap-2 mt-1">
                 {newCategory.icon && (
                   <img 
-                    src={`/serviceicons/${newCategory.icon}`} 
+                    src={`/service-icons/${newCategory.icon}`} 
                     alt="Selected icon" 
                     className="w-8 h-8"
                   />
@@ -761,7 +645,7 @@ export default function ServiceCategoriesTab() {
                 <div className="flex items-center gap-2 mt-1">
                   {editingCategory.icon && (
                     <img 
-                      src={`/serviceicons/${editingCategory.icon}`} 
+                      src={`/service-icons/${editingCategory.icon}`} 
                       alt="Selected icon" 
                       className="w-8 h-8"
                     />
@@ -823,7 +707,7 @@ export default function ServiceCategoriesTab() {
                 className="p-3 border border-slate-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors flex flex-col items-center gap-2"
               >
                 <img 
-                  src={`/serviceicons/${iconName}`} 
+                  src={`/service-icons/${iconName}`} 
                   alt={iconName} 
                   className="w-8 h-8"
                 />

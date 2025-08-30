@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, FolderOpen, Tags, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -123,9 +123,9 @@ export default function CatalogManagementPage() {
                   ) : (
                     <div className="p-8 text-center">
                       <div className="w-16 h-16 mx-auto mb-4 bg-slate-100 rounded-full flex items-center justify-center">
-                        {activeTabData && (
-                          <activeTabData.icon className="w-8 h-8 text-slate-400" />
-                        )}
+                        {activeTabData && React.createElement(activeTabData.icon, {
+                          className: "w-8 h-8 text-slate-400"
+                        })}
                       </div>
                       <h3 className="text-lg font-semibold text-slate-800 mb-2">
                         {activeTabData?.label}

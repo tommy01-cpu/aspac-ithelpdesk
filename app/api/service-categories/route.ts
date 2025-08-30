@@ -38,7 +38,10 @@ export async function GET(req: NextRequest) {
       where,
       skip,
       take: limit,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { sortOrder: 'asc' },
+        { id: 'asc' }
+      ],
       include: {
         creator: {
           select: {
