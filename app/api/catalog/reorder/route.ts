@@ -17,7 +17,7 @@ interface ReorderRequest {
   }>;
 }
 
-export async function POST(request: NextRequest) {
+export async function PUT(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
 
         case 'service-catalog':
           for (const item of items) {
+            console.log(`Updating service ${item.id} to sortOrder ${item.sortOrder}`);
             await tx.serviceCatalogItem.update({
               where: { id: item.id },
               data: { 
@@ -81,6 +82,7 @@ export async function POST(request: NextRequest) {
 
         case 'incident-catalog':
           for (const item of items) {
+            console.log(`Updating incident ${item.id} to sortOrder ${item.sortOrder}`);
             await tx.incidentCatalogItem.update({
               where: { id: item.id },
               data: { 

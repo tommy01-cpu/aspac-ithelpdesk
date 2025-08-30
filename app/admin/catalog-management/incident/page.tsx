@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Edit, Trash2, ChevronLeft, ChevronRight, FolderOpen, Upload, Image, Eye, Tags, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+import { Plus, Edit, Trash2, ChevronLeft, ChevronRight, FolderOpen, Upload, Image, Eye, Tags, ChevronDown, ChevronUp, AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
 
 interface IncidentCatalogItem {
   id: number;
@@ -68,6 +69,7 @@ interface PaginationData {
 
 export default function IncidentCatalogTab() {
   const router = useRouter();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -76,6 +78,7 @@ export default function IncidentCatalogTab() {
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [expandedCategory, setExpandedCategory] = useState<number | null>(null);
   const [categoryIncidents, setCategoryIncidents] = useState<{ [key: number]: IncidentCatalogItem[] }>({});
+  const [reorderingCategory, setReorderingCategory] = useState<number | null>(null);
   const [errorDialog, setErrorDialog] = useState<{
     open: boolean;
     title: string;
@@ -263,6 +266,64 @@ export default function IncidentCatalogTab() {
     return new Date(dateString).toLocaleDateString();
   };
 
+  // Incident reorder functions
+  const handleMoveIncident = async (categoryId: number, incidentIndex: number, direction: 'up' | 'down') => {
+    const incidents = [...categoryIncidents[categoryId]];
+    const targetIndex = direction === 'up' ? incidentIndex - 1 : incidentIndex + 1;
+    
+    if (targetIndex < 0 || targetIndex >= incidents.length) return;
+    
+    // Swap incidents
+    [incidents[incidentIndex], incidents[targetIndex]] = [incidents[targetIndex], incidents[incidentIndex]];
+    
+    // Update local state
+    setCategoryIncidents(prev => ({
+      ...prev,
+      [categoryId]: incidents
+    }));
+
+    // Save to backend
+    try {
+      const reorderData = incidents.map((incident, index) => ({
+        id: incident.id,
+        sortOrder: index + 1
+      }));
+
+      const response = await fetch('/api/catalog/reorder', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'incident-catalog',
+          items: reorderData
+        }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Incident order updated successfully",
+        });
+      } else {
+        throw new Error('Failed to update order');
+      }
+    } catch (error) {
+      console.error('Error updating incident order:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update incident order",
+        variant: "destructive",
+      });
+      // Revert local changes
+      await fetchCategoryIncidents(categoryId);
+    }
+  };
+
+  const toggleReorderMode = (categoryId: number) => {
+    setReorderingCategory(reorderingCategory === categoryId ? null : categoryId);
+  };
+
   return (
     <div className="p-6">
       {/* Header Section */}
@@ -439,15 +500,50 @@ export default function IncidentCatalogTab() {
                       <td colSpan={7} className="p-0">
                         <div className="bg-slate-50 border-t border-slate-200">
                           <div className="p-4">
-                            <h4 className="font-medium text-slate-900 mb-3">
-                              Incidents in {category.name} ({categoryIncidents[category.id]?.length || 0})
-                            </h4>
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="font-medium text-slate-900">
+                                Incidents in {category.name} ({categoryIncidents[category.id]?.length || 0})
+                              </h4>
+                              {categoryIncidents[category.id]?.length > 1 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => toggleReorderMode(category.id)}
+                                  className="flex items-center gap-2"
+                                >
+                                  <ArrowUpDown className="h-4 w-4" />
+                                  {reorderingCategory === category.id ? 'Done Reordering' : 'Reorder Incidents'}
+                                </Button>
+                              )}
+                            </div>
                             {categoryIncidents[category.id]?.length > 0 ? (
                               <div className="space-y-2">
-                                {categoryIncidents[category.id].map((incident) => (
+                                {categoryIncidents[category.id].map((incident, incidentIndex) => (
                                   <div key={incident.id} className="bg-white rounded-lg border border-slate-200 p-4">
                                     <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-3">
+                                      <div className="flex items-center gap-3 flex-1">
+                                        {reorderingCategory === category.id && (
+                                          <div className="flex flex-col gap-1">
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleMoveIncident(category.id, incidentIndex, 'up')}
+                                              disabled={incidentIndex === 0}
+                                              className="h-6 w-6 p-0"
+                                            >
+                                              <ArrowUp className="h-3 w-3" />
+                                            </Button>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleMoveIncident(category.id, incidentIndex, 'down')}
+                                              disabled={incidentIndex === categoryIncidents[category.id].length - 1}
+                                              className="h-6 w-6 p-0"
+                                            >
+                                              <ArrowDown className="h-3 w-3" />
+                                            </Button>
+                                          </div>
+                                        )}
                                         <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
                                           {incident.template?.icon ? (
                                             <img 
@@ -473,7 +569,7 @@ export default function IncidentCatalogTab() {
                                             </span>
                                           )}
                                         </div>
-                                        {incident.templateName && (
+                                        {incident.templateName && !reorderingCategory && (
                                           <>
                                             <button
                                               onClick={() => handleEditTemplate(incident.templateId, category.id)}

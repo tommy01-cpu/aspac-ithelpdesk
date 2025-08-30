@@ -63,7 +63,10 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { sortOrder: 'asc' },
+        { id: 'asc' }
+      ],
     });
 
     const pages = Math.ceil(total / limit);

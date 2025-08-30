@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Edit, Trash2, ChevronLeft, ChevronRight, FolderOpen, Upload, Image, Eye, Tags, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+import { Plus, Edit, Trash2, ChevronLeft, ChevronRight, FolderOpen, Upload, Image, Eye, Tags, ChevronDown, ChevronUp, AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useToast } from '@/hooks/use-toast';
 
 interface ServiceCatalogItem {
   id: number;
@@ -63,6 +64,7 @@ interface PaginationData {
 
 export default function ServiceCatalogTab() {
   const router = useRouter();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -71,6 +73,7 @@ export default function ServiceCatalogTab() {
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [expandedCategory, setExpandedCategory] = useState<number | null>(null);
   const [categoryServices, setCategoryServices] = useState<{ [key: number]: ServiceCatalogItem[] }>({});
+  const [reorderingCategory, setReorderingCategory] = useState<number | null>(null);
   const [errorDialog, setErrorDialog] = useState<{
     open: boolean;
     title: string;
@@ -256,6 +259,64 @@ export default function ServiceCatalogTab() {
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
+  };
+
+  // Service reorder functions
+  const handleMoveService = async (categoryId: number, serviceIndex: number, direction: 'up' | 'down') => {
+    const services = [...categoryServices[categoryId]];
+    const targetIndex = direction === 'up' ? serviceIndex - 1 : serviceIndex + 1;
+    
+    if (targetIndex < 0 || targetIndex >= services.length) return;
+    
+    // Swap services
+    [services[serviceIndex], services[targetIndex]] = [services[targetIndex], services[serviceIndex]];
+    
+    // Update local state
+    setCategoryServices(prev => ({
+      ...prev,
+      [categoryId]: services
+    }));
+
+    // Save to backend
+    try {
+      const reorderData = services.map((service, index) => ({
+        id: service.id,
+        sortOrder: index + 1
+      }));
+
+      const response = await fetch('/api/catalog/reorder', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'service-catalog',
+          items: reorderData
+        }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Service order updated successfully",
+        });
+      } else {
+        throw new Error('Failed to update order');
+      }
+    } catch (error) {
+      console.error('Error updating service order:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update service order",
+        variant: "destructive",
+      });
+      // Revert local changes
+      await fetchCategoryServices(categoryId);
+    }
+  };
+
+  const toggleReorderMode = (categoryId: number) => {
+    setReorderingCategory(reorderingCategory === categoryId ? null : categoryId);
   };
 
   return (
@@ -449,15 +510,50 @@ export default function ServiceCatalogTab() {
                       <td colSpan={7} className="p-0">
                         <div className="bg-slate-50 border-t border-slate-200">
                           <div className="p-4">
-                            <h4 className="font-medium text-slate-900 mb-3">
-                              Services in {category.name} ({categoryServices[category.id]?.length || 0})
-                            </h4>
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="font-medium text-slate-900">
+                                Services in {category.name} ({categoryServices[category.id]?.length || 0})
+                              </h4>
+                              {categoryServices[category.id]?.length > 1 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => toggleReorderMode(category.id)}
+                                  className="flex items-center gap-2"
+                                >
+                                  <ArrowUpDown className="h-4 w-4" />
+                                  {reorderingCategory === category.id ? 'Done Reordering' : 'Reorder Services'}
+                                </Button>
+                              )}
+                            </div>
                             {categoryServices[category.id]?.length > 0 ? (
                               <div className="space-y-2">
-                                {categoryServices[category.id].map((service) => (
+                                {categoryServices[category.id].map((service, serviceIndex) => (
                                   <div key={service.id} className="bg-white rounded-lg border border-slate-200 p-4">
                                     <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-3">
+                                      <div className="flex items-center gap-3 flex-1">
+                                        {reorderingCategory === category.id && (
+                                          <div className="flex flex-col gap-1">
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleMoveService(category.id, serviceIndex, 'up')}
+                                              disabled={serviceIndex === 0}
+                                              className="h-6 w-6 p-0"
+                                            >
+                                              <ArrowUp className="h-3 w-3" />
+                                            </Button>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleMoveService(category.id, serviceIndex, 'down')}
+                                              disabled={serviceIndex === categoryServices[category.id].length - 1}
+                                              className="h-6 w-6 p-0"
+                                            >
+                                              <ArrowDown className="h-3 w-3" />
+                                            </Button>
+                                          </div>
+                                        )}
                                         <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
                                           {service.template_icon ? (
                                             <img 
@@ -483,7 +579,7 @@ export default function ServiceCatalogTab() {
                                             </span>
                                           )}
                                         </div>
-                                        {service.templateName && (
+                                        {service.templateName && !reorderingCategory && (
                                           <>
                                             <button
                                               onClick={() => handleEditTemplate(service.templateId, category.id)}
