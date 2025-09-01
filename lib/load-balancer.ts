@@ -507,7 +507,7 @@ export async function autoAssignTechnician(
             formData: {
               ...(await prisma.request.findUnique({ where: { id: requestId }, select: { formData: true } }))?.formData as any || {},
               assignedTechnician: assignedTechnician.name,
-              assignedTechnicianId: assignedTechnician.id.toString(),
+              assignedTechnicianId: assignedTechnician.userId.toString(),
               assignedTechnicianEmail: assignedTechnician.email,
               assignedDate: assignedDatePH
             }

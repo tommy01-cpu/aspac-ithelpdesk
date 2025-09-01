@@ -2364,30 +2364,33 @@ export default function RequestViewPage() {
                     </Card>
                   )}
 
-                  {/* Notes  */}
-                  <Card>
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-lg">Notes</CardTitle>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => setShowNotesModal(true)}
-                        >
-                          Add Notes
-                        </Button>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-4">
-                        {conversations.length === 0 ? (
-                          <div className="text-center py-8 text-gray-500">
-                            No Notes
-                          </div>
-                        ) : (
-                          <>
-                            {/* Display conversations from API */}
-                            {conversations.map((conversation) => (
+                  {/* Notes - Only show if there are conversations OR allow adding notes for authenticated users */}
+                  {(conversations.length > 0 || session?.user) && (
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-lg">Notes</CardTitle>
+                          {session?.user && (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => setShowNotesModal(true)}
+                            >
+                              Add Notes
+                            </Button>
+                          )}
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          {conversations.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                              No Notes
+                            </div>
+                          ) : (
+                            <>
+                              {/* Display conversations from API */}
+                              {conversations.map((conversation) => (
                               <div key={conversation.id} className="border rounded-lg p-4 bg-gray-50">
                                 <div className="flex gap-3">
                                   <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
@@ -2474,6 +2477,7 @@ export default function RequestViewPage() {
                       </div>
                     </CardContent>
                   </Card>
+                  )}
 
                   {/* Properties */}
                   <Card>
@@ -2641,17 +2645,17 @@ export default function RequestViewPage() {
                           const hasExistingResolution = html.length > 0;
                           
                           if (hasExistingResolution && !isEditingResolution) {
-                            // return (
-                            //   <Button
-                            //     variant="outline"
-                            //     size="sm"
-                            //     onClick={() => setIsEditingResolution(true)}
-                            //     className="flex items-center gap-2"
-                            //   >
-                            //     <Edit className="h-4 w-4" />
-                            //     Edit
-                            //   </Button>
-                            // );
+                            return (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setIsEditingResolution(true)}
+                                className="flex items-center gap-2"
+                              >
+                                <Edit className="h-4 w-4" />
+                                Edit
+                              </Button>
+                            );
                           } else if (isEditingResolution) {
                             // Show Save/Cancel buttons when editing
                             return (
@@ -3120,8 +3124,8 @@ export default function RequestViewPage() {
                           const fd: any = requestData.formData || {};
                           const resBlock = fd.resolution || {};
                           const html = String(resBlock.closureComments || fd.closureComments || '').trim();
-                          const attIds: string[] = Array.isArray(resBlock.attachments) ? resBlock.attachments : [];
-                          const resAtts: AttachmentFile[] = (attachments || []).filter(a => attIds.includes(a.id));
+                          // Use the same resolutionAttachments that technician view uses
+                          const resAtts: AttachmentFile[] = resolutionAttachments || [];
                           const hasContent = html.length > 0 || resAtts.length > 0;
 
                           if (!hasContent) {
