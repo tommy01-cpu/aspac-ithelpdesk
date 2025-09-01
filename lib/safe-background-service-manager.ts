@@ -1,10 +1,20 @@
-import { generateRecurringHolidays } from '@/lib/recurring-holidays-service';
+import { checkAndGenerateHolidays } from '@/lib/recurring-holidays-service';
 import { safeApprovalReminderService } from '@/lib/safe-approval-reminder-service';
 import { safeSLAMonitoringService } from '@/lib/safe-sla-monitoring-service';
 
 /**
  * MASTER background service manager - coordinates all background services
- * Multiple safety layers to prevent any background failure from affecting main app
+ * Multiple safety la         //      // Set to 12:00 AM (midnight) for production
+      nextMidnight.setHours(0, 0, 0, 0);
+      
+      // If midnight already passed today, schedule for tomorrow
+      if (nextMidnight <= now) {to 9:25 AM for testing
+      nextMidnight.setHours(9, 25, 0, 0);
+      
+      // If 9:25 AM already passed today, schedule for tomorrow/ Set to 9:25 AM for testing
+      nextMidnight.setHours(9, 25, 0, 0);
+      
+      // If 9:25 AM already passed today, schedule for tomorrow to prevent any background failure from affecting main app
  */
 class SafeBackgroundServiceManager {
   private static instance: SafeBackgroundServiceManager;
@@ -124,11 +134,7 @@ class SafeBackgroundServiceManager {
   private startApprovalScheduler(): void {
     const isDevelopment = process.env.NODE_ENV === 'development';
     
-    if (isDevelopment) {
-      console.log('📧 Approval reminder scheduler started (dev mode - reduced logging)');
-    } else {
-      console.log('📧 Starting approval reminder scheduler (8:00 AM daily)...');
-    }
+    console.log(`📧 [${isDevelopment ? 'DEV' : 'PROD'}] Approval reminder scheduler started (8:00 AM daily)...`);
     
     this.scheduleNext8AM();
   }
@@ -141,10 +147,10 @@ class SafeBackgroundServiceManager {
       const now = new Date();
       const next8AM = new Date(now);
       
-      // Set to 8:00 AM
+      // Set to 8:00 AM for production
       next8AM.setHours(8, 0, 0, 0);
       
-      // If 8 AM already passed today, schedule for tomorrow
+      // If 8:00 AM already passed today, schedule for tomorrow
       if (next8AM <= now) {
         next8AM.setDate(next8AM.getDate() + 1);
       }
@@ -153,9 +159,9 @@ class SafeBackgroundServiceManager {
 
       const isDevelopment = process.env.NODE_ENV === 'development';
       
-      if (!isDevelopment) {
-        console.log(`⏰ Next approval reminder scheduled for: ${next8AM.toLocaleString()}`);
-      }
+      // Always log in development for debugging
+      console.log(`⏰ [${isDevelopment ? 'DEV' : 'PROD'}] Next approval reminder scheduled for: ${next8AM.toLocaleString()}`);
+      console.log(`⏰ Time until next run: ${Math.round(timeUntil8AM / 1000 / 60)} minutes`);
 
       this.approvalScheduler = setTimeout(() => {
         this.runApprovalReminders();
@@ -163,7 +169,7 @@ class SafeBackgroundServiceManager {
       }, timeUntil8AM);
 
     } catch (error) {
-      console.error('❌ Error scheduling 8AM approval reminder (will retry in 1 hour):', error);
+      console.error('❌ Error scheduling 8:00 AM approval reminder (will retry in 1 hour):', error);
       
       // Fallback: retry in 1 hour if scheduling fails
       this.approvalScheduler = setTimeout(() => {
@@ -284,8 +290,13 @@ class SafeBackgroundServiceManager {
       const now = new Date();
       const next12AM = new Date(now);
       
-      // Set to 12:00 AM (midnight)
-      next12AM.setHours(24, 0, 0, 0); // This sets it to 00:00 of next day
+      // Set to 9:28 AM for testing
+      next12AM.setHours(9, 28, 0, 0);
+      
+      // If 9:28 AM already passed today, schedule for tomorrow
+      if (next12AM.getTime() <= now.getTime()) {
+        next12AM.setDate(next12AM.getDate() + 1);
+      }
       
       const timeUntil12AM = next12AM.getTime() - now.getTime();
 
@@ -315,7 +326,7 @@ class SafeBackgroundServiceManager {
    */
   private async runAutoClose(): Promise<void> {
     try {
-      console.log('🔄 12:00 AM - Running auto-close for resolved requests...');
+      console.log('🔄 9:28 AM - Running auto-close for resolved requests...');
 
       // SAFETY LAYER: Timeout protection
       const timeoutPromise = new Promise((_, reject) => 
@@ -335,11 +346,7 @@ class SafeBackgroundServiceManager {
   private startHolidayScheduler(): void {
     const isDevelopment = process.env.NODE_ENV === 'development';
     
-    if (isDevelopment) {
-      console.log('🎉 Holiday scheduler started (dev mode - reduced logging)');
-    } else {
-      console.log('🎉 Starting holiday scheduler (12:00 AM daily)...');
-    }
+    console.log(`🎉 [${isDevelopment ? 'DEV' : 'PROD'}] Holiday scheduler started (12:00 AM daily)...`);
     
     this.scheduleNextMidnight();
   }
@@ -352,16 +359,21 @@ class SafeBackgroundServiceManager {
       const now = new Date();
       const nextMidnight = new Date(now);
       
-      // Set to 12:00 AM (midnight)
-      nextMidnight.setHours(24, 0, 0, 0); // This sets it to 00:00 of next day
+      // Set to 9:38 AM for testing
+      nextMidnight.setHours(9, 50, 0, 0);
+      
+      // If 9:38 AM already passed today, schedule for tomorrow
+      if (nextMidnight <= now) {
+        nextMidnight.setDate(nextMidnight.getDate() + 1);
+      }
       
       const timeUntilMidnight = nextMidnight.getTime() - now.getTime();
 
       const isDevelopment = process.env.NODE_ENV === 'development';
       
-      if (!isDevelopment) {
-        console.log(`⏰ Next holiday generation scheduled for: ${nextMidnight.toLocaleString()}`);
-      }
+      // Always log in development for debugging
+      console.log(`⏰ [${isDevelopment ? 'DEV' : 'PROD'}] Next holiday generation scheduled for: ${nextMidnight.toLocaleString()}`);
+      console.log(`⏰ Time until next holiday run: ${Math.round(timeUntilMidnight / 1000 / 60)} minutes`);
 
       this.holidayScheduler = setTimeout(() => {
         this.runHolidayGeneration();
@@ -369,7 +381,7 @@ class SafeBackgroundServiceManager {
       }, timeUntilMidnight);
 
     } catch (error) {
-      console.error('❌ Error scheduling midnight holiday run (will retry in 1 hour):', error);
+      console.error('❌ Error scheduling 12:00 AM holiday run (will retry in 1 hour):', error);
       
       // Fallback: retry in 1 hour if scheduling fails
       this.holidayScheduler = setTimeout(() => {
@@ -390,7 +402,7 @@ class SafeBackgroundServiceManager {
         setTimeout(() => reject(new Error('Holiday generation timeout')), 2 * 60 * 1000) // 2 minutes max
       );
 
-      const holidayPromise = generateRecurringHolidays();
+      const holidayPromise = checkAndGenerateHolidays();
 
       const result = await Promise.race([holidayPromise, timeoutPromise]);
 
@@ -500,7 +512,7 @@ class SafeBackgroundServiceManager {
 
       switch (serviceName) {
         case 'holidays':
-          return await generateRecurringHolidays();
+          return await checkAndGenerateHolidays();
 
         case 'approvals':
           if (this.services.has('approvals')) {

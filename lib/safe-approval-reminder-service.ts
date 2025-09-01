@@ -68,130 +68,34 @@ class SafeApprovalReminderService {
     };
 
     try {
-      // Get pending approvals with timeout protection
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Database timeout')), 10000)
-      );
-
-      const approvals = await Promise.race([
-        this.getPendingApprovals(),
-        timeoutPromise
-      ]) as any[];
-
-      if (!approvals || approvals.length === 0) {
-        console.log('📭 No pending approvals found');
-        return results;
-      }
-
-      console.log(`📧 Found ${approvals.length} pending approvals`);
-
-      // Process in small batches to avoid memory issues
-      const batches = this.chunkArray(approvals, this.batchSize);
-
-      for (const batch of batches) {
-        await this.processBatchSafely(batch, results);
-        
-        // Small delay between batches to avoid overwhelming system
-        await this.delay(500);
-      }
-
-      return results;
-
-    } catch (error) {
-      console.error('❌ Error in isolated process:', error);
-      results.errors.push(error instanceof Error ? error.message : 'Unknown error');
-      return results;
-    }
-  }
-
-  /**
-   * Process batch safely - each email isolated
-   */
-  private async processBatchSafely(batch: any[], results: any): Promise<void> {
-    for (const approval of batch) {
-      try {
-        results.processed++;
-
-        // Each email send is isolated with timeout
-        await this.sendSingleEmailSafely(approval);
-        
-        results.successful++;
-        console.log(`✅ Sent reminder to ${approval.email}`);
-
-      } catch (error) {
-        results.failed++;
-        const errorMsg = `Failed to send to ${approval.email}: ${error instanceof Error ? error.message : 'Unknown'}`;
-        results.errors.push(errorMsg);
-        console.error(`❌ ${errorMsg}`);
-        
-        // Continue processing other emails - don't stop on single failure
-      }
-    }
-  }
-
-  /**
-   * Send single email with timeout protection
-   */
-  private async sendSingleEmailSafely(approval: any): Promise<void> {
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Email timeout')), 30000) // 30 second timeout
-    );
-
-    const emailPromise = this.callEmailAPI(approval);
-
-    await Promise.race([emailPromise, timeoutPromise]);
-  }
-
-  /**
-   * Call email API safely
-   */
-  private async callEmailAPI(approval: any): Promise<void> {
-    try {
-      const response = await fetch('/api/approvals/send-reminder', {
+      console.log('📧 Calling approval reminders API...');
+      
+      // Call the actual scheduled task API that handles all approval reminders
+      const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/scheduled-tasks/approval-reminders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          approvalId: approval.id,
-          email: approval.email 
-        })
+        body: JSON.stringify({})
       });
 
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
       }
 
-    } catch (error) {
-      throw new Error(`Email API failed: ${error instanceof Error ? error.message : 'Unknown'}`);
-    }
-  }
+      const result = await response.json();
+      console.log('📧 Approval reminders API response:', result);
 
-  /**
-   * Get pending approvals with safe query
-   */
-  private async getPendingApprovals(): Promise<any[]> {
-    try {
-      const approvals = await prisma.requestApproval.findMany({
-        where: {
-          status: {
-            in: ['pending_approval', 'for_clarification']
-          }
-        },
-        include: {
-          request: {
-            select: {
-              id: true,
-              formData: true
-            }
-          }
-        },
-        take: 100 // Limit to prevent memory issues
-      });
-
-      return approvals;
+      return {
+        processed: result.totalPendingApprovals || 0,
+        successful: result.remindersSent || 0,
+        failed: (result.totalPendingApprovals || 0) - (result.remindersSent || 0),
+        errors: result.success ? [] : [result.message || 'Unknown error'],
+        apiResult: result
+      };
 
     } catch (error) {
-      console.error('❌ Database query failed:', error);
-      return []; // Return empty array to prevent crashes
+      console.error('❌ Error calling approval reminders API:', error);
+      results.errors.push(error instanceof Error ? error.message : 'Unknown error');
+      return results;
     }
   }
 
@@ -214,21 +118,6 @@ class SafeApprovalReminderService {
       // Even logging failed - but don't crash main system
       console.error('Failed to log error:', logError);
     }
-  }
-
-  /**
-   * Utility functions
-   */
-  private chunkArray<T>(array: T[], size: number): T[][] {
-    const chunks: T[][] = [];
-    for (let i = 0; i < array.length; i += size) {
-      chunks.push(array.slice(i, i + size));
-    }
-    return chunks;
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**

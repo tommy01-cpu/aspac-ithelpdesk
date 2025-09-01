@@ -1,5 +1,6 @@
 import { prisma } from './prisma';
 import { sendSLAEscalationEmail } from './database-email-templates';
+import { calculateWorkingHours, getOperationalHours, isHoliday } from './sla-calculator';
 
 /**
  * SAFE SLA Monitoring Service
@@ -230,6 +231,7 @@ class SafeSLAMonitoringService {
 
   /**
    * Check if request has breached SLA (response time or resolution time)
+   * NOW USES slaDueDate and respects slaStop flag
    */
   private async checkSLABreach(request: any): Promise<{
     isBreached: boolean;
@@ -237,53 +239,66 @@ class SafeSLAMonitoringService {
     hoursOverdue?: number;
     breachType?: string;
     slaService?: any;
+    actualElapsed?: number;
+    slaLimit?: number;
   }> {
     try {
-      // Get SLA configuration for this request's template
+      // Skip SLA monitoring if SLA is currently stopped
+      const formData = request.formData;
+      if (formData && formData.slaStop === true) {
+        console.log(`⏸️ Skipping request ${request.id} - SLA timer is stopped (slaStop: true)`);
+        return { isBreached: false, shouldEscalate: false };
+      }
+
+      // Get SLA due date from form data (already calculated with holidays, operational hours, etc.)
+      const slaDueDate = formData?.slaDueDate;
+      if (!slaDueDate) {
+        console.warn(`No SLA due date found for request ${request.id}`);
+        return { isBreached: false, shouldEscalate: false };
+      }
+
+      // Get SLA configuration for escalation settings
       const slaService = await this.getSLAServiceForRequest(request);
-      
       if (!slaService) {
         return { isBreached: false, shouldEscalate: false };
       }
 
-      // Calculate time since request creation
       const now = new Date();
-      const createdAt = new Date(request.createdAt);
-      const hoursElapsed = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60));
-
-      // Check response time breach (initial response to customer)
-      const isResponseBreached = hoursElapsed > slaService.responseTime;
+      const dueDate = new Date(slaDueDate);
       
-      // Check resolution time breach (total time to resolve)
-      const resolutionTimeLimit = slaService.resolutionHours || (slaService.responseTime * 6); // Fallback: 6x response time
-      const isResolutionBreached = hoursElapsed > resolutionTimeLimit;
+      // Check if SLA is breached (current time > due date)
+      const isBreached = now > dueDate;
       
-      // Determine breach type and severity
-      let breachType = '';
-      let isBreached = false;
-      let hoursOverdue = 0;
-      
-      if (isResolutionBreached) {
-        breachType = 'resolution';
-        isBreached = true;
-        hoursOverdue = hoursElapsed - resolutionTimeLimit;
-      } else if (isResponseBreached) {
-        breachType = 'response';
-        isBreached = true;
-        hoursOverdue = hoursElapsed - slaService.responseTime;
+      if (!isBreached) {
+        console.log(`✅ Request ${request.id} SLA OK - Due: ${dueDate.toLocaleString()}, Now: ${now.toLocaleString()}`);
+        return { isBreached: false, shouldEscalate: false };
       }
+
+      // Calculate hours overdue
+      const hoursOverdue = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
+      const slaHours = parseFloat(formData?.slaHours || '0');
       
-      // Check if escalation is needed
+      // Check if escalation is needed based on SLA service configuration
       const shouldEscalate = slaService.autoEscalate && 
-                            isBreached && 
-                            hoursElapsed > (slaService.responseTime + slaService.escalationTime);
+                            hoursOverdue > (slaService.escalationTime || 1); // Default 1 hour after breach
+
+      console.log(`⚠️ Request ${request.id} SLA BREACHED:`, {
+        dueDate: dueDate.toLocaleString(),
+        now: now.toLocaleString(),
+        hoursOverdue: hoursOverdue.toFixed(2),
+        slaHours,
+        shouldEscalate,
+        slaStop: formData?.slaStop || false
+      });
 
       return {
-        isBreached,
+        isBreached: true,
         shouldEscalate,
         hoursOverdue,
-        breachType,
-        slaService
+        breachType: 'resolution', // Based on due date which represents final resolution time
+        slaService,
+        actualElapsed: hoursOverdue + slaHours, // Total time including overdue
+        slaLimit: slaHours
       };
 
     } catch (error) {
