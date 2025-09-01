@@ -18,10 +18,26 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { SessionWrapper } from '@/components/session-wrapper';
 
+interface SearchResult {
+  id: number;
+  templateId: number;
+  name: string;
+  description: string;
+  type: 'service' | 'incident';
+  categoryName: string;
+  categoryId?: number;
+  templateName: string;
+  icon: string;
+  url: string;
+}
+
 export default function Home() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [approvalCount, setApprovalCount] = useState(0);
   const [verseOfTheDay, setVerseOfTheDay] = useState({
@@ -80,6 +96,68 @@ export default function Home() {
     }
     fetchVerseOfTheDay();
   }, [session]);
+
+  // Search functionality with debouncing
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (searchQuery.trim().length >= 2) {
+        searchTemplates(searchQuery.trim());
+      } else {
+        setSearchResults([]);
+        setShowSearchResults(false);
+      }
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  // Close search results when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (!target.closest('.search-container')) {
+        setShowSearchResults(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const searchTemplates = async (query: string) => {
+    try {
+      setSearchLoading(true);
+      const response = await fetch(`/api/templates/search?q=${encodeURIComponent(query)}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        setSearchResults(data.templates || []);
+        setShowSearchResults(true);
+      } else {
+        setSearchResults([]);
+        setShowSearchResults(false);
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+      setShowSearchResults(false);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleSearchResultClick = (result: SearchResult) => {
+    router.push(result.url);
+    setSearchQuery('');
+    setShowSearchResults(false);
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchResults.length > 0) {
+      handleSearchResultClick(searchResults[0]);
+    }
+  };
 
   const fetchVerseOfTheDay = async () => {
     try {
@@ -263,6 +341,21 @@ export default function Home() {
 
   return (
     <SessionWrapper>
+      <style jsx global>{`
+        .line-clamp-2 {
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+        .search-container {
+          position: relative;
+          z-index: 50;
+        }
+        .search-dropdown {
+          z-index: 9999 !important;
+        }
+      `}</style>
       <div className="bg-white w-full">
         {/* Hero Section */}
         <section className="relative h-[60vh] overflow-hidden">
@@ -279,30 +372,98 @@ export default function Home() {
           
           <div className="relative h-full flex flex-col">
             {/* Title and Search - Moved upward for better centering */}
-            <div className="flex-1 flex flex-col mt-20 items-center px-6 ">
-              <h1 className="text-2xl lg:text-3xl font-bold text-white mb-4 text-center tracking-tight">
+            <div className="flex-1 flex flex-col mt-16 items-center px-6">
+              <h1 className="text-2xl lg:text-3xl font-bold text-white mb-6 text-center tracking-tight">
                 How can we
                 <span className="text-orange-400"> help </span>
                 you?
               </h1>
               
               {/* Search Bar */}
-              <div className="w-full max-w-xl relative mb-8">
-                <div className="relative">
+              <div className="w-full max-w-2xl relative mb-12 search-container">
+                <form onSubmit={handleSearchSubmit} className="relative">
                   <Input
                     type="text"
-                    placeholder="Search templates ..."
+                    placeholder="Search for templates, services, or incidents..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full h-12 pl-6 pr-14 text-sm bg-white/95 backdrop-blur-sm border-0 shadow-lg rounded-lg placeholder:text-slate-500"
+                    onFocus={() => {
+                      if (searchResults.length > 0) setShowSearchResults(true);
+                    }}
+                    className="w-full h-14 pl-6 pr-16 text-base bg-white/95 backdrop-blur-sm border-0 shadow-xl rounded-xl placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500 focus:shadow-2xl transition-all"
                   />
                   <Button 
+                    type="submit"
                     size="icon" 
-                    className="absolute right-2 top-2 h-8 w-8 bg-blue-600 hover:bg-blue-700 rounded-md"
+                    className="absolute right-3 top-3 h-8 w-8 bg-blue-600 hover:bg-blue-700 rounded-lg shadow-lg"
                   >
                     <Search className="h-4 w-4" />
                   </Button>
-                </div>
+                </form>
+
+                {/* Search Results Dropdown */}
+                {showSearchResults && (searchResults.length > 0 || searchLoading) && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-2xl border border-gray-200 max-h-80 overflow-y-auto z-50">
+                    {searchLoading ? (
+                      <div className="p-4 text-center">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                        <p className="text-slate-600 text-sm">Searching...</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="p-3 border-b border-gray-100 bg-gray-50">
+                          <p className="text-sm font-medium text-gray-700">
+                            Found {searchResults.length} template{searchResults.length !== 1 ? 's' : ''}
+                          </p>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto">
+                          {searchResults.map((result) => (
+                            <div
+                              key={`${result.type}-${result.id}`}
+                              onClick={() => handleSearchResultClick(result)}
+                              className="p-4 hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-b-0 transition-colors"
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className="text-2xl flex-shrink-0 mt-1">{result.icon}</div>
+                                <div className="flex-1 min-w-0">
+                                  {result.categoryName && (
+                                    <div className="text-xs text-slate-600 font-medium truncate mb-1">Category: {result.categoryName}</div>
+                                  )}
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <h3 className="font-semibold text-gray-900 truncate text-sm">
+                                      Template name: {result.name}
+                                    </h3>
+                                    <Badge 
+                                      variant="outline" 
+                                      className={`text-xs px-2 py-1 ${
+                                        result.type === 'incident' 
+                                          ? 'border-red-200 text-red-700 bg-red-50' 
+                                          : 'border-blue-200 text-blue-700 bg-blue-50'
+                                      }`}
+                                    >
+                                      {result.type}
+                                    </Badge>
+                                  </div>
+                                  {result.description && (
+                                    <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">
+                                      Description: {result.description}
+                                    </p>
+                                  )}
+                                </div>
+                                <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0 mt-2" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="p-3 bg-blue-50 text-center border-t border-blue-100">
+                          <p className="text-xs text-blue-600 font-medium">
+                            💡 Click on a template to create a request
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

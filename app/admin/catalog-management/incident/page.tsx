@@ -78,6 +78,7 @@ export default function IncidentCatalogTab() {
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [expandedCategory, setExpandedCategory] = useState<number | null>(null);
   const [categoryIncidents, setCategoryIncidents] = useState<{ [key: number]: IncidentCatalogItem[] }>({});
+  const [filteredCategoryIncidents, setFilteredCategoryIncidents] = useState<{ [key: number]: IncidentCatalogItem[] }>({});
   const [reorderingCategory, setReorderingCategory] = useState<number | null>(null);
   const [errorDialog, setErrorDialog] = useState<{
     open: boolean;
@@ -114,13 +115,22 @@ export default function IncidentCatalogTab() {
       const response = await fetch(`/api/service-categories?${params}`);
       if (response.ok) {
         const data = await response.json();
-        setCategories(data.categories || []);
+        const categories = data.categories || [];
+        setCategories(categories);
         setPagination(data.pagination || {
           page: page,
           limit: limit,
-          total: data.categories?.length || 0,
-          pages: Math.ceil((data.categories?.length || 0) / limit)
+          total: categories.length || 0,
+          pages: Math.ceil((categories.length || 0) / limit)
         });
+
+        // If there's a search term, automatically fetch incidents for all categories
+        // and expand categories that have matching templates
+        if (search && search.trim()) {
+          await Promise.all(categories.map(async (category: any) => {
+            await fetchCategoryIncidentsForSearch(category.id, search);
+          }));
+        }
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
@@ -134,14 +144,82 @@ export default function IncidentCatalogTab() {
       const response = await fetch(`/api/incident-catalog?categoryId=${categoryId}`);
       if (response.ok) {
         const data = await response.json();
+        const incidents = data.incidentCatalogItems || [];
         setCategoryIncidents(prev => ({
           ...prev,
-          [categoryId]: data.incidentCatalogItems || []
+          [categoryId]: incidents
         }));
+        // Apply current search filter
+        applyIncidentSearch(categoryId, incidents, searchTerm);
       } 
     } catch (error) {
       console.error('Error fetching category incidents:', error);
     }
+  };
+
+  const fetchCategoryIncidentsForSearch = async (categoryId: number, searchTerm: string) => {
+    try {
+      const response = await fetch(`/api/incident-catalog?categoryId=${categoryId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const incidents = data.incidentCatalogItems || [];
+        setCategoryIncidents(prev => ({
+          ...prev,
+          [categoryId]: incidents
+        }));
+        
+        // Apply search filter
+        applyIncidentSearch(categoryId, incidents, searchTerm);
+        
+        // Check if any incidents match the search term
+        const hasMatchingIncidents = incidents.some((incident: any) => 
+          incident.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (incident.description && incident.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+          (incident.templateName && incident.templateName.toLowerCase().includes(searchTerm.toLowerCase()))
+        );
+        
+        // Auto-expand this category if it has matching incidents
+        if (hasMatchingIncidents) {
+          setExpandedCategory(categoryId);
+        }
+      } 
+    } catch (error) {
+      console.error('Error fetching category incidents for search:', error);
+    }
+  };
+
+  // Filter incidents based on search term
+  const applyIncidentSearch = (categoryId: number, incidents: IncidentCatalogItem[], searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      setFilteredCategoryIncidents(prev => ({
+        ...prev,
+        [categoryId]: incidents
+      }));
+      return;
+    }
+
+    const filtered = incidents.filter(incident => 
+      incident.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (incident.description && incident.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (incident.templateName && incident.templateName.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    setFilteredCategoryIncidents(prev => ({
+      ...prev,
+      [categoryId]: filtered
+    }));
+  };
+
+  // Handle incident search changes
+  const handleIncidentSearchChange = (value: string) => {
+    // Apply search to all expanded categories
+    Object.keys(categoryIncidents).forEach(categoryIdStr => {
+      const categoryId = parseInt(categoryIdStr);
+      const incidents = categoryIncidents[categoryId];
+      if (incidents) {
+        applyIncidentSearch(categoryId, incidents, value);
+      }
+    });
   };
 
   const handleAddIncident = (categoryId: number) => {
@@ -254,6 +332,9 @@ export default function IncidentCatalogTab() {
       setExpandedCategory(categoryId);
       if (!categoryIncidents[categoryId]) {
         await fetchCategoryIncidents(categoryId);
+      } else {
+        // Apply current search filter to existing data
+        applyIncidentSearch(categoryId, categoryIncidents[categoryId], searchTerm);
       }
     }
   };
@@ -268,7 +349,7 @@ export default function IncidentCatalogTab() {
 
   // Incident reorder functions
   const handleMoveIncident = async (categoryId: number, incidentIndex: number, direction: 'up' | 'down') => {
-    const incidents = [...categoryIncidents[categoryId]];
+    const incidents = [...(filteredCategoryIncidents[categoryId] || categoryIncidents[categoryId] || [])];
     const targetIndex = direction === 'up' ? incidentIndex - 1 : incidentIndex + 1;
     
     if (targetIndex < 0 || targetIndex >= incidents.length) return;
@@ -276,7 +357,13 @@ export default function IncidentCatalogTab() {
     // Swap incidents
     [incidents[incidentIndex], incidents[targetIndex]] = [incidents[targetIndex], incidents[incidentIndex]];
     
-    // Update local state
+    // Update local state for both filtered and unfiltered data
+    if (filteredCategoryIncidents[categoryId]) {
+      setFilteredCategoryIncidents(prev => ({
+        ...prev,
+        [categoryId]: incidents
+      }));
+    }
     setCategoryIncidents(prev => ({
       ...prev,
       [categoryId]: incidents
@@ -350,13 +437,16 @@ export default function IncidentCatalogTab() {
         <h1 className="text-2xl font-bold text-slate-900 mb-6">Incident Catalog</h1>
         
         {/* Search and Filter */}
-        <div className="flex items-center gap-4 mb-4">
-          <div className="flex-1 max-w-md">
+        <div className="flex items-center gap-4 mb-6">
+          <div className="flex-1 max-w-lg">
             <Input
-              placeholder="Search categories..."
+              placeholder="🔍 Search categories, incidents & templates..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full"
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                handleIncidentSearchChange(e.target.value);
+              }}
+              className="w-full h-12 px-4 text-base border-2 border-slate-200 rounded-xl shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200"
             />
           </div>
         </div>
@@ -521,9 +611,14 @@ export default function IncidentCatalogTab() {
                           <div className="p-4">
                             <div className="flex items-center justify-between mb-3">
                               <h4 className="font-medium text-slate-900">
-                                Incidents in {category.name} ({categoryIncidents[category.id]?.length || 0})
+                                Incidents in {category.name} ({(filteredCategoryIncidents[category.id] || categoryIncidents[category.id])?.length || 0})
+                                {searchTerm && (
+                                  <span className="text-sm text-blue-600 ml-2">
+                                    (filtered from {categoryIncidents[category.id]?.length || 0})
+                                  </span>
+                                )}
                               </h4>
-                              {categoryIncidents[category.id]?.length > 1 && (
+                              {(filteredCategoryIncidents[category.id] || categoryIncidents[category.id])?.length > 1 && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -535,9 +630,9 @@ export default function IncidentCatalogTab() {
                                 </Button>
                               )}
                             </div>
-                            {categoryIncidents[category.id]?.length > 0 ? (
+                            {(filteredCategoryIncidents[category.id] || categoryIncidents[category.id])?.length > 0 ? (
                               <div className="space-y-2">
-                                {categoryIncidents[category.id].map((incident, incidentIndex) => (
+                                {(filteredCategoryIncidents[category.id] || categoryIncidents[category.id]).map((incident, incidentIndex) => (
                                   <div key={incident.id} className="bg-white rounded-lg border border-slate-200 p-4">
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-3 flex-1">
@@ -556,7 +651,7 @@ export default function IncidentCatalogTab() {
                                               variant="outline"
                                               size="sm"
                                               onClick={() => handleMoveIncident(category.id, incidentIndex, 'down')}
-                                              disabled={incidentIndex === categoryIncidents[category.id].length - 1}
+                                              disabled={incidentIndex === (filteredCategoryIncidents[category.id] || categoryIncidents[category.id]).length - 1}
                                               className="h-6 w-6 p-0"
                                             >
                                               <ArrowDown className="h-3 w-3" />

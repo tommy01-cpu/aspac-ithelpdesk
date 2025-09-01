@@ -3849,7 +3849,7 @@ export default function RequestViewPage() {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <CheckSquare className="h-4 w-4" />
-                    Request Status
+                    Request Details
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -3857,9 +3857,13 @@ export default function RequestViewPage() {
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">Request Status</span>
                       <Badge className={getStatusColor(requestData.status)} variant="outline">
-                        {requestData.status === 'for_approval' 
-                          ? 'For Approval' 
-                          : requestData.status.charAt(0).toUpperCase() + requestData.status.slice(1)}
+                        {(() => {
+                          const status = requestData.status;
+                          if (status === 'for_approval') return 'For Approval';
+                          if (status === 'on_hold') return 'On Hold';
+                          if (status === 'in_progress') return 'In Progress';
+                          return status.charAt(0).toUpperCase() + status.slice(1);
+                        })()}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between">
@@ -3976,33 +3980,63 @@ export default function RequestViewPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          if (!requestData) return;
+                      {(() => {
+                        // Check if SLA timer should be shown
+                        const formData = requestData?.formData || {};
+                        const slaDueDate = formData.slaDueDate;
+                        const slaStop = formData.slaStop;
+                        const currentStatus = requestData?.status;
+                        
+                        // Hide SLA timer if:
+                        // 1. Due date has passed AND status is not 'on_hold' (because on_hold should still allow starting)
+                        // 2. SLA has been stopped (slaStop is true) AND status is not 'on_hold'
+                        let shouldShowSlaTimer = true;
+                        
+                        if (slaDueDate) {
+                          const dueDate = new Date(slaDueDate);
+                          const now = new Date();
+                          const hasPassedDueDate = now > dueDate;
                           
-                          // Determine action based on current status
-                          const currentStatus = requestData.status;
-                          if (currentStatus === 'open') {
-                            setSlaTimerAction('stop');
-                          } else if (currentStatus === 'on_hold') {
-                            setSlaTimerAction('start');
-                          } else {
-                            toast({
-                              title: "Invalid Status",
-                              description: "SLA Timer can only be managed when status is 'Open' or 'On Hold'.",
-                              variant: "destructive"
-                            });
-                            return;
+                          // Only hide if due date passed and not on_hold, or if slaStop is true and not on_hold
+                          if ((hasPassedDueDate && currentStatus !== 'on_hold') || (slaStop === true && currentStatus !== 'on_hold')) {
+                            shouldShowSlaTimer = false;
                           }
-                          
-                          setShowSlaTimerModal(true);
-                        }}
-                        className="w-full flex items-center justify-center gap-2"
-                      >
-                        <Clock className="h-4 w-4" />
-                        SLA Timer
-                      </Button>
+                        }
+                        
+                        // Only show SLA timer if conditions are met
+                        if (shouldShowSlaTimer) {
+                          return (
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                if (!requestData) return;
+                                
+                                // Determine action based on current status
+                                const currentStatus = requestData.status;
+                                if (currentStatus === 'open') {
+                                  setSlaTimerAction('stop');
+                                } else if (currentStatus === 'on_hold') {
+                                  setSlaTimerAction('start');
+                                } else {
+                                  toast({
+                                    title: "Invalid Status",
+                                    description: "SLA Timer can only be managed when status is 'Open' or 'On Hold'.",
+                                    variant: "destructive"
+                                  });
+                                  return;
+                                }
+                                
+                                setShowSlaTimerModal(true);
+                              }}
+                              className="w-full flex items-center justify-center gap-2"
+                            >
+                              <Clock className="h-4 w-4" />
+                              SLA Timer
+                            </Button>
+                          );
+                        }
+                        return null;
+                      })()}
                       <Button
                         variant="outline"
                         onClick={() => setShowChangeStatusModal(true)}

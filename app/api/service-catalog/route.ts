@@ -24,7 +24,12 @@ export async function GET(req: NextRequest) {
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } }
+        { description: { contains: search, mode: 'insensitive' } },
+        { 
+          template: {
+            name: { contains: search, mode: 'insensitive' }
+          }
+        }
       ];
     }
     if (categoryId) {

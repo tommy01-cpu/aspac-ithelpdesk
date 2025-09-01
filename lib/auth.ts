@@ -34,7 +34,7 @@ export const authOptions: NextAuthOptions = {
             }
           });
 
-          console.log('👤 User found:', user ? 'Yes' : 'No');
+          console.log('� User found:', user ? 'Yes' : 'No');
           if (user) {
             console.log('👤 User details:', {
               id: user.id,
@@ -42,7 +42,9 @@ export const authOptions: NextAuthOptions = {
               emp_fname: user.emp_fname,
               emp_status: user.emp_status,
               hasPassword: !!user.password,
-              passwordLength: user.password?.length
+              passwordLength: user.password?.length,
+              hasTechnicianRecord: !!user.technician,
+              technicianId: user.technician?.id
             });
           }
 
@@ -65,11 +67,16 @@ export const authOptions: NextAuthOptions = {
           // Check if password equals employee ID (first time login or admin reset)
           const passwordEqualsEmployeeId = await bcrypt.compare(credentials.employee_id, user.password);
           
-          console.log('🔍 User technician data:', {
+          // Check if user is a technician by looking up in technician table
+          const isTechnician = !!user.technician;
+          const isAdmin = user.technician?.isAdmin ?? false;
+          
+          console.log('🔍 Technician status check:', {
+            userId: user.id,
             hasTechnicianRecord: !!user.technician,
-            technicianIsAdmin: user.technician?.isAdmin,
-            finalIsTechnician: !!user.technician,
-            finalIsAdmin: user.technician?.isAdmin ?? false,
+            technicianId: user.technician?.id || null,
+            isTechnician: isTechnician,
+            isAdmin: isAdmin,
             requiresPasswordChange: user.requiresPasswordChange || passwordEqualsEmployeeId
           });
           
@@ -80,10 +87,10 @@ export const authOptions: NextAuthOptions = {
             employee_id: user.emp_code ?? undefined,
             job_title: user.post_des ?? undefined,
             profile_image: user.profile_image ?? undefined,
-            roles: user.user_roles.map(ur => ur.roles.name),
-            isTechnician: !!user.technician, // Simply check if technician record exists
+            roles: user.user_roles.map((ur: any) => ur.roles.name),
+            isTechnician: isTechnician, // Based on technician table lookup
             isServiceApprover: user.isServiceApprover,
-            isAdmin: user.technician?.isAdmin ?? false, // Get admin status from technician record
+            isAdmin: isAdmin, // Get admin status from technician record
             requiresPasswordChange: user.requiresPasswordChange || passwordEqualsEmployeeId
           };
         } catch (error) {

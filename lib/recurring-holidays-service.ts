@@ -1,6 +1,19 @@
 import { prisma } from './prisma';
 
 /**
+ * FIXED RECURRING HOLIDAYS SERVICE
+ * 
+ * Key Changes Made:
+ * 1. Generated holidays keep the SAME TITLE (no year suffix added)
+ * 2. Generated holidays are marked as isRecurring: true (not false)
+ * 3. Only adds if holiday doesn't already exist for that year
+ * 4. Preserves original description without modification
+ * 
+ * Example: If you have "New Year's Day" on January 1, 2025 with recurring=true
+ * It will create "New Year's Day" on January 1, 2026 (same title, different year)
+ */
+
+/**
  * Automated service to generate recurring holidays
  * Works with existing holiday structure (no schema changes needed)
  */
@@ -56,10 +69,10 @@ export async function generateRecurringHolidays(): Promise<{ added: number; skip
           // Create the recurring holiday for this year
           await prisma.holiday.create({
             data: {
-              name: holiday.name,
+              name: holiday.name, // Keep the same title/name
               date: newHolidayDate,
-              description: holiday.description ? `${holiday.description} (${year})` : `Recurring holiday for ${year}`,
-              isRecurring: false, // Mark generated holidays as non-recurring to avoid infinite loops
+              description: holiday.description,
+              isRecurring: true, // Keep as recurring so it continues to generate
               isActive: true
             }
           });
@@ -86,125 +99,102 @@ export async function generateRecurringHolidays(): Promise<{ added: number; skip
  * Check if holidays need to be generated and generate them
  * This is the main function that should be called by the background service DAILY
  * 
- * NEW LOGIC: Daily check for passed holidays and auto-generate next year
+ * SIMPLE LOGIC: 
+ * - Get all recurring holidays from January 1 to TODAY in current year
+ * - For each one that has passed, create next year's version
+ * - Example: If today is Sept 1, 2025, process Jan 1, 2025 AND Sept 1, 2025
  */
 export async function checkAndGenerateHolidays(): Promise<{ message: string; results?: any }> {
   try {
     const today = new Date();
     const currentYear = today.getFullYear();
-    const currentDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const todayDate = new Date(currentYear, today.getMonth(), today.getDate(), 0, 0, 0, 0);
+    const yearStart = new Date(currentYear, 0, 1, 0, 0, 0, 0); // January 1st of current year
     
-    console.log(`📅 Daily holiday check for ${currentDate.toDateString()}...`);
+    console.log(`📅 Processing holidays from ${yearStart.toDateString()} to ${todayDate.toDateString()}...`);
     
-    // Step 1: Get all recurring holiday templates
-    const recurringTemplates = await prisma.holiday.findMany({
+    // Get ALL recurring holidays from January 1 to TODAY (inclusive)
+    const recurringHolidays = await prisma.holiday.findMany({
       where: {
         isRecurring: true,
-        isActive: true
+        isActive: true,
+        date: {
+          gte: yearStart,     // From January 1st of current year
+          lte: todayDate      // Until today (inclusive)
+        }
       },
       orderBy: {
         date: 'asc'
       }
     });
 
-    if (recurringTemplates.length === 0) {
-      console.log('📅 No recurring holiday templates found.');
-      return { message: 'No recurring holiday templates found. Please create recurring holiday templates first.' };
+    if (recurringHolidays.length === 0) {
+      console.log('📅 No recurring holidays found from January 1 to today.');
+      return { message: 'No recurring holidays found from January 1 to today.' };
     }
 
-    console.log(`📅 Found ${recurringTemplates.length} recurring holiday templates to check.`);
+    console.log(`📅 Found ${recurringHolidays.length} recurring holidays from Jan 1 to today.`);
 
     let totalAdded = 0;
     let totalSkipped = 0;
     let totalChecked = 0;
 
-    // Step 2: For each recurring template, check if this year's holiday has passed
-    for (const template of recurringTemplates) {
-      const originalDate = new Date(template.date);
-      
-      // Create this year's version of the holiday
-      const thisYearHoliday = new Date(currentYear, originalDate.getMonth(), originalDate.getDate());
+    const nextYear = currentYear + 1;
+
+    // Process EACH holiday that has passed (from Jan 1 to today)
+    for (const holiday of recurringHolidays) {
+      const holidayDate = new Date(holiday.date);
+      const holidayDateOnly = new Date(holidayDate.getFullYear(), holidayDate.getMonth(), holidayDate.getDate(), 0, 0, 0, 0);
       
       totalChecked++;
-      console.log(`🔍 Checking: ${template.name} - This year's date: ${thisYearHoliday.toDateString()}`);
+      console.log(`🔍 Processing: ${holiday.name} - Date: ${holidayDateOnly.toDateString()}`);
       
-      // Check if this year's holiday has passed or is today
-      if (thisYearHoliday <= currentDate) {
-        console.log(`✅ ${template.name} has passed this year (${thisYearHoliday.toDateString()}), checking next year...`);
-        
-        // Generate for next year
-        const nextYear = currentYear + 1;
-        const nextYearHoliday = new Date(nextYear, originalDate.getMonth(), originalDate.getDate());
-        
-        // Check if next year's holiday already exists
-        const existingNextYearHoliday = await prisma.holiday.findFirst({
-          where: {
-            name: template.name,
-            date: {
-              gte: new Date(nextYear, 0, 1), // January 1st of next year
-              lt: new Date(nextYear + 1, 0, 1) // January 1st of year after next
-            }
-          }
-        });
-
-        if (!existingNextYearHoliday) {
-          // Create the holiday for next year
-          await prisma.holiday.create({
-            data: {
-              name: template.name,
-              date: nextYearHoliday,
-              description: template.description ? `${template.description} (${nextYear})` : `Recurring holiday for ${nextYear}`,
-              isRecurring: false, // Mark generated holidays as non-recurring
-              isActive: true
-            }
-          });
-
-          console.log(`🎉 AUTO-CREATED: ${template.name} for ${nextYear}: ${nextYearHoliday.toDateString()}`);
-          totalAdded++;
-        } else {
-          console.log(`⏭️  ${template.name} for ${nextYear} already exists, skipping.`);
-          totalSkipped++;
-        }
-      } else {
-        console.log(`⏳ ${template.name} hasn't passed yet this year (${thisYearHoliday.toDateString()}), no action needed.`);
-        totalSkipped++;
-      }
-    }
-
-    // Step 3: Also ensure current year holidays exist (in case system is new)
-    console.log(`📅 Ensuring current year (${currentYear}) holidays exist...`);
-    
-    for (const template of recurringTemplates) {
-      const originalDate = new Date(template.date);
-      const currentYearHoliday = new Date(currentYear, originalDate.getMonth(), originalDate.getDate());
+      // Get the exact month and day from the holiday
+      const originalMonth = holidayDate.getMonth(); // 0-indexed (0=Jan, 8=Sep)
+      const originalDay = holidayDate.getDate();    // 1-31
       
-      const existingCurrentYearHoliday = await prisma.holiday.findFirst({
+      // Create next year's version using simple date format without timezone
+      const nextYearDateString = `${nextYear}-${String(originalMonth + 1).padStart(2, '0')}-${String(originalDay).padStart(2, '0')}`;
+      const nextYearHoliday = new Date(nextYearDateString);
+      
+      console.log(`📅 ${holiday.name}: ${originalMonth + 1}/${originalDay}/${currentYear} → ${originalMonth + 1}/${originalDay}/${nextYear}`);
+      console.log(`📅 Next year date string: ${nextYearDateString}`);
+      
+      // Check if next year's holiday already exists - use simple date format
+      const yearStartString = `${nextYear}-01-01`;
+      const yearEndString = `${nextYear + 1}-01-01`;
+      
+      const existingNextYearHoliday = await prisma.holiday.findFirst({
         where: {
-          name: template.name,
+          name: holiday.name,
           date: {
-            gte: new Date(currentYear, 0, 1),
-            lt: new Date(currentYear + 1, 0, 1)
+            gte: new Date(yearStartString),
+            lt: new Date(yearEndString)
           }
         }
       });
 
-      if (!existingCurrentYearHoliday) {
+      if (!existingNextYearHoliday) {
+        // Create the holiday for next year
         await prisma.holiday.create({
           data: {
-            name: template.name,
-            date: currentYearHoliday,
-            description: template.description ? `${template.description} (${currentYear})` : `Recurring holiday for ${currentYear}`,
-            isRecurring: false,
+            name: holiday.name, // Keep the same title/name
+            date: nextYearHoliday,
+            description: holiday.description,
+            isRecurring: true, // Keep as recurring so it continues to generate
             isActive: true
           }
         });
 
-        console.log(`🎉 BACKFILLED: ${template.name} for ${currentYear}: ${currentYearHoliday.toDateString()}`);
+        console.log(`🎉 CREATED: ${holiday.name} for ${nextYear}: ${nextYearHoliday.toDateString()}`);
         totalAdded++;
+      } else {
+        console.log(`⏭️  ${holiday.name} for ${nextYear} already exists, skipping.`);
+        totalSkipped++;
       }
     }
 
-    const resultMessage = `Daily holiday check completed. Checked: ${totalChecked}, Added: ${totalAdded}, Skipped: ${totalSkipped}`;
+    const resultMessage = `Holiday generation completed. Checked: ${totalChecked}, Added: ${totalAdded}, Skipped: ${totalSkipped}`;
     console.log(`🎉 ${resultMessage}`);
     
     return { 
@@ -213,38 +203,127 @@ export async function checkAndGenerateHolidays(): Promise<{ message: string; res
         checked: totalChecked,
         added: totalAdded, 
         skipped: totalSkipped,
-        date: currentDate.toDateString(),
-        templatesFound: recurringTemplates.length
+        date: todayDate.toDateString(),
+        processedRange: `${yearStart.toDateString()} to ${todayDate.toDateString()}`,
+        nextYear: nextYear
       } 
     };
 
   } catch (error) {
-    console.error('❌ Error in daily holiday check:', error);
-    return { message: `Error in daily holiday check: ${error instanceof Error ? error.message : 'Unknown error'}` };
+    console.error('❌ Error in holiday generation:', error);
+    return { message: `Error in holiday generation: ${error instanceof Error ? error.message : 'Unknown error'}` };
   }
 }
 
 /**
  * Clean up old generated holidays (optional)
  * Removes holidays older than specified years to keep database clean
+ * Now more careful since all holidays are marked as recurring
  */
 export async function cleanupOldHolidays(yearsToKeep: number = 2): Promise<void> {
   try {
     const cutoffDate = new Date();
     cutoffDate.setFullYear(cutoffDate.getFullYear() - yearsToKeep);
 
-    const result = await prisma.holiday.deleteMany({
+    // Find duplicates (same name, different years) and keep only recent ones
+    const allHolidays = await prisma.holiday.findMany({
       where: {
         date: {
           lt: cutoffDate
         },
-        isRecurring: false // Only delete generated holidays, keep original recurring ones
+        isActive: true
+      },
+      orderBy: {
+        date: 'desc'
       }
     });
 
-    console.log(`🧹 Cleaned up ${result.count} old holiday entries.`);
+    // Group by name and keep only the most recent for each name
+    const holidayGroups = new Map<string, any[]>();
+    
+    for (const holiday of allHolidays) {
+      if (!holidayGroups.has(holiday.name)) {
+        holidayGroups.set(holiday.name, []);
+      }
+      holidayGroups.get(holiday.name)!.push(holiday);
+    }
+
+    const idsToDelete: number[] = [];
+    
+    for (const [name, holidays] of Array.from(holidayGroups.entries())) {
+      // Sort by date descending and keep only the most recent yearsToKeep
+      holidays.sort((a: any, b: any) => b.date.getTime() - a.date.getTime());
+      
+      // Mark older ones for deletion
+      if (holidays.length > yearsToKeep) {
+        const toDelete = holidays.slice(yearsToKeep);
+        idsToDelete.push(...toDelete.map((h: any) => h.id));
+      }
+    }
+
+    if (idsToDelete.length > 0) {
+      const result = await prisma.holiday.deleteMany({
+        where: {
+          id: {
+            in: idsToDelete
+          }
+        }
+      });
+
+      console.log(`🧹 Cleaned up ${result.count} old holiday entries.`);
+    } else {
+      console.log(`🧹 No old holidays to clean up.`);
+    }
   } catch (error) {
     console.error('❌ Error cleaning up old holidays:', error);
     throw error;
+  }
+}
+
+/**
+ * Test function to demonstrate the fixed recurring behavior
+ * Example usage to verify the fix works correctly
+ */
+export async function testRecurringHolidays(): Promise<void> {
+  console.log('🧪 Testing recurring holidays functionality...');
+  
+  try {
+    // Get all holidays with the same name to show the recurring pattern
+    const allHolidays = await prisma.holiday.findMany({
+      where: {
+        isActive: true
+      },
+      orderBy: [
+        { name: 'asc' },
+        { date: 'asc' }
+      ]
+    });
+
+    // Group by name to show recurring pattern
+    const groupedByName = allHolidays.reduce((acc: any, holiday: any) => {
+      if (!acc[holiday.name]) {
+        acc[holiday.name] = [];
+      }
+      acc[holiday.name].push({
+        date: holiday.date.toDateString(),
+        year: holiday.date.getFullYear(),
+        isRecurring: holiday.isRecurring,
+        description: holiday.description
+      });
+      return acc;
+    }, {});
+
+    console.log('📅 Current holidays grouped by name:');
+    Object.entries(groupedByName).forEach(([name, holidays]: [string, any]) => {
+      console.log(`\n🎉 ${name}:`);
+      holidays.forEach((h: any, index: number) => {
+        console.log(`   ${index + 1}. ${h.date} (${h.year}) - Recurring: ${h.isRecurring}`);
+      });
+    });
+
+    console.log('\n✅ Test completed. Check the output above to verify recurring holidays have the same titles but different years.');
+    
+  } catch (error) {
+    console.error('❌ Error in test:', error);
   }
 }

@@ -537,7 +537,7 @@ export default function MyRequestsPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="own">My Requests</SelectItem>
-                            <SelectItem value="department">My Departments Requests</SelectItem>
+                            <SelectItem value="department">My Department Requests</SelectItem>
                           </SelectContent>
                         </Select>
                         

@@ -4,17 +4,7 @@ import { safeSLAMonitoringService } from '@/lib/safe-sla-monitoring-service';
 
 /**
  * MASTER background service manager - coordinates all background services
- * Multiple safety la         //      // Set to 12:00 AM (midnight) for production
-      nextMidnight.setHours(0, 0, 0, 0);
-      
-      // If midnight already passed today, schedule for tomorrow
-      if (nextMidnight <= now) {to 9:25 AM for testing
-      nextMidnight.setHours(9, 25, 0, 0);
-      
-      // If 9:25 AM already passed today, schedule for tomorrow/ Set to 9:25 AM for testing
-      nextMidnight.setHours(9, 25, 0, 0);
-      
-      // If 9:25 AM already passed today, schedule for tomorrow to prevent any background failure from affecting main app
+ * Multiple safety layers to prevent any background failure from affecting main app
  */
 class SafeBackgroundServiceManager {
   private static instance: SafeBackgroundServiceManager;
@@ -151,7 +141,7 @@ class SafeBackgroundServiceManager {
       next8AM.setHours(8, 0, 0, 0);
       
       // If 8:00 AM already passed today, schedule for tomorrow
-      if (next8AM <= now) {
+      if (next8AM < now) {
         next8AM.setDate(next8AM.getDate() + 1);
       }
 
@@ -291,10 +281,10 @@ class SafeBackgroundServiceManager {
       const next12AM = new Date(now);
       
       // Set to 9:28 AM for testing
-      next12AM.setHours(9, 28, 0, 0);
+      next12AM.setHours(15, 20, 0, 0);
       
-      // If 9:28 AM already passed today, schedule for tomorrow
-      if (next12AM.getTime() <= now.getTime()) {
+      // If 3:20 PM already passed today, schedule for tomorrow
+      if (next12AM.getTime() < now.getTime()) {
         next12AM.setDate(next12AM.getDate() + 1);
       }
       
@@ -360,10 +350,10 @@ class SafeBackgroundServiceManager {
       const nextMidnight = new Date(now);
       
       // Set to 9:38 AM for testing
-      nextMidnight.setHours(9, 50, 0, 0);
+      nextMidnight.setHours(16,45, 0, 0);
       
-      // If 9:38 AM already passed today, schedule for tomorrow
-      if (nextMidnight <= now) {
+      // If 3:25 PM already passed today, schedule for tomorrow
+      if (nextMidnight < now) {
         nextMidnight.setDate(nextMidnight.getDate() + 1);
       }
       
@@ -658,13 +648,19 @@ if (typeof window === 'undefined') { // Server-side only
     
     console.log('🔧 First-time background service initialization...');
     
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
-        safeBackgroundServiceManager.initializeAllServices();
+        // Additional safety check to ensure services are properly instantiated
+        const manager = safeBackgroundServiceManager;
+        if (manager && typeof manager.initializeAllServices === 'function') {
+          await manager.initializeAllServices();
+        } else {
+          console.error('Background service manager not properly initialized');
+        }
       } catch (error) {
         console.error('Failed to initialize background services (main app protected):', error);
       }
-    }, 5000); // Reduced to 5 seconds
+    }, 8000); // Increased delay to ensure full application startup
   } else {
     console.log('⚡ Background services already initialized (development mode protection)');
   }

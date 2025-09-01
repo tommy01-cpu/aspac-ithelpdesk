@@ -14,6 +14,22 @@ import {
 import { processImagesForEmailAuto } from './email-image-processor-enhanced';
 import { formatStatusForDisplay } from './status-colors';
 
+// Helper function to format timestamp for notifications
+function formatTimestampForNotification(timestamp: Date | string): string {
+  const date = new Date(timestamp);
+  
+  // Format as "September 2, 2025 4:34 PM"
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Manila'
+  });
+}
+
 // Helper function to get base URL
 const getBaseUrl = () => {
   return process.env.NEXTAUTH_URL || 'http://localhost:3000';
@@ -402,7 +418,9 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
     
     const technicianName = `${technicianData.emp_fname} ${technicianData.emp_lname}`.trim();
     const technicianEmail = technicianData.emp_email;
-    const dueDate = (requestData.formData as any)?.slaDueDate || 'Not specified';
+    const dueDate = (requestData.formData as any)?.slaDueDate 
+      ? formatTimestampForNotification((requestData.formData as any).slaDueDate)
+      : 'Not specified';
 
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();
@@ -611,7 +629,9 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
     
     const technicianName = `${technicianData.emp_fname} ${technicianData.emp_lname}`.trim();
     const technicianEmail = technicianData.emp_email;
-    const dueDate = (requestData.formData as any)?.slaDueDate || 'Not specified';
+    const dueDate = (requestData.formData as any)?.slaDueDate 
+      ? formatTimestampForNotification((requestData.formData as any).slaDueDate)
+      : 'Not specified';
 
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();

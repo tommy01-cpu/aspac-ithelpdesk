@@ -40,7 +40,6 @@ model users {
   reportingToId                                     Int?
   departmentHeadId                                  Int?
   isServiceApprover                                 Boolean                @default(false)
-  isTechnician                                      Boolean                @default(false)
   description                                       String?
   landline_no                                       String?                @db.VarChar(20)
   local_no                                          String?                @db.VarChar(20)

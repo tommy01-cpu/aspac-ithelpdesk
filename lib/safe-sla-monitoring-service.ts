@@ -1,6 +1,5 @@
 import { prisma } from './prisma';
 import { sendSLAEscalationEmail } from './database-email-templates';
-import { calculateWorkingHours, getOperationalHours, isHoliday } from './sla-calculator';
 
 /**
  * SAFE SLA Monitoring Service
@@ -15,7 +14,13 @@ class SafeSLAMonitoringService {
   private maxRetries = 3;
   private batchSize = 10; // Process requests in small batches
 
-  private constructor() {}
+  private constructor() {
+    // Bind all methods to ensure proper 'this' context
+    this.monitorSLACompliance = this.monitorSLACompliance.bind(this);
+    this.autoCloseResolvedRequests = this.autoCloseResolvedRequests.bind(this);
+    this.manualTriggerSLA = this.manualTriggerSLA.bind(this);
+    this.manualTriggerAutoClose = this.manualTriggerAutoClose.bind(this);
+  }
 
   static getInstance(): SafeSLAMonitoringService {
     if (!SafeSLAMonitoringService.instance) {
@@ -37,6 +42,11 @@ class SafeSLAMonitoringService {
     try {
       this.isProcessing = true;
       console.log('⏰ Starting SAFE SLA monitoring process...');
+
+      // Check if this instance is properly initialized
+      if (!this || typeof this.processSLAMonitoringIsolated !== 'function') {
+        throw new Error('SLA Monitoring Service not properly initialized');
+      }
 
       const result = await this.processSLAMonitoringIsolated();
       
@@ -62,6 +72,11 @@ class SafeSLAMonitoringService {
   async autoCloseResolvedRequests(): Promise<{ success: boolean; results?: any; error?: string }> {
     try {
       console.log('🔄 Starting auto-close process for resolved requests...');
+
+      // Check if this instance is properly initialized
+      if (!this || typeof this.processAutoCloseIsolated !== 'function') {
+        throw new Error('Auto-close Service not properly initialized');
+      }
 
       const result = await this.processAutoCloseIsolated();
       
@@ -636,11 +651,33 @@ class SafeSLAMonitoringService {
    * Manual trigger for testing
    */
   async manualTriggerSLA(): Promise<any> {
-    return await this.monitorSLACompliance();
+    try {
+      if (!this || typeof this.monitorSLACompliance !== 'function') {
+        throw new Error('SLA monitoring service not properly initialized');
+      }
+      return await this.monitorSLACompliance();
+    } catch (error) {
+      console.error('Manual SLA trigger failed:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Manual trigger failed' 
+      };
+    }
   }
 
   async manualTriggerAutoClose(): Promise<any> {
-    return await this.autoCloseResolvedRequests();
+    try {
+      if (!this || typeof this.autoCloseResolvedRequests !== 'function') {
+        throw new Error('Auto-close service not properly initialized');
+      }
+      return await this.autoCloseResolvedRequests();
+    } catch (error) {
+      console.error('Manual auto-close trigger failed:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Manual trigger failed' 
+      };
+    }
   }
 }
 

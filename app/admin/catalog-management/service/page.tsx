@@ -73,6 +73,7 @@ export default function ServiceCatalogTab() {
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [expandedCategory, setExpandedCategory] = useState<number | null>(null);
   const [categoryServices, setCategoryServices] = useState<{ [key: number]: ServiceCatalogItem[] }>({});
+  const [filteredCategoryServices, setFilteredCategoryServices] = useState<{ [key: number]: ServiceCatalogItem[] }>({});
   const [reorderingCategory, setReorderingCategory] = useState<number | null>(null);
   const [errorDialog, setErrorDialog] = useState<{
     open: boolean;
@@ -109,13 +110,22 @@ export default function ServiceCatalogTab() {
       const response = await fetch(`/api/service-categories?${params}`);
       if (response.ok) {
         const data = await response.json();
-        setCategories(data.categories || []);
+        const categories = data.categories || [];
+        setCategories(categories);
         setPagination(data.pagination || {
           page: page,
           limit: limit,
-          total: data.categories?.length || 0,
-          pages: Math.ceil((data.categories?.length || 0) / limit)
+          total: categories.length || 0,
+          pages: Math.ceil((categories.length || 0) / limit)
         });
+
+        // If there's a search term, automatically fetch services for all categories
+        // and expand categories that have matching templates
+        if (search && search.trim()) {
+          await Promise.all(categories.map(async (category: any) => {
+            await fetchCategoryServicesForSearch(category.id, search);
+          }));
+        }
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
@@ -129,14 +139,82 @@ export default function ServiceCatalogTab() {
       const response = await fetch(`/api/service-catalog?categoryId=${categoryId}`);
       if (response.ok) {
         const data = await response.json();
+        const services = data.services || [];
         setCategoryServices(prev => ({
           ...prev,
-          [categoryId]: data.services || []
+          [categoryId]: services
         }));
+        // Apply current search filter
+        applyServiceSearch(categoryId, services, searchTerm);
       } 
     } catch (error) {
       console.error('Error fetching category services:', error);
     }
+  };
+
+  const fetchCategoryServicesForSearch = async (categoryId: number, searchTerm: string) => {
+    try {
+      const response = await fetch(`/api/service-catalog?categoryId=${categoryId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const services = data.services || [];
+        setCategoryServices(prev => ({
+          ...prev,
+          [categoryId]: services
+        }));
+        
+        // Apply search filter
+        applyServiceSearch(categoryId, services, searchTerm);
+        
+        // Check if any services match the search term
+        const hasMatchingServices = services.some((service: any) => 
+          service.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (service.description && service.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+          (service.templateName && service.templateName.toLowerCase().includes(searchTerm.toLowerCase()))
+        );
+        
+        // Auto-expand this category if it has matching services
+        if (hasMatchingServices) {
+          setExpandedCategory(categoryId);
+        }
+      } 
+    } catch (error) {
+      console.error('Error fetching category services for search:', error);
+    }
+  };
+
+  // Filter services based on search term
+  const applyServiceSearch = (categoryId: number, services: ServiceCatalogItem[], searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      setFilteredCategoryServices(prev => ({
+        ...prev,
+        [categoryId]: services
+      }));
+      return;
+    }
+
+    const filtered = services.filter(service => 
+      service.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (service.description && service.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (service.templateName && service.templateName.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    setFilteredCategoryServices(prev => ({
+      ...prev,
+      [categoryId]: filtered
+    }));
+  };
+
+  // Handle service search changes
+  const handleServiceSearchChange = (value: string) => {
+    // Apply search to all expanded categories
+    Object.keys(categoryServices).forEach(categoryIdStr => {
+      const categoryId = parseInt(categoryIdStr);
+      const services = categoryServices[categoryId];
+      if (services) {
+        applyServiceSearch(categoryId, services, value);
+      }
+    });
   };
 
   const handleAddService = (categoryId: number) => {
@@ -249,6 +327,9 @@ export default function ServiceCatalogTab() {
       setExpandedCategory(categoryId);
       if (!categoryServices[categoryId]) {
         await fetchCategoryServices(categoryId);
+      } else {
+        // Apply current search filter to existing data
+        applyServiceSearch(categoryId, categoryServices[categoryId], searchTerm);
       }
     }
   };
@@ -263,7 +344,7 @@ export default function ServiceCatalogTab() {
 
   // Service reorder functions
   const handleMoveService = async (categoryId: number, serviceIndex: number, direction: 'up' | 'down') => {
-    const services = [...categoryServices[categoryId]];
+    const services = [...(filteredCategoryServices[categoryId] || categoryServices[categoryId] || [])];
     const targetIndex = direction === 'up' ? serviceIndex - 1 : serviceIndex + 1;
     
     if (targetIndex < 0 || targetIndex >= services.length) return;
@@ -271,7 +352,13 @@ export default function ServiceCatalogTab() {
     // Swap services
     [services[serviceIndex], services[targetIndex]] = [services[targetIndex], services[serviceIndex]];
     
-    // Update local state
+    // Update local state for both filtered and unfiltered data
+    if (filteredCategoryServices[categoryId]) {
+      setFilteredCategoryServices(prev => ({
+        ...prev,
+        [categoryId]: services
+      }));
+    }
     setCategoryServices(prev => ({
       ...prev,
       [categoryId]: services
@@ -345,13 +432,16 @@ export default function ServiceCatalogTab() {
         <h1 className="text-2xl font-bold text-slate-900 mb-6">Service Catalog</h1>
         
         {/* Search and Filter */}
-        <div className="flex items-center gap-4 mb-4">
-          <div className="flex-1 max-w-md">
+        <div className="flex items-center gap-4 mb-6">
+          <div className="flex-1 max-w-lg">
             <Input
-              placeholder="Search categories..."
+              placeholder="🔍 Search categories, services & templates..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full"
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                handleServiceSearchChange(e.target.value);
+              }}
+              className="w-full h-12 px-4 text-base border-2 border-slate-200 rounded-xl shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200"
             />
           </div>
         </div>
@@ -531,9 +621,14 @@ export default function ServiceCatalogTab() {
                           <div className="p-4">
                             <div className="flex items-center justify-between mb-3">
                               <h4 className="font-medium text-slate-900">
-                                Services in {category.name} ({categoryServices[category.id]?.length || 0})
+                                Services in {category.name} ({(filteredCategoryServices[category.id] || categoryServices[category.id])?.length || 0})
+                                {searchTerm && (
+                                  <span className="text-sm text-blue-600 ml-2">
+                                    (filtered from {categoryServices[category.id]?.length || 0})
+                                  </span>
+                                )}
                               </h4>
-                              {categoryServices[category.id]?.length > 1 && (
+                              {(filteredCategoryServices[category.id] || categoryServices[category.id])?.length > 1 && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -545,9 +640,9 @@ export default function ServiceCatalogTab() {
                                 </Button>
                               )}
                             </div>
-                            {categoryServices[category.id]?.length > 0 ? (
+                            {(filteredCategoryServices[category.id] || categoryServices[category.id])?.length > 0 ? (
                               <div className="space-y-2">
-                                {categoryServices[category.id].map((service, serviceIndex) => (
+                                {(filteredCategoryServices[category.id] || categoryServices[category.id]).map((service, serviceIndex) => (
                                   <div key={service.id} className="bg-white rounded-lg border border-slate-200 p-4">
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-3 flex-1">
@@ -566,7 +661,7 @@ export default function ServiceCatalogTab() {
                                               variant="outline"
                                               size="sm"
                                               onClick={() => handleMoveService(category.id, serviceIndex, 'down')}
-                                              disabled={serviceIndex === categoryServices[category.id].length - 1}
+                                              disabled={serviceIndex === (filteredCategoryServices[category.id] || categoryServices[category.id]).length - 1}
                                               className="h-6 w-6 p-0"
                                             >
                                               <ArrowDown className="h-3 w-3" />

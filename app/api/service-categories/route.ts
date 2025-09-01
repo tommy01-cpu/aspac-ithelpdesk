@@ -26,6 +26,37 @@ export async function GET(req: NextRequest) {
           OR: [
             { name: { contains: search, mode: 'insensitive' as const } },
             { description: { contains: search, mode: 'insensitive' as const } },
+            // Include categories that have service/incident items with matching template names
+            ...(type === 'service' ? [{
+              serviceCatalogItems: {
+                some: {
+                  OR: [
+                    { name: { contains: search, mode: 'insensitive' as const } },
+                    { description: { contains: search, mode: 'insensitive' as const } },
+                    { 
+                      template: {
+                        name: { contains: search, mode: 'insensitive' as const }
+                      }
+                    }
+                  ]
+                }
+              }
+            }] : []),
+            ...(type === 'incident' ? [{
+              incidentCatalogItems: {
+                some: {
+                  OR: [
+                    { name: { contains: search, mode: 'insensitive' as const } },
+                    { description: { contains: search, mode: 'insensitive' as const } },
+                    { 
+                      template: {
+                        name: { contains: search, mode: 'insensitive' as const }
+                      }
+                    }
+                  ]
+                }
+              }
+            }] : [])
           ],
         }
       : {};

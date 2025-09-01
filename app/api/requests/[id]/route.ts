@@ -38,7 +38,7 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid request ID' }, { status: 400 });
     }
 
-    // Check if user can access this request (either as owner, approver, admin, or technician)
+    // Check if user can access this request (either as owner, approver, admin, technician, or department head)
     const userId = parseInt(session.user.id);
     const userRoles = session.user.roles || [];
     
@@ -46,11 +46,25 @@ export async function GET(
     const isAdmin = userRoles.includes('admin') || session.user.isAdmin;
     const isTechnician = session.user.isTechnician || false;
     
+    // Check if user is a department head
+    const departmentHeadCheck = await prisma.users.findUnique({
+      where: { id: userId },
+      include: {
+        departmentsManaged: {
+          select: { id: true }
+        }
+      }
+    });
+    const isDepartmentHead = departmentHeadCheck?.departmentsManaged && departmentHeadCheck.departmentsManaged.length > 0;
+    const managedDepartmentIds = departmentHeadCheck?.departmentsManaged?.map((d: any) => d.id) || [];
+    
     console.log('🔍 API: User access check:', {
       userId,
       userRoles,
       isAdmin,
       isTechnician,
+      isDepartmentHead,
+      managedDepartmentIds,
       sessionIsTechnician: session.user.isTechnician,
       sessionIsAdmin: session.user.isAdmin
     });
@@ -68,10 +82,10 @@ export async function GET(
       id: requestId
     };
 
-    // If user is not admin or technician, restrict access to own requests or approval requests
+    // If user is not admin or technician, restrict access to own requests, approval requests, or department requests
     if (!isAdmin && !isTechnician) {
       console.log('📋 API: Restricting access - user is not admin or technician');
-      requestWhereClause.OR = [
+      const accessConditions: any[] = [
         { userId: userId }, // User's own request
         { 
           approvals: { 
@@ -79,6 +93,22 @@ export async function GET(
           }
         }
       ];
+      
+      // Add department head access - can view requests from users in their managed departments
+      if (isDepartmentHead && managedDepartmentIds.length > 0) {
+        console.log('✅ API: Adding department head access for departments:', managedDepartmentIds);
+        accessConditions.push({
+          user: {
+            userDepartment: {
+              id: {
+                in: managedDepartmentIds
+              }
+            }
+          }
+        });
+      }
+      
+      requestWhereClause.OR = accessConditions;
     } else {
       console.log('✅ API: Full access granted - user is admin or technician');
     }
@@ -284,7 +314,7 @@ export async function GET(
     console.log(`📊 API: Found ${approvals.length} approvals and ${history.length} history entries for request ${requestId}`);
     
     // Format approvals for frontend (include approverId for client-side filtering)
-    const formattedApprovals = approvals.map(approval => ({
+    const formattedApprovals = approvals.map((approval: any) => ({
       id: approval.id.toString(),
       level: approval.level,
       name: approval.name,
@@ -299,7 +329,7 @@ export async function GET(
     }));
 
     // Format history for frontend with current user info lookup
-    const formattedHistory = await Promise.all(history.map(async (entry) => {
+    const formattedHistory = await Promise.all(history.map(async (entry: any) => {
       let currentActorName = entry.actorName || 'System';
       
       // If entry has actorId and is not a system action, get current user info

@@ -739,7 +739,7 @@ async function addWorkingHoursToTimePHT(
   operationalHours: OperationalHours
 ): Promise<Date> {
   let currentPHT = new Date(phtDate);
-  let remainingMinutes = Math.round(hoursToAdd * 60);
+  let remainingMinutes = hoursToAdd * 60; // Remove Math.round to preserve exact minutes
   
   while (remainingMinutes > 0) {
     const dayOfWeek = currentPHT.getDay();
@@ -857,6 +857,115 @@ export function isSLABreached(
 /**
  * Get SLA status and remaining time
  */
+/**
+ * Get working hours schedule for a specific day
+ */
+function getWorkingHoursScheduleForDay(
+  dayOfWeek: number,
+  operationalHours: OperationalHours
+): { start: { hour: number; minute: number }; end: { hour: number; minute: number } } | null {
+  const workingDay = operationalHours.workingDays.find(
+    (day) => day.dayOfWeek === dayOfWeek
+  );
+
+  if (!workingDay || !workingDay.isEnabled || workingDay.scheduleType === 'not-set') {
+    return null;
+  }
+
+  // Get working hours for the day
+  let startTime: string;
+  let endTime: string;
+
+  if (workingDay.scheduleType === 'custom') {
+    startTime = workingDay.customStartTime || '08:00';
+    endTime = workingDay.customEndTime || '18:00';
+  } else {
+    startTime = operationalHours.standardStartTime || '08:00';
+    endTime = operationalHours.standardEndTime || '18:00';
+  }
+
+  const [startHour, startMinute] = startTime.split(':').map(n => parseInt(n, 10));
+  const [endHour, endMinute] = endTime.split(':').map(n => parseInt(n, 10));
+
+  return {
+    start: { hour: startHour, minute: startMinute },
+    end: { hour: endHour, minute: endMinute }
+  };
+}
+
+/**
+ * Calculate elapsed operational hours between two dates
+ */
+export async function calculateElapsedOperationalHours(
+  startDate: Date,
+  endDate: Date
+): Promise<number> {
+  const operationalHours = await getOperationalHours();
+  
+  if (!operationalHours || operationalHours.workingTimeType === 'round-clock') {
+    // Round-the-clock calculation
+    const diffMs = endDate.getTime() - startDate.getTime();
+    return Math.max(0, diffMs / (1000 * 60 * 60));
+  }
+
+  let elapsedHours = 0;
+  let currentPHT = new Date(startDate);
+  const endPHT = new Date(endDate);
+  
+  // If start date is after end date, return 0
+  if (currentPHT >= endPHT) {
+    return 0;
+  }
+  
+  // Process day by day
+  while (currentPHT < endPHT) {
+    const dayOfWeek = currentPHT.getDay();
+    
+    // Skip holidays and non-working days
+    if (await isHoliday(currentPHT) || !isWorkingDay(dayOfWeek, operationalHours)) {
+      // Move to next day
+      currentPHT = new Date(currentPHT);
+      currentPHT.setDate(currentPHT.getDate() + 1);
+      currentPHT.setHours(0, 0, 0, 0);
+      continue;
+    }
+    
+    // Get working hours schedule for this day
+    const daySchedule = getWorkingHoursScheduleForDay(dayOfWeek, operationalHours);
+    if (!daySchedule) {
+      // Move to next day
+      currentPHT = new Date(currentPHT);
+      currentPHT.setDate(currentPHT.getDate() + 1);
+      currentPHT.setHours(0, 0, 0, 0);
+      continue;
+    }
+    
+    // Calculate start and end times for this day
+    const dayStart = new Date(currentPHT);
+    dayStart.setHours(daySchedule.start.hour, daySchedule.start.minute, 0, 0);
+    
+    const dayEnd = new Date(currentPHT);
+    dayEnd.setHours(daySchedule.end.hour, daySchedule.end.minute, 0, 0);
+    
+    // Determine actual working period for this day
+    const workingStart = new Date(Math.max(currentPHT.getTime(), dayStart.getTime()));
+    const workingEnd = new Date(Math.min(endPHT.getTime(), dayEnd.getTime()));
+    
+    // If there's overlap, add the working hours
+    if (workingStart < workingEnd) {
+      const dayWorkingMs = workingEnd.getTime() - workingStart.getTime();
+      elapsedHours += dayWorkingMs / (1000 * 60 * 60);
+    }
+    
+    // Move to next day
+    currentPHT = new Date(currentPHT);
+    currentPHT.setDate(currentPHT.getDate() + 1);
+    currentPHT.setHours(0, 0, 0, 0);
+  }
+  
+  return elapsedHours;
+}
+
 export async function getSLAStatus(
   ticketCreatedDate: Date,
   slaHours: number,
@@ -868,15 +977,22 @@ export async function getSLAStatus(
   remainingMinutes: number;
 }> {
   const dueDate = await calculateSLADueDate(ticketCreatedDate, slaHours);
-  const diffMs = dueDate.getTime() - currentDate.getTime();
-  const remainingHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
-  const remainingMinutes = Math.max(0, Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60)));
+  
+  // Calculate elapsed operational hours
+  const elapsedOperationalHours = await calculateElapsedOperationalHours(ticketCreatedDate, currentDate);
+  
+  // Calculate remaining hours based on SLA allocation
+  const remainingOperationalHours = Math.max(0, slaHours - elapsedOperationalHours);
+  
+  // Preserve exact time without rounding
+  const remainingHours = Math.floor(remainingOperationalHours);
+  const remainingMinutes = Math.round((remainingOperationalHours - remainingHours) * 60);
   
   let status: 'on-track' | 'at-risk' | 'breached';
   
-  if (currentDate > dueDate) {
+  if (remainingOperationalHours <= 0) {
     status = 'breached';
-  } else if (remainingHours <= 2) { // At risk if less than 2 hours remaining
+  } else if (remainingOperationalHours <= 2) { // At risk if less than 2 hours remaining
     status = 'at-risk';
   } else {
     status = 'on-track';

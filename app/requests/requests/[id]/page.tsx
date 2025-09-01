@@ -2815,15 +2815,21 @@ export default function RequestViewPage() {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <CheckSquare className="h-4 w-4" />
-                    Request Status
+                    Request Details
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Status</span>
+                      <span className="text-sm text-gray-600">Request Status</span>
                       <Badge className={getStatusColor(requestData.status)} variant="outline">
-                        {requestData.status.charAt(0).toUpperCase() + requestData.status.slice(1)}
+                        {(() => {
+                          const status = requestData.status;
+                          if (status === 'for_approval') return 'For Approval';
+                          if (status === 'on_hold') return 'On Hold';
+                          if (status === 'in_progress') return 'In Progress';
+                          return status.charAt(0).toUpperCase() + status.slice(1);
+                        })()}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between">

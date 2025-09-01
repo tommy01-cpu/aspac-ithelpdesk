@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
         name,
         date: new Date(date),
         description,
-        isRecurring: isRecurring || false,
+        isRecurring: isRecurring ?? false, // Use nullish coalescing to preserve explicit false
         isActive: isActive !== undefined ? isActive : true,
       },
     });

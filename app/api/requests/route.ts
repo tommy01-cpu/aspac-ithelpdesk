@@ -7,6 +7,22 @@ import { addHistory } from '@/lib/history';
 import { calculateSLADueDate } from '@/lib/sla-calculator';
 import { notifyRequestCreated, notifyApprovalRequired, notifyRequestAssigned } from '@/lib/notifications';
 
+// Helper function to format timestamp for history display
+function formatTimestampForHistory(timestamp: Date | string): string {
+  const date = new Date(timestamp);
+  
+  // Format as "September 2, 2025 4:34 PM"
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Manila'
+  });
+}
+
 // Define the status enums as constants to match the database enums
 const REQUEST_STATUS = {
   FOR_APPROVAL: 'for_approval',
@@ -504,7 +520,7 @@ export async function POST(request: Request) {
           action: "SLA Applied",
           actorName: "System",
           actorType: "system",
-          details: `SLA "${slaData.name}" applied based on ${requestPriority} priority. Due: ${slaDueDate?.toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`,
+          details: `SLA "${slaData.name}" applied based on ${requestPriority} priority.\nDue: ${formatTimestampForHistory(slaDueDate!)}`,
         });
         console.log('✅ Created history entry: SLA Applied');
       }
@@ -1223,7 +1239,7 @@ export async function GET(request: Request) {
     // Build where clause for filtering
     let whereClause: any = {};
 
-    // Department head filtering logic
+    // Department filtering logic
     if (departmentHead && !myRequests) {
       // Department head viewing department requests
       const currentUser = await prisma.users.findUnique({
@@ -1256,6 +1272,14 @@ export async function GET(request: Request) {
           };
         }
       }
+    } else if (departmentId && departmentId !== 'all' && !myRequests) {
+      // General department filtering (for any user who wants to filter by department)
+      whereClause.user = {
+        userDepartment: {
+          id: parseInt(departmentId)
+        }
+      };
+      console.log('Filtering by department ID:', departmentId);
     } else if (myRequests === 'true') {
       // Always filter by current user only (regardless of technician status)
       whereClause.userId = parseInt(session.user.id);

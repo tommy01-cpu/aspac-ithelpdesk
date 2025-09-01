@@ -190,7 +190,7 @@ export default function AppHeader() {
               </Link>
               
               {/* Only show Reports if user is admin, technician, or has elevated privileges */}
-              {(session?.user?.isAdmin || session?.user?.isTechnician || session?.user?.isServiceApprover) && (
+              {/* {(session?.user?.isAdmin || session?.user?.isTechnician || session?.user?.isServiceApprover) && (
                 <Link href="/reports">
                   <Button 
                     variant="ghost" 
@@ -202,7 +202,7 @@ export default function AppHeader() {
                     Reports
                   </Button>
                 </Link>
-              )}
+              )} */}
               
               {/* Only show Technician View if user is a technician */}
               {session?.user?.isTechnician && (
@@ -230,11 +230,11 @@ export default function AppHeader() {
                         All Requests
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
+                    {/* <DropdownMenuItem asChild>
                       <Link href="/technician/reports" className="w-full text-white hover:text-white hover:bg-black/20">
                         Reports
                       </Link>
-                    </DropdownMenuItem>
+                    </DropdownMenuItem> */}
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}

@@ -427,8 +427,8 @@ export default function ServiceCategoriesTab() {
                           />
                         </td>
                         <td className="p-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center p-2">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center p-2">
                               {category.icon ? (
                                 <img 
                                   src={`/serviceicons/${category.icon}`} 
@@ -441,22 +441,17 @@ export default function ServiceCategoriesTab() {
                                     const parent = target.parentElement;
                                     if (parent && !parent.querySelector('.fallback-icon')) {
                                       const fallbackIcon = document.createElement('div');
-                                      fallbackIcon.className = 'fallback-icon w-5 h-5 text-blue-600';
+                                      fallbackIcon.className = 'fallback-icon w-6 h-6 text-blue-600';
                                       fallbackIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
                                       parent.appendChild(fallbackIcon);
                                     }
                                   }}
                                 />
                               ) : (
-                                <Tags className="w-5 h-5 text-blue-600" />
+                                <Tags className="w-6 h-6 text-blue-600" />
                               )}
                             </div>
-                            <div>
-                              <div className="font-medium text-slate-900">{category.name}</div>
-                              {category.description && (
-                                <div className="text-sm text-slate-500">{category.description}</div>
-                              )}
-                            </div>
+                            <div className="font-medium text-slate-900">{category.name}</div>
                           </div>
                         </td>
                         <td className="p-4 text-slate-600">{category.description || '-'}</td>
@@ -541,7 +536,7 @@ export default function ServiceCategoriesTab() {
                   </div>
                   
                   <div className="flex items-center gap-3 flex-1">
-                    <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center p-2">
+                    <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center p-2">
                       {item.icon ? (
                         <img 
                           src={`/serviceicons/${item.icon}`} 
@@ -555,7 +550,7 @@ export default function ServiceCategoriesTab() {
                           }}
                         />
                       ) : null}
-                      <Tags className={`w-5 h-5 text-blue-600 ${item.icon ? 'hidden' : ''}`} />
+                      <Tags className={`w-6 h-6 text-blue-600 ${item.icon ? 'hidden' : ''}`} />
                     </div>
                     
                     <div className="flex-1">
