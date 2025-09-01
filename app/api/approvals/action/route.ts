@@ -69,6 +69,30 @@ export async function POST(request: NextRequest) {
         historyAction = 'Requested Clarification';
         historyDetails = comments ? `Clarification requested by ${user.emp_fname} ${user.emp_lname}. Message: ${comments}` : `Clarification requested by ${user.emp_fname} ${user.emp_lname}`;
         break;
+      case 'acknowledge':
+        console.log(`🔄 Processing acknowledge action for approval ${approvalId}`);
+        console.log(`📋 Current approval before update:`, await prisma.requestApproval.findUnique({
+          where: { id: parseInt(approvalId) },
+          select: { id: true, status: true, level: true, approverEmail: true }
+        }));
+        
+        // Update approval status to acknowledged - simple update only
+        const acknowledgedApproval = await prisma.requestApproval.update({
+          where: { id: parseInt(approvalId) },
+          data: { 
+            status: ApprovalStatus.acknowledged,
+            updatedAt: new Date()
+          }
+        });
+        
+        console.log(`✅ Approval ${approvalId} acknowledged successfully. New status: ${acknowledgedApproval.status}`);
+        console.log(`📋 Approval after update:`, acknowledgedApproval);
+        
+        return NextResponse.json({ 
+          success: true, 
+          message: 'Approval acknowledged successfully',
+          approval: acknowledgedApproval
+        });
       default:
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
@@ -95,6 +119,8 @@ export async function POST(request: NextRequest) {
     });
     
     // Update the approval with new status
+    console.log(`📝 Updating approval ${approvalId} from status: ${approval.status} to: ${newApprovalStatus}`);
+    
     const updatedApproval = await prisma.requestApproval.update({
       where: { id: parseInt(approvalId) },
       data: {
@@ -103,6 +129,14 @@ export async function POST(request: NextRequest) {
         updatedAt: new Date(now.getTime() + (8 * 60 * 60 * 1000)), // Philippine time (+8 hours)
         comments: comments ? `Request ${action}d by ${user.emp_fname} ${user.emp_lname} on ${philippineTimeString}${comments ? '. Comments: ' + comments : ''}` : `Request ${action}d by ${user.emp_fname} ${user.emp_lname} on ${philippineTimeString}`
       }
+    });
+
+    console.log(`✅ Approval ${approvalId} status successfully updated to: ${updatedApproval.status}`);
+    console.log(`📊 Updated approval data:`, {
+      id: updatedApproval.id,
+      status: updatedApproval.status,
+      actedOn: updatedApproval.actedOn,
+      updatedAt: updatedApproval.updatedAt
     });
 
     // Add to request history
@@ -116,13 +150,34 @@ export async function POST(request: NextRequest) {
     });
 
     // Handle business logic based on approval action
-    if (action === 'reject') {
+    if (action === 'acknowledge') {
+      // For acknowledge action, just update the approval status and add history
+      // No additional workflow processing needed - this is just to remove from pending lists
+      console.log(`✅ Acknowledge action completed for approval ${approvalId}. Status is now: ${updatedApproval.status}`);
+      
+      // Verify the update by re-fetching the approval
+      const verifyApproval = await prisma.requestApproval.findUnique({
+        where: { id: parseInt(approvalId) },
+        select: { id: true, status: true, actedOn: true, updatedAt: true }
+      });
+      console.log(`🔍 Verification - Approval ${approvalId} in database:`, verifyApproval);
+      
+      return NextResponse.json({ 
+        success: true, 
+        message: `Request acknowledged successfully`,
+        approval: updatedApproval 
+      });
+    } else if (action === 'reject') {
       // If any approval is rejected, automatically close the request
         await prisma.request.update({
           where: { id: approval.requestId },
           data: { 
             status: RequestStatus.closed,
-            updatedAt: philippineTime // Use UTC time for database
+            updatedAt: philippineTime, // Use UTC time for database
+            formData: {
+              ...(approval.request.formData as any || {}),
+              '5': 'rejected' // Update the approval status field to rejected
+            }
           }
         });      await addHistory(prisma, {
         requestId: approval.requestId,

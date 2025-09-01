@@ -137,7 +137,13 @@ export async function GET(
             reportingToId: true,
             departmentHeadId: true,
             isServiceApprover: true,
-            isTechnician: true,
+            technician: {
+              select: {
+                id: true,
+                userId: true,
+                displayName: true,
+              }
+            },
             reportingTo: {
               select: {
                 id: true,

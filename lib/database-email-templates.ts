@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import nodemailer from 'nodemailer';
 import { getEmailConfigForService } from './email-config';
+import { processImagesForEmailAuto } from './email-image-processor-enhanced';
 
 // Database email template mapping - maps function names to template ID values
 const TEMPLATE_ID_MAPPING = {
@@ -12,6 +13,7 @@ const TEMPLATE_ID_MAPPING = {
   'APPROVAL_REQUIRED': 12, // notify-approver-approval
   'APPROVAL_REMINDER': 13, // approval-reminder
   'REQUEST_APPROVED_REJECTED': 14, // notify-approval-status
+  'APPROVER_ADDED': 30, // notify-approver-added (CORRECT ID)
   
   // Clarification templates
   'CLARIFICATION_REQUIRED': 15, // notify-clarification
@@ -562,6 +564,34 @@ export const sendApprovalRequiredEmail = async (
   }
 };
 
+// Approver added email (Template ID 30 - notify-approver-added)
+export const sendApproverAddedEmail = async (
+  approverEmail: string, 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending approver added email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(30, variables, approverEmail);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 30');
+    }
+    
+    const result = await sendEmail({
+      to: approverEmail,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Approver added email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending approver added email:', error);
+    return false;
+  }
+};
+
 // Request approved/rejected email (Template ID 14 - notify-approval-status)
 export const sendRequestApprovedRejectedEmail = async (
   requesterEmail: string, 
@@ -783,95 +813,5 @@ export const sendClarificationReminderEmail = async (
   } catch (error) {
     console.error('❌ Error sending clarification reminder email:', error);
     return false;
-  }
-};
-
-/**
- * Send email notification to new approver when added to a request
- */
-export const sendNewApproverNotificationEmail = async (
-  approverEmail: string,
-  approverName: string,
-  requestDetails: {
-    requestId: number;
-    requestTitle: string;
-    requesterName: string;
-    serviceName: string;
-    categoryName: string;
-    level: number;
-    priority: string;
-    createdAt: Date;
-  },
-  templateType: string = 'APPROVAL_REQUIRED'
-) => {
-  try {
-    // Try to get template from database
-    const templateId = getTemplateIdByType(templateType as TemplateType);
-    if (templateId) {
-      const baseUrl = getBaseUrl();
-      const requestUrl = `${baseUrl}/requests/view/${requestDetails.requestId}`;
-      const approval_link = `${baseUrl}/approvals?requestId=${requestDetails.requestId}`;
-      
-      const variables = {
-        Approver_Name: approverName,
-        Request_ID: requestDetails.requestId.toString(),
-        Request_Title: requestDetails.requestTitle,
-        Request_Subject: requestDetails.requestTitle,
-        Request_Description: `Service: ${requestDetails.serviceName}\nCategory: ${requestDetails.categoryName}`,
-        Requester_Name: requestDetails.requesterName,
-        Service_Name: requestDetails.serviceName,
-        Category_Name: requestDetails.categoryName,
-        Approval_Level: requestDetails.level.toString(),
-        Priority: requestDetails.priority,
-        Created_Date: requestDetails.createdAt.toLocaleDateString(),
-        Request_URL: requestUrl,
-        approval_link: approval_link,
-        Base_URL: baseUrl,
-        Encoded_Approval_URL: encodeURIComponent(approval_link)
-      };
-
-      const emailContent = await sendEmailWithTemplateId(templateId, variables, approverEmail);
-      if (emailContent) {
-        return sendEmail({
-          to: approverEmail,
-          subject: emailContent.subject,
-          message: emailContent.textContent,
-          htmlMessage: emailContent.htmlContent,
-        });
-      }
-    }
-
-    // Fallback template if database template not found
-    const baseUrl = getBaseUrl();
-    const approval_link = `${baseUrl}/approvals?requestId=${requestDetails.requestId}`;
-    
-    const fallbackSubject = `IT HELPDESK: New Approval Request - ${requestDetails.requestId}`;
-    const fallbackMessage = `Dear ${approverName},
-
-You have been added as an approver for the following IT Helpdesk request:
-
-Request ID: ${requestDetails.requestId}
-Title: ${requestDetails.requestTitle}
-Requester: ${requestDetails.requesterName}
-Service: ${requestDetails.serviceName}
-Category: ${requestDetails.categoryName}
-Priority: ${requestDetails.priority}
-Approval Level: ${requestDetails.level}
-
-Please review and take action on this request by clicking the link below:
-${approval_link}
-
-Thank you,
-IT Helpdesk Team`;
-
-    return sendEmail({
-      to: approverEmail,
-      subject: fallbackSubject,
-      message: fallbackMessage,
-    });
-
-  } catch (error) {
-    console.error('Error sending new approver notification email:', error);
-    throw error;
   }
 };

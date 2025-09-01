@@ -3,6 +3,7 @@ import {
   sendRequestCreatedEmail, 
   sendRequestCreatedCCEmail, 
   sendApprovalRequiredEmail,
+  sendApproverAddedEmail,
   sendRequestApprovedRejectedEmail,
   sendClarificationRequiredEmail,
   sendRequestAssignedRequesterEmail,
@@ -44,6 +45,30 @@ const sanitizeEmailVariables = (variables: any): Record<string, string> => {
   return sanitized;
 };
 
+// Helper function to create default email variables with all required fields
+const createDefaultEmailVariables = (overrides: Partial<RequestEmailVariables> = {}): RequestEmailVariables => {
+  return {
+    Request_ID: '',
+    Request_Status: '',
+    Request_Subject: '',
+    Request_Description: '',
+    Requester_Name: '',
+    Requester_Email: '',
+    Request_Title: '',
+    Approver_Name: '',
+    Approver_Email: '',
+    Approval_Comments: '',
+    Request_Approval_Status: '',
+    Request_Approval_Comment: '',
+    Clarification: '',
+    Request_URL: '',
+    Request_Link: '',
+    Base_URL: '',
+    Encoded_Request_URL: '',
+    ...overrides
+  };
+};
+
 export type NotificationType = 
   | 'REQUEST_CREATED'
   | 'REQUEST_APPROVED'
@@ -76,6 +101,8 @@ export interface RequestEmailVariables extends Record<string, string> {
   Approver_Name: string;
   Approver_Email: string;
   Approval_Comments: string;
+  Request_Approval_Status: string; // Added for email template compatibility
+  Request_Approval_Comment: string; // Added for email template compatibility
   Clarification: string;
   Request_URL: string;
   Request_Link: string;
@@ -211,6 +238,8 @@ export const notifyRequestCreated = async (requestData: any, templateData: any) 
       Approver_Name: '', // Not applicable for request creation
       Approver_Email: '', // Not applicable for request creation
       Approval_Comments: '', // Not applicable for request creation
+      Request_Approval_Status: '', // Not applicable for request creation
+      Request_Approval_Comment: '', // Not applicable for request creation
       Clarification: '', // Not applicable for request creation
       Request_URL: requestUrl,
       Request_Link: requestUrl,
@@ -291,7 +320,7 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
     const encodedApprovalUrl = encodeURIComponent(approvalUrl);
 
     // Email variables
-    const emailVariables: RequestEmailVariables = {
+    const emailVariables: RequestEmailVariables = createDefaultEmailVariables({
       Request_ID: requestId.toString(),
       Request_Status: formatStatusForDisplay(requestData.status || 'for_approval'),
       Request_Subject: requestSubject,
@@ -301,19 +330,22 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
       Request_Title: requestSubject,
       Approver_Name: approverName,
       Approver_Email: approverEmail,
-      Approval_Comments: '', // Not applicable for approval request
-      Clarification: '', // Not applicable for approval request
       Request_URL: requestUrl,
       Request_Link: requestUrl,
       Base_URL: baseUrl,
       Encoded_Request_URL: encodedRequestUrl,
+    });
+
+    // Add extra properties for approval emails
+    const extendedVariables = {
+      ...emailVariables,
       Encoded_Approval_URL: encodedApprovalUrl,
       approval_link: approvalUrl,
     };
 
     // Send email to approver
     if (approverEmail) {
-      await sendApprovalRequiredEmail(approverEmail, sanitizeEmailVariables(emailVariables));
+      await sendApprovalRequiredEmail(approverEmail, sanitizeEmailVariables(extendedVariables));
     }
 
     // Create in-app notification for approver
@@ -429,7 +461,7 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
     const encodedRequestUrl = encodeURIComponent(requestUrl);
 
     // Email variables for requester
-    const requesterEmailVariables: RequestEmailVariables = {
+    const requesterEmailVariables: RequestEmailVariables = createDefaultEmailVariables({
       Request_ID: requestId.toString(),
       Request_Status: formatStatusForDisplay(requestData.status),
       Request_Subject: requestSubject,
@@ -439,17 +471,15 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
       Requester_Email: requesterEmail,
       Approver_Name: '', // Not applicable for assignment
       Approver_Email: '', // Not applicable for assignment
-      Approval_Comments: '', // Not applicable for assignment
-      Clarification: '', // Not applicable for assignment
       Technician_Name: technicianName,
       Request_URL: requestUrl,
       Request_Link: requestUrl,
       Base_URL: baseUrl,
       Encoded_Request_URL: encodedRequestUrl,
-    };
+    });
 
     // Email variables for technician
-    const technicianEmailVariables: RequestEmailVariables = {
+    const technicianEmailVariables: RequestEmailVariables = createDefaultEmailVariables({
       Request_ID: requestId.toString(),
       Request_Status: formatStatusForDisplay(requestData.status),
       Request_Subject: requestSubject,
@@ -459,15 +489,13 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
       Requester_Email: requesterEmail,
       Approver_Name: '', // Not applicable for assignment
       Approver_Email: '', // Not applicable for assignment
-      Approval_Comments: '', // Not applicable for assignment
-      Clarification: '', // Not applicable for assignment
       Technician_Name: technicianName,
       Due_By_Date: dueDate,
       Request_URL: requestUrl,
       Request_Link: requestUrl,
       Base_URL: baseUrl,
       Encoded_Request_URL: encodedRequestUrl,
-    };
+    });
 
     // Send email to requester (4.1.8)
     if (requesterEmail) {
@@ -551,7 +579,7 @@ export const notifyRequestResolved = async (
     const encodedRequestUrl = encodeURIComponent(requestUrl);
 
     // Email variables
-    const emailVariables: RequestEmailVariables = {
+    const emailVariables: RequestEmailVariables = createDefaultEmailVariables({
       Request_ID: requestId.toString(),
       Request_Status: formatStatusForDisplay(requestData.status),
       Request_Subject: requestSubject,
@@ -561,8 +589,6 @@ export const notifyRequestResolved = async (
       Request_Title: requestSubject,
       Approver_Name: '', // Not applicable for resolution
       Approver_Email: '', // Not applicable for resolution
-      Approval_Comments: '', // Not applicable for resolution
-      Clarification: '', // Not applicable for resolution
       Resolution_Description: resolutionDescription,
       Request_Resolution: resolutionDescription,
       Close_Request_Link: closeRequestLink,
@@ -570,7 +596,7 @@ export const notifyRequestResolved = async (
       Request_Link: requestUrl,
       Base_URL: baseUrl,
       Encoded_Request_URL: encodedRequestUrl,
-    };
+    });
 
     // Send email to requester (4.1.11)
     if (requesterEmail) {
@@ -641,7 +667,7 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
     const encodedTechnicianUrl = encodeURIComponent(technicianUrl);
 
     // Email variables
-    const emailVariables: RequestEmailVariables = {
+    const emailVariables: RequestEmailVariables = createDefaultEmailVariables({
       Request_ID: requestId.toString(),
       Request_Status: formatStatusForDisplay(requestData.status),
       Request_Subject: requestSubject,
@@ -651,8 +677,6 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
       Requester_Email: requestData.user.emp_email,
       Approver_Name: '', // Not applicable for SLA escalation
       Approver_Email: '', // Not applicable for SLA escalation
-      Approval_Comments: '', // Not applicable for SLA escalation
-      Clarification: '', // Not applicable for SLA escalation
       Technician_Name: technicianName,
       Due_By_Date: dueDate,
       Request_URL: technicianUrl,
@@ -660,7 +684,7 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
       Base_URL: baseUrl,
       Encoded_Request_URL: encodedRequestUrl,
       Encoded_Technician_URL: encodedTechnicianUrl,
-    };
+    });
 
     // Send email to technician
     if (technicianEmail) {
@@ -718,10 +742,19 @@ export const sendApprovalOutcomeNotification = async (
     }
 
     const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
-    const requestSubject = (requestData.formData as any)?.subject || (requestData.formData as any)?.title || `Request #${requestId}`;
+    
+    // Debug: Log the formData structure
+    console.log('🔍 DEBUG: Request formData structure:', JSON.stringify(requestData.formData, null, 2));
+    console.log('🔍 DEBUG: formData keys:', Object.keys(requestData.formData || {}));
+    console.log('🔍 DEBUG: formData[8]:', (requestData.formData as any)?.[8]);
+    console.log('🔍 DEBUG: formData[9]:', (requestData.formData as any)?.[9]);
+    console.log('🔍 DEBUG: formData["8"]:', (requestData.formData as any)?.['8']);
+    console.log('🔍 DEBUG: formData["9"]:', (requestData.formData as any)?.['9']);
+    
+    const requestSubject = (requestData.formData as any)?.['8'] || `Request #${requestId}`;
 
     // Process request description
-    const rawRequestDescription = (requestData.formData as any)?.description || (requestData.formData as any)?.details || 'No description provided';
+    const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
 
     // Generate base URL and request URLs
@@ -741,6 +774,8 @@ export const sendApprovalOutcomeNotification = async (
       Approver_Name: '', // TODO: Add approver name if available
       Approver_Email: '', // TODO: Add approver email if available
       Approval_Comments: action === 'rejected' && comments ? comments : '',
+      Request_Approval_Status: action === 'approved' ? 'Approved' : 'Rejected', // Added for template compatibility
+      Request_Approval_Comment: action === 'rejected' && comments ? comments : '', // Added for template compatibility
       Clarification: '', // Not applicable for approval outcome
       Request_URL: requestUrl,
       Request_Link: requestUrl,
@@ -845,6 +880,8 @@ export const sendClarificationRequestNotification = async (
       Approver_Name: '', // Not applicable for clarification request
       Approver_Email: '', // Not applicable for clarification request
       Approval_Comments: '', // Not applicable for clarification request
+      Request_Approval_Status: '', // Not applicable for clarification request
+      Request_Approval_Comment: '', // Not applicable for clarification request
       Clarification: comments || 'Clarification required for your request', // Use provided comment or default message
       Request_URL: requestUrl,
       Request_Link: requestUrl,
@@ -884,3 +921,101 @@ export const sendClarificationRequestNotification = async (
     return false;
   }
 };
+
+// Function to notify when a new approver is added to a request
+export const notifyNewApprover = async (
+  requestId: number,
+  approverData: {
+    id: number;
+    emp_email: string;
+    emp_fname: string;
+    emp_lname: string;
+  },
+  level: number
+): Promise<boolean> => {
+  try {
+    console.log(`=== SENDING NEW APPROVER NOTIFICATION ===`);
+    console.log(`Request ID: ${requestId}, Approver: ${approverData.emp_email}`);
+
+    // Get request data including user details
+    const requestData = await prisma.request.findUnique({
+      where: { id: requestId },
+      include: {
+        user: true
+      }
+    });
+
+    if (!requestData) {
+      console.error(`Request ${requestId} not found`);
+      return false;
+    }
+
+    const approverEmail = approverData.emp_email;
+    const approverName = `${approverData.emp_fname} ${approverData.emp_lname}`.trim();
+    const requesterName = `${requestData.user.emp_fname} ${requestData.user.emp_lname}`.trim();
+    
+    // Extract request details
+    const requestSubject = (requestData.formData as any)?.['8'] || `Request #${requestId}`;
+    const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
+    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+
+    // Generate base URL and request URLs
+    const baseUrl = getBaseUrl();
+    const approvalUrl = `${baseUrl}/requests/approvals/${requestId}`;
+    const encodedApprovalUrl = encodeURIComponent(approvalUrl);
+
+    // Email variables
+    const emailVariables: RequestEmailVariables = createDefaultEmailVariables({
+      Request_ID: requestId.toString(),
+      Request_Status: formatStatusForDisplay('for_approval'),
+      Request_Subject: requestSubject,
+      Request_Description: requestDescription,
+      Requester_Name: requesterName,
+      Requester_Email: requestData.user.emp_email,
+      Request_Title: requestSubject,
+      Approver_Name: approverName,
+      Approver_Email: approverEmail,
+      Request_URL: approvalUrl,
+      Request_Link: approvalUrl,
+      Base_URL: baseUrl,
+      Encoded_Request_URL: encodedApprovalUrl,
+    });
+
+    // Add extra properties for approval emails
+    const extendedVariables = {
+      ...emailVariables,
+      approval_link: approvalUrl,
+    };
+
+    // Send email notification using the APPROVER_ADDED template
+    await sendApproverAddedEmail(approverEmail, sanitizeEmailVariables(extendedVariables));
+    
+    // Create in-app notification for the new approver
+    const notificationTitle = `New Approval Assignment: Request #${requestId}`;
+    const notificationMessage = `You have been assigned as an approver for "${requestSubject}" from ${requesterName}.`;
+    
+    await createNotification({
+      userId: approverData.id,
+      type: 'APPROVAL_REQUIRED',
+      title: notificationTitle,
+      message: notificationMessage,
+      data: {
+        requestId: requestId.toString(),
+        requestSubject,
+        requesterName,
+        level,
+        action: 'new_approver',
+        redirectUrl: approvalUrl
+      }
+    });
+    
+    console.log(`✅ New approver notification sent to ${approverEmail} (email + in-app)`);
+    return true;
+
+  } catch (error) {
+    console.error('Error sending new approver notification:', error);
+    return false;
+  }
+};
+
+

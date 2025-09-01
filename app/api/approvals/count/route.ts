@@ -8,7 +8,8 @@ const APPROVAL_STATUS = {
   PENDING_APPROVAL: 'pending_approval',
   FOR_CLARIFICATION: 'for_clarification', 
   REJECTED: 'rejected',
-  APPROVED: 'approved'
+  APPROVED: 'approved',
+  ACKNOWLEDGED: 'acknowledged'
 } as const;
 
 export async function GET(request: NextRequest) {

@@ -182,8 +182,9 @@ const shouldShowApprovalStatus = (requestStatus: string, approvals?: RequestAppr
     return false;
   }
   
-  // Show for requests that are in approval process or have completed approval
-  return requestStatus === 'for_approval' || approvals.some(approval => approval.status === 'approved');
+  // Show for requests that are in approval process or have completed approval (approved or rejected)
+  return requestStatus === 'for_approval' || 
+         approvals.some(approval => approval.status === 'approved' || approval.status === 'rejected');
 };
 
 // Get status icon based on request status enum values

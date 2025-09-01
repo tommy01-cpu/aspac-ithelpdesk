@@ -723,6 +723,7 @@ enum ApprovalStatus {
   for_clarification
   rejected
   approved
+  acknowledged
 }
 
 enum RequestStatus {

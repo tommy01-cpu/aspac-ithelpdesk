@@ -327,9 +327,20 @@ class SafeSLAMonitoringService {
    */
   private async getSLAServiceForRequest(request: any): Promise<any> {
     try {
+      // Convert templateId to integer if it's a string
+      const templateId = typeof request.templateId === 'string' 
+        ? parseInt(request.templateId, 10) 
+        : request.templateId;
+
+      // Skip if templateId is not a valid number
+      if (!templateId || isNaN(templateId)) {
+        console.warn(`Invalid template ID for request ${request.id}: ${request.templateId}`);
+        return this.getDefaultSLAByPriority(request.priority || 'Low');
+      }
+
       // Find SLA service based on template ID
       const template = await prisma.template.findFirst({
-        where: { id: request.templateId },
+        where: { id: templateId },
         include: {
           slaService: {
             include: {

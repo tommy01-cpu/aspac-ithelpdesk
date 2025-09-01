@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Search, Bell, Settings, User, LogOut, KeyRound, ChevronDown } from "lucide-react";
+import { Search, Bell, Settings, User, LogOut, KeyRound, ChevronDown, Clock } from "lucide-react";
 import { cn } from "../lib/utils";
 import NotificationDropdown from "@/components/NotificationDropdown";
 
@@ -36,7 +36,33 @@ export default function AppHeader() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
   const pathname = usePathname();
+
+  // Fetch pending approvals count
+  useEffect(() => {
+    const fetchPendingApprovals = async () => {
+      if (!session?.user) return;
+      
+      try {
+        const response = await fetch('/api/approvals/pending');
+        if (response.ok) {
+          const data = await response.json();
+          setPendingApprovalsCount(data.approvals?.length || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching pending approvals:', error);
+        setPendingApprovalsCount(0);
+      }
+    };
+
+    fetchPendingApprovals();
+    
+    // Refresh every 30 seconds to keep count updated
+    const interval = setInterval(fetchPendingApprovals, 30000);
+    
+    return () => clearInterval(interval);
+  }, [session]);
 
   // Password validation helper
   const validatePassword = (password: string) => {
@@ -182,12 +208,27 @@ export default function AppHeader() {
                   variant="ghost" 
                   className={cn(
                     "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
-                    pathname?.startsWith("/requests") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                    pathname?.startsWith("/requests") && !pathname?.startsWith("/requests/approvals") ? "bg-black/20 text-white" : "hover:bg-black/10"
                   )}
                 >
                   Requests
                 </Button>
               </Link>
+
+              {/* Approvals tab - only show if there are pending approvals */}
+              {pendingApprovalsCount > 0 && (
+                <Link href="/requests/approvals">
+                  <Button 
+                    variant="ghost" 
+                    className={cn(
+                      "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                      pathname?.startsWith("/requests/approvals") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                    )}
+                  >
+                    Approvals
+                  </Button>
+                </Link>
+              )}
               
               {/* Only show Reports if user is admin, technician, or has elevated privileges */}
               {/* {(session?.user?.isAdmin || session?.user?.isTechnician || session?.user?.isServiceApprover) && (

@@ -15,7 +15,11 @@ import {
   Eye,
   ArrowLeft,
   MessageSquare,
-  History
+  History,
+  Paperclip,
+  Download,
+  Settings,
+  UserCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,6 +30,15 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { SessionWrapper } from '@/components/session-wrapper';
 import { toast } from '@/hooks/use-toast';
 import { getStatusColor, getPriorityColor, getApprovalStatusColor } from '@/lib/status-colors';
+
+// Helper function to format file sizes
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
 
 // Component for individual approval message input
 const ApprovalMessageInput = ({ 
@@ -157,6 +170,10 @@ export default function ApprovalDetailsPage() {
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [selectedApproval, setSelectedApproval] = useState<PendingApproval | null>(null);
   const [requestDetails, setRequestDetails] = useState<RequestDetails | null>(null);
+  const [templateData, setTemplateData] = useState<any>(null);
+  const [attachments, setAttachments] = useState<any[]>([]);
+  const [requestConversations, setRequestConversations] = useState<any[]>([]);
+  const [downloading, setDownloading] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [allApprovals, setAllApprovals] = useState<any[]>([]); // full list for duplicate detection
   const [history, setHistory] = useState<HistoryRecord[]>([]);
@@ -172,6 +189,7 @@ export default function ApprovalDetailsPage() {
   const [clarificationMessage, setClarificationMessage] = useState('');
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showAcknowledgeModal, setShowAcknowledgeModal] = useState(false);
   const [approvalComment, setApprovalComment] = useState('');
   // Mounted ref to prevent state updates after navigation/unmount
   const isMounted = useRef(true);
@@ -236,6 +254,9 @@ export default function ApprovalDetailsPage() {
 
       const data = await response.json();
       setRequestDetails(data.request);
+      setTemplateData(data.template);
+      setAttachments(data.attachments || []);
+      setRequestConversations(data.conversations || []);
     } catch (error) {
       console.error('Error fetching request details:', error);
       toast({
@@ -244,6 +265,51 @@ export default function ApprovalDetailsPage() {
         variant: "destructive"
       });
     }
+  };
+
+  const handleDownloadAttachment = async (attachmentId: string, originalName: string) => {
+    try {
+      setDownloading(attachmentId);
+      const response = await fetch(`/api/attachments/${attachmentId}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to download file');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = originalName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Success",
+        description: `Downloaded ${originalName}`,
+      });
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      toast({
+        title: "Error",
+        description: "Failed to download file",
+        variant: "destructive"
+      });
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   const fetchApprovals = async (reqId: number) => {
@@ -537,11 +603,16 @@ export default function ApprovalDetailsPage() {
     router.push(`/requests/approvals/${approval.requestId}`);
   };
 
-  const filteredApprovals = pendingApprovals.filter(approval =>
-    approval.requestTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    approval.requesterName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    approval.requestId.toString().includes(searchTerm)
-  );
+  const filteredApprovals = pendingApprovals
+    .filter(approval =>
+      approval.requestTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      approval.requesterName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      approval.requestId.toString().includes(searchTerm)
+    )
+    .sort((a, b) => {
+      // Sort by requestId in descending order (most recent first)
+      return b.requestId - a.requestId;
+    });
 
   const handleClarificationRequest = async () => {
     if (!selectedApproval || !clarificationMessage.trim()) return;
@@ -699,6 +770,56 @@ export default function ApprovalDetailsPage() {
     }
   };
 
+  const handleAcknowledgeAction = async () => {
+    if (!selectedApproval) return;
+
+    try {
+      setActionLoading('acknowledge');
+      
+      const response = await fetch('/api/approvals/action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          approvalId: selectedApproval.id,
+          action: 'acknowledge',
+          comments: `Request acknowledged by ${session?.user?.name || 'Approver'} on ${new Date().toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}`,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to acknowledge request');
+      }
+
+      toast({
+        title: "Success",
+        description: "Request acknowledged successfully",
+      });
+
+      // Navigate immediately to approvals list
+      router.replace('/requests/approvals');
+      return;
+      
+    } catch (error) {
+      console.error('Error acknowledging request:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to acknowledge request",
+        variant: "destructive"
+      });
+    } finally {
+      if (isMounted.current) setActionLoading(null);
+    }
+  };
+
   // Format DB timestamp string without timezone conversion.
   // Supports: "YYYY-MM-DD HH:mm[:ss]", "YYYY/MM/DD HH:mm[:ss]", and ISO-like strings; ignores trailing timezone markers like 'Z' or offsets.
   const formatDbTimestampDisplay = (
@@ -745,10 +866,6 @@ export default function ApprovalDetailsPage() {
     return `${datePart}, ${hh}:${mi} ${ampm}`;
   };
 
-  const formatDate = (dateString: string) => {
-    return formatDbTimestampDisplay(dateString, { shortFormat: true });
-  };
-
   // Normalize approval status strings to a consistent set for safe rendering
   const normalizeStatus = (val: unknown): string => {
     if (!val) return 'pending approval';
@@ -766,16 +883,29 @@ export default function ApprovalDetailsPage() {
     return n.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
 
+  // Check if any approval in the request has been rejected
+  const hasAnyRejectedApproval = (): boolean => {
+    return allApprovals.some(approval => normalizeStatus(approval.status) === 'rejected');
+  };
+
   const getApprovalStatusDisplay = () => {
     if (!requestDetails) return { text: 'Pending Approval', color: getApprovalStatusColor('pending approval') };
     
-    // Check the overall request approval status first
+    // Check if any approval has been rejected first
+    if (hasAnyRejectedApproval()) {
+      return { text: 'Rejected', color: getApprovalStatusColor('rejected') };
+    }
+    
+    // Check the overall request approval status
     const formData = requestDetails.formData || {};
     const overallApprovalStatus = normalizeStatus(formData['5'] || 'pending approval');
     
-    // If all approvals are complete, show the overall status
+    // If overall status is final (approved), show the overall status
     if (overallApprovalStatus === 'approved') {
       return { text: 'Approved', color: getApprovalStatusColor('approved') };
+    }
+    if (overallApprovalStatus === 'rejected') {
+      return { text: 'Rejected', color: getApprovalStatusColor('rejected') };
     }
     
     // If there's a selected approval, show its specific status with more context
@@ -971,7 +1101,7 @@ export default function ApprovalDetailsPage() {
                   <div className="relative mt-3">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
-                      placeholder="Search Approvals"
+                      placeholder="Search..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-10"
@@ -1014,23 +1144,7 @@ export default function ApprovalDetailsPage() {
                                 <p className="text-xs text-gray-600 mt-1">
                                   by {approval.requesterName} on {formatDbTimestampDisplay(approval.createdDate, { shortFormat: true })}
                                 </p>
-                                <div className="flex items-center justify-between mt-2">
-                                  <span className="text-xs text-gray-500">
-                                    DueBy: {approval.dueDate ? formatDbTimestampDisplay(approval.dueDate, { dateOnly: true }) : 'N/A'}
-                                  </span>
-                                </div>
-                                <div className="mt-2">
-                                  <Button
-                                    size="sm"
-                                    className="text-xs bg-blue-600 hover:bg-blue-700 text-white"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRequestSelect(approval);
-                                    }}
-                                  >
-                                    Take Action
-                                  </Button>
-                                </div>
+
                               </div>
                             </div>
                           </div>
@@ -1056,7 +1170,7 @@ export default function ApprovalDetailsPage() {
                           </div>
                           <div>
                             <CardTitle className="text-xl font-semibold text-gray-900">
-                              #{requestDetails.id} {requestDetails.templateName}
+                              #{requestDetails.id} {requestDetails.formData?.['8'] || requestDetails.templateName}
                             </CardTitle>
                             <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
                               <span className="flex items-center gap-1">
@@ -1093,26 +1207,204 @@ export default function ApprovalDetailsPage() {
                           <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
                             <div className="prose prose-sm max-w-none">
                               {(() => {
-                                const description = getDescriptionContent();
+                                // Try to find description from multiple possible field names and numbered fields
+                                const formData = requestDetails.formData || {};
+                                let description = null;
                                 
-                                // Check if description contains HTML tags (from Quill editor)
-                                if (/<[^>]*>/g.test(description)) {
-                                  return (
-                                    <div 
-                                      className="text-gray-700 leading-relaxed"
-                                      dangerouslySetInnerHTML={{ __html: description }}
-                                    />
-                                  );
+                                // First check field 9 which is the actual description field
+                                if (formData['9']) {
+                                  description = formData['9'];
                                 } else {
-                                  return (
-                                    <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
-                                      {description}
-                                    </p>
-                                  );
+                                  // Check common description field names as fallback
+                                  const descriptionFields = [
+                                    'description', 'Description', 'details', 'Details', 
+                                    'content', 'Content', 'notes', 'Notes', 'comments', 'Comments',
+                                    'message', 'Message', 'problem', 'Problem', 'issue', 'Issue'
+                                  ];
+                                  
+                                  // Check named fields
+                                  for (const field of descriptionFields) {
+                                    if (formData[field]) {
+                                      description = formData[field];
+                                      break;
+                                    }
+                                  }
+                                  
+                                  // If still not found, check numbered fields (like "2", "3", etc.)
+                                  if (!description) {
+                                    for (const [key, value] of Object.entries(formData)) {
+                                      if (value && typeof value === 'string' && value.length > 10) {
+                                        // Check if it's a textarea or richtext field based on content length and structure
+                                        if (value.includes('\n') || value.length > 50 || /<[^>]*>/g.test(value)) {
+                                          description = value;
+                                          break;
+                                        }
+                                      }
+                                    }
+                                  }
                                 }
+                                
+                                if (description) {
+                                  // Check if description contains HTML tags (from Quill editor)
+                                  if (/<[^>]*>/g.test(description)) {
+                                    return (
+                                      <div 
+                                        className="text-gray-700 leading-relaxed"
+                                        dangerouslySetInnerHTML={{ __html: description }}
+                                      />
+                                    );
+                                  } else {
+                                    return (
+                                      <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
+                                        {description}
+                                      </p>
+                                    );
+                                  }
+                                }
+                                
+                                return <p className="text-gray-500 italic">No description provided.</p>;
                               })()}
                             </div>
                           </div>
+                        </div>
+
+                        {/* Attachments - as separate section */}
+                        {attachments.length > 0 && (
+                          <div>
+                            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                              <div className="w-1 h-5 bg-blue-600 rounded"></div>
+                              Attachments
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {attachments.map((attachment) => (
+                                <div 
+                                  key={attachment.id} 
+                                  className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50"
+                                >
+                                  <Paperclip className="h-4 w-4 text-gray-500" />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-900 truncate">
+                                      {attachment.originalName}
+                                    </p>
+                                    <p className="text-xs text-gray-500">
+                                      {formatFileSize(attachment.size)}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDownloadAttachment(attachment.id, attachment.originalName)}
+                                    disabled={downloading === attachment.id}
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Notes - as separate section */}
+                        <div>
+                          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                            <div className="w-1 h-5 bg-blue-600 rounded"></div>
+                            Notes
+                          </h3>
+                          {requestConversations.length > 0 ? (
+                            <div className="space-y-4">
+                              {requestConversations.map((conversation) => (
+                                <div key={conversation.id} className="border rounded-lg p-4 bg-gray-50">
+                                  <div className="flex gap-3">
+                                    <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
+                                      {conversation.type === 'system' ? (
+                                        <Settings className="h-4 w-4 text-gray-600" />
+                                      ) : conversation.type === 'user' ? (
+                                        <User className="h-4 w-4 text-blue-600" />
+                                      ) : (
+                                        <UserCheck className="h-4 w-4 text-green-600" />
+                                      )}
+                                    </div>
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2 text-sm">
+                                        <span className="font-medium">{conversation.author}</span>
+                                        <span className="text-gray-500">
+                                          {new Date(conversation.timestamp).toLocaleDateString('en-US', {
+                                            year: 'numeric',
+                                            month: 'short',
+                                            day: 'numeric',
+                                            hour: '2-digit',
+                                            minute: '2-digit'
+                                          })}
+                                        </span>
+                                      </div>
+                                      <div className="mt-1">
+                                        {(() => {
+                                          // Check if message contains HTML tags (from rich text editor)
+                                          const isHTML = /<[^>]*>/g.test(conversation.message);
+                                          
+                                          if (isHTML) {
+                                            return (
+                                              <div 
+                                                className="text-sm text-gray-600 prose prose-sm max-w-none"
+                                                dangerouslySetInnerHTML={{ __html: conversation.message }}
+                                              />
+                                            );
+                                          } else {
+                                            return (
+                                              <p className="text-sm text-gray-600 whitespace-pre-wrap">
+                                                {conversation.message}
+                                              </p>
+                                            );
+                                          }
+                                        })()}
+                                        {/* Display attachments if they exist */}
+                                        {conversation.attachments && conversation.attachments.length > 0 && (
+                                          <div className="mt-3 space-y-2">
+                                            <p className="text-xs font-medium text-gray-500 mb-2">Attachments:</p>
+                                            {conversation.attachments.map((attachment: any, index: number) => (
+                                              <div key={index} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg border">
+                                                <Paperclip className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                                <div className="flex-1 min-w-0">
+                                                  <p className="text-sm font-medium text-gray-900 truncate">
+                                                    {typeof attachment === 'string' ? attachment : attachment.originalName}
+                                                  </p>
+                                                  {typeof attachment === 'object' && attachment.size && (
+                                                    <p className="text-xs text-gray-500">
+                                                      {formatFileSize(attachment.size)}
+                                                    </p>
+                                                  )}
+                                                </div>
+                                                {typeof attachment === 'object' && attachment.id && (
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleDownloadAttachment(attachment.id, attachment.originalName)}
+                                                    disabled={downloading === attachment.id}
+                                                    className="h-8 w-8 p-0"
+                                                  >
+                                                    {downloading === attachment.id ? (
+                                                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600"></div>
+                                                    ) : (
+                                                      <Download className="h-4 w-4" />
+                                                    )}
+                                                  </Button>
+                                                )}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg text-center">
+                              <MessageSquare className="h-5 w-5 text-gray-400 mx-auto mb-2" />
+                              <p className="text-gray-500 text-sm">No notes found</p>
+                            </div>
+                          )}
                         </div>
 
                         {/* Request Details Grid */}
@@ -1121,130 +1413,77 @@ export default function ApprovalDetailsPage() {
                             <div className="w-1 h-5 bg-blue-600 rounded"></div>
                             Request Details
                           </h3>
-                          <div className="grid grid-cols-2 gap-6 text-sm">
-                            <div className="space-y-4">
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Request Type</label>
-                                <p className="text-gray-900 mt-1 capitalize">{requestDetails.type}</p>
+                          <div className="grid grid-cols-2 gap-8">
+                            <div className="space-y-5">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-gray-700">Request Status</span>
+                                <Badge className={getStatusColor(requestDetails.status)} variant="outline">
+                                  {requestDetails.status === 'for_approval' 
+                                    ? 'For Approval' 
+                                    : requestDetails.status.charAt(0).toUpperCase() + requestDetails.status.slice(1)}
+                                </Badge>
                               </div>
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Mode</label>
-                                <p className="text-gray-900 mt-1">Self-Service Portal</p>
+                             
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-gray-700">Mode</span>
+                                <span className="text-sm text-gray-600">Self-Service Portal</span>
                               </div>
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Service Category</label>
-                                <p className="text-gray-900 mt-1">Special Projects</p>
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-gray-700">Request Type</span>
+                                <span className="text-sm text-gray-600 capitalize">{requestDetails.formData?.['4'] || requestDetails.formData?.type || 'Request'}</span>
                               </div>
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Department</label>
-                                <p className="text-gray-900 mt-1">{requestDetails.user.department || 'Information Technology'}</p>
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-gray-700">Service Category</span>
+                                <span className="text-sm text-gray-600">{requestDetails.formData?.['6'] || '-'}</span>
                               </div>
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Created Date</label>
-                                <p className="text-gray-900 mt-1">{formatDate(requestDetails.createdAt)}</p>
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-gray-700">Template</span>
+                                <span className="text-sm text-gray-600">{templateData?.name || requestDetails.templateName || '-'}</span>
                               </div>
-                              {/* <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Last Update Time</label>
-                                <p className="text-gray-900 mt-1">{formatDate(requestDetails.updatedAt)}</p>
-                              </div> */}
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-gray-700">SLA</span>
+                                <span className="text-sm text-gray-600">
+                                  {requestDetails.formData?.slaName
+                                    ? String(requestDetails.formData.slaName)
+                                    : templateData?.slaService?.name || '-'}
+                                </span>
+                              </div>  
                             </div>
                             
-                            <div className="space-y-4">
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">E-mail Id(s) To Notify</label>
-                                <p className="text-gray-900 mt-1">
-                                  {requestDetails.user.emp_email}
-                                  {requestDetails.formData?.notifyEmails && (
-                                    <><br /><span className="text-sm text-gray-600">Additional: {requestDetails.formData.notifyEmails}</span></>
-                                  )}
-                                </p>
+                            <div className="space-y-5">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-gray-700">Priority</span>
+                                <Badge className={getPriorityColor(requestDetails.formData?.['2'] || requestDetails.formData?.priority || 'medium')}>
+                                  {(requestDetails.formData?.['2'] || requestDetails.formData?.priority || 'medium').charAt(0).toUpperCase() + (requestDetails.formData?.['2'] || requestDetails.formData?.priority || 'medium').slice(1)}
+                                </Badge>
                               </div>
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Status</label>
-                                <div className="mt-1 space-y-2">
-                                  <Badge className={getStatusColor(requestDetails.status)}>
-                                    {requestDetails.status.replace('_', ' ')}
-                                  </Badge>
-                                  {requestDetails.status === 'open' && requestDetails.formData?.slaDueDate && (
-                                    <div className="text-xs text-gray-600">
-                                      <span className="font-medium">SLA Active:</span> Priority-based due date calculated
-                                    </div>
-                                  )}
-                                </div>
+                            
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-gray-700">Created By</span>
+                                <span className="text-sm text-gray-600">{requestDetails.user.emp_fname} {requestDetails.user.emp_lname}</span>
                               </div>
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Technician</label>
-                                <div className="mt-1 space-y-2">
-                                  <p className="text-gray-900">
-                                    {getTechnicianInfo()}
-                                  </p>
-                                  {requestDetails.formData?.assignedTechnicianName && requestDetails.formData?.supportGroupName && (
-                                    <div className="text-xs text-gray-600">
-                                      <span className="font-medium">Support Group:</span> {requestDetails.formData.supportGroupName}
-                                      {requestDetails.formData.loadBalanceType && (
-                                        <><br /><span className="font-medium">Assignment Method:</span> {requestDetails.formData.loadBalanceType} load balancing</>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-gray-700">Department</span>
+                                <span className="text-sm text-gray-600">{requestDetails.user.department || '-'}</span>
                               </div>
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Category</label>
-                                <p className="text-gray-900 mt-1">Special Projects</p>
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-gray-700">Created Date</span>
+                                <span className="text-sm text-gray-600">{formatDate(requestDetails.createdAt)}</span>
                               </div>
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Created By</label>
-                                <p className="text-gray-900 mt-1">{requestDetails.user.emp_fname} {requestDetails.user.emp_lname}</p>
-                              </div>
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">Template</label>
-                                <p className="text-gray-900 mt-1">{requestDetails.templateName}</p>
-                              </div>
-                              <div className="bg-white p-3 rounded-lg border border-gray-100">
-                                <label className="font-medium text-gray-700 text-xs uppercase tracking-wide">DueBy Date</label>
-                                <div className="mt-1">
+                              
+                              <div className="flex justify-between items-start">
+                                <span className="text-sm font-medium text-gray-700 flex-shrink-0">E-mail Id(s) To Notify</span>
+                                <span className="text-sm text-gray-600 text-right ml-4 break-words">
                                   {(() => {
-                                    // Check for SLA due date in formData first (newly calculated)
-                                    const formData = requestDetails.formData as any || {};
-                                    const slaDueDate = formData.slaDueDate;
-                                    const slaHours = formData.slaHours;
-                                    
-                                    if (slaDueDate && requestDetails.status === 'open') {
-                                      const dueDate = new Date(slaDueDate);
-                                      const now = new Date();
-                                      const timeRemaining = dueDate.getTime() - now.getTime();
-                                      const isOverdue = timeRemaining < 0;
-                                      const hoursRemaining = Math.abs(Math.floor(timeRemaining / (1000 * 60 * 60)));
-                                      const minutesRemaining = Math.abs(Math.floor((timeRemaining % (1000 * 60 * 60)) / (1000 * 60)));
-                                      
-                                      return (
-                                        <div className="space-y-2">
-                                          <p className={`text-sm font-medium ${isOverdue ? 'text-red-600' : timeRemaining < 4 * 60 * 60 * 1000 ? 'text-amber-600' : 'text-green-600'}`}>
-                                            {formatDbTimestampDisplay(slaDueDate, { shortFormat: true })}
-                                          </p>
-                                          <div className="flex items-center gap-2">
-                                            <Badge 
-                                              variant={isOverdue ? "destructive" : timeRemaining < 4 * 60 * 60 * 1000 ? "secondary" : "default"}
-                                              className="text-xs"
-                                            >
-                                              SLA: {slaHours}h
-                                            </Badge>
-                                            <span className={`text-xs font-medium ${isOverdue ? 'text-red-600' : timeRemaining < 4 * 60 * 60 * 1000 ? 'text-amber-600' : 'text-gray-600'}`}>
-                                              {isOverdue ? 'OVERDUE' : `${hoursRemaining}h ${minutesRemaining}m left`}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      );
-                                    } else {
-                                      // Fallback to regular due date or placeholder
-                                      return (
-                                        <p className="text-gray-900">
-                                          {requestDetails.dueDate ? formatDbTimestampDisplay(requestDetails.dueDate, { dateOnly: true }) : '-'}
-                                        </p>
-                                      );
+                                    const emailsToNotify = requestDetails.formData?.['10'];
+                                    if (Array.isArray(emailsToNotify) && emailsToNotify.length > 0) {
+                                      return emailsToNotify.join(', ');
+                                    } else if (typeof emailsToNotify === 'string' && emailsToNotify.trim()) {
+                                      return emailsToNotify;
                                     }
+                                    return '-';
                                   })()}
-                                </div>
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -1252,8 +1491,6 @@ export default function ApprovalDetailsPage() {
                       </div>
                     </CardContent>
                   </Card>
-
-
 
                   {/* Approver Conversations - Only show if there are active conversations */}
                   {approvals.some((approval) => 
@@ -1455,46 +1692,73 @@ export default function ApprovalDetailsPage() {
                   {/* Action Buttons */}
                   <Card>
                     <CardContent className="pt-6">
-                      <div className="flex gap-4">
-                        <Button
-                          onClick={() => setShowApprovalModal(true)}
-                          disabled={actionLoading !== null}
-                          className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 text-base font-medium shadow-lg hover:shadow-xl transition-all duration-200"
-                          size="lg"
-                        >
-                          <CheckCircle className="h-5 w-5 mr-2" />
-                          Approve Request
-                        </Button>
-                        
-                        <Button
-                          variant="destructive"
-                          onClick={() => setShowRejectModal(true)}
-                          disabled={actionLoading !== null}
-                          className="px-8 py-3 text-base font-medium shadow-lg hover:shadow-xl transition-all duration-200"
-                          size="lg"
-                        >
-                          <X className="h-5 w-5 mr-2" />
-                          Reject Request
-                        </Button>
-                        
-                        {/* Only show Need Clarification button if approval status is NOT for_clarification */}
-                        {(() => {
-                          if (!selectedApproval) return false;
-                          const st = normalizeStatus(selectedApproval.status);
-                          return !(st === 'for clarification' || st === 'pending clarification');
-                        })() && (
+                      {hasAnyRejectedApproval() ? (
+                        /* Show acknowledge button when any approval is rejected */
+                        <div className="space-y-4">
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                            <div className="flex items-start gap-3">
+                              <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                              <div className="text-sm text-red-800">
+                                <p className="font-medium">This request has been rejected by another approver.</p>
+                                <p className="mt-1">Please acknowledge to remove this from your pending list.</p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex justify-start">
+                            <Button
+                              onClick={() => setShowAcknowledgeModal(true)}
+                              disabled={actionLoading !== null}
+                              className="bg-orange-600 hover:bg-orange-700 text-white px-8 py-3 text-base font-medium shadow-lg hover:shadow-xl transition-all duration-200"
+                              size="lg"
+                            >
+                              <UserCheck className="h-5 w-5 mr-2" />
+                              Acknowledge
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Show normal action buttons */
+                        <div className="flex gap-4">
                           <Button
-                            variant="outline"
-                            onClick={() => setShowClarificationModal(true)}
+                            onClick={() => setShowApprovalModal(true)}
                             disabled={actionLoading !== null}
-                            className="px-8 py-3 text-base font-medium border-2 border-sky-600 text-sky-600 hover:bg-sky-50 shadow-lg hover:shadow-xl transition-all duration-200"
+                            className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 text-base font-medium shadow-lg hover:shadow-xl transition-all duration-200"
                             size="lg"
                           >
-                            <AlertCircle className="h-5 w-5 mr-2" />
-                            Need Clarification
+                            <CheckCircle className="h-5 w-5 mr-2" />
+                            Approve Request
                           </Button>
-                        )}
-                      </div>
+                          
+                          <Button
+                            variant="destructive"
+                            onClick={() => setShowRejectModal(true)}
+                            disabled={actionLoading !== null}
+                            className="px-8 py-3 text-base font-medium shadow-lg hover:shadow-xl transition-all duration-200"
+                            size="lg"
+                          >
+                            <X className="h-5 w-5 mr-2" />
+                            Reject Request
+                          </Button>
+                          
+                          {/* Only show Need Clarification button if approval status is NOT for_clarification */}
+                          {(() => {
+                            if (!selectedApproval) return false;
+                            const st = normalizeStatus(selectedApproval.status);
+                            return !(st === 'for clarification' || st === 'pending clarification');
+                          })() && (
+                            <Button
+                              variant="outline"
+                              onClick={() => setShowClarificationModal(true)}
+                              disabled={actionLoading !== null}
+                              className="px-8 py-3 text-base font-medium border-2 border-sky-600 text-sky-600 hover:bg-sky-50 shadow-lg hover:shadow-xl transition-all duration-200"
+                              size="lg"
+                            >
+                              <AlertCircle className="h-5 w-5 mr-2" />
+                              Need Clarification
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
@@ -1755,6 +2019,63 @@ export default function ApprovalDetailsPage() {
                   <>
                     <X className="h-4 w-4 mr-2" />
                     Reject Request
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Acknowledge Modal */}
+        <Dialog open={showAcknowledgeModal} onOpenChange={setShowAcknowledgeModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserCheck className="h-5 w-5 text-orange-500" />
+                Acknowledge Rejection
+              </DialogTitle>
+              <DialogDescription>
+                You are about to acknowledge that this request has been rejected by another approver.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-red-800">
+                    <p className="font-medium">Important:</p>
+                    <ul className="mt-1 space-y-1 text-xs">
+                      <li>• This request has been rejected by another approver</li>
+                      <li>• Acknowledging will remove this from your pending list</li>
+                      <li>• This action cannot be undone</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setShowAcknowledgeModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAcknowledgeAction}
+                disabled={actionLoading === 'acknowledge'}
+                className="bg-orange-600 hover:bg-orange-700"
+              >
+                {actionLoading === 'acknowledge' ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Acknowledging...
+                  </>
+                ) : (
+                  <>
+                    <UserCheck className="h-4 w-4 mr-2" />
+                    Acknowledge
                   </>
                 )}
               </Button>

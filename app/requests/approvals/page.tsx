@@ -16,8 +16,6 @@ import {
   ArrowLeft, 
   XCircle,
   Plus,
-  RefreshCw,
-  Filter,
   FileText,
   Tag
 } from 'lucide-react';
@@ -25,7 +23,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SessionWrapper } from '@/components/session-wrapper';
 import { toast } from '@/hooks/use-toast';
@@ -43,10 +40,12 @@ interface ApprovalRequest {
   dueBy: string | null;
   priority: string;
   status: string;
+  originalStatus?: string; // Keep track of original status
   level: number;
   levelName: string;
   description?: string;
   comments?: string;
+  hasRejectedApproval?: boolean; // Flag to indicate if any approval was rejected
 }
 
 interface PaginationData {
@@ -64,12 +63,16 @@ const capitalizeWords = (str: string) => {
 };
 
 // Function to get row background color based on status
-const getRowBackgroundColor = (status: string) => {
+const getRowBackgroundColor = (status: string, hasRejectedApproval?: boolean) => {
+  // If any approval has been rejected, show red background regardless of individual status
+  if (hasRejectedApproval || status === 'rejected') {
+    return 'bg-red-50/70 hover:bg-red-100/70';
+  }
+  
   switch (status) {
     case 'pending_approval': return 'bg-orange-50/70 hover:bg-orange-100/70';
     case 'for_clarification': return 'bg-yellow-50/70 hover:bg-yellow-100/70';
     case 'approved': return 'bg-green-50/70 hover:bg-green-100/70';
-    case 'rejected': return 'bg-red-50/70 hover:bg-red-100/70';
     default: return 'bg-white/50 hover:bg-white/70';
   }
 };
@@ -91,9 +94,6 @@ export default function ApprovalsTab() {
   const [pagination, setPagination] = useState<PaginationData>({ total: 0, pages: 0, current: 1 });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
@@ -102,21 +102,40 @@ export default function ApprovalsTab() {
     }
   }, [session, currentPage]);
 
+  // Refresh data when window gains focus (user returns from detail page)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (session) {
+        fetchApprovals();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [session]);
+
   const fetchApprovals = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/approvals/pending?page=${currentPage}&limit=10`);
+      console.log('🔄 Fetching approvals for page:', currentPage);
+      const response = await fetch(`/api/approvals/pending?page=${currentPage}&limit=10&t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
       
       if (!response.ok) {
         throw new Error('Failed to fetch approvals');
       }
 
       const data = await response.json();
-      console.log('Fetched approvals data:', data);
+      console.log('✅ Fetched approvals data:', data.approvals?.length || 0, 'approvals');
+      console.log('Approval IDs and statuses:', data.approvals?.map((a: any) => ({ id: a.id, status: a.status })) || []);
       setApprovals(data.approvals || []);
       setPagination(data.pagination || { total: 0, pages: 0, current: 1 });
     } catch (error) {
-      console.error('Error fetching approvals:', error);
+      console.error('❌ Error fetching approvals:', error);
       toast({
         title: "Error",
         description: "Failed to load approvals",
@@ -138,12 +157,8 @@ export default function ApprovalsTab() {
       approval.requestTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
       approval.requesterName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       approval.requestId.toString().includes(searchTerm);
-    
-    const matchesStatus = statusFilter === 'all' || approval.status === statusFilter;
-    const matchesType = typeFilter === 'all' || approval.requestType === typeFilter;
-    const matchesPriority = priorityFilter === 'all' || approval.priority === priorityFilter;
 
-    return matchesSearch && matchesStatus && matchesType && matchesPriority;
+    return matchesSearch;
   });
 
   const handlePageChange = (page: number) => {
@@ -189,26 +204,13 @@ export default function ApprovalsTab() {
             <div className="flex items-center justify-between h-16">
               <div className="flex items-center gap-4">
                 <div>
-                  <h1 className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
                     My Approvals
                   </h1>
                   <p className="text-sm text-slate-600">Review and process pending approval requests</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                  {approvals.length} Pending
-                </Badge>
-                <Button
-                  onClick={() => fetchApprovals()}
-                  variant="outline"
-                  size="sm"
-                  className="border-slate-300 text-slate-700 hover:bg-slate-50"
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh
-                </Button>
-              </div>
+            
             </div>
           </div>
         </header>
@@ -230,45 +232,6 @@ export default function ApprovalsTab() {
                         className="pl-10 bg-white/50"
                       />
                     </div>
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="w-32 bg-white/50">
-                        <SelectValue placeholder="Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Status</SelectItem>
-                        <SelectItem value="pending_approval">Pending Approval</SelectItem>
-                        <SelectItem value="for_clarification">For Clarification</SelectItem>
-                        <SelectItem value="approved">Approved</SelectItem>
-                        <SelectItem value="rejected">Rejected</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    <Select value={typeFilter} onValueChange={setTypeFilter}>
-                      <SelectTrigger className="w-32 bg-white/50">
-                        <SelectValue placeholder="Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Types</SelectItem>
-                        <SelectItem value="service">Service</SelectItem>
-                        <SelectItem value="incident">Incident</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                      <SelectTrigger className="w-32 bg-white/50">
-                        <SelectValue placeholder="Priority" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Priority</SelectItem>
-                        <SelectItem value="Low">Low</SelectItem>
-                        <SelectItem value="Medium">Medium</SelectItem>
-                        <SelectItem value="High">High</SelectItem>
-                        <SelectItem value="Top">Top</SelectItem>
-                      </SelectContent>
-                    </Select>
                   </div>
                 </div>
 
@@ -301,10 +264,10 @@ export default function ApprovalsTab() {
                           <div className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
                             <div className="grid grid-cols-12 gap-2 px-3 py-3 text-sm font-medium text-slate-700">
                               <div className="col-span-1">Request #</div>
-                              <div className="col-span-2">Request Title</div>
+                              <div className="col-span-2 flex items-center">Subject</div>
                               <div className="col-span-2">Requester</div>
                               <div className="col-span-1">Approval Level</div>
-                              <div className="col-span-1">Status</div>
+                              <div className="col-span-1">Approval Status</div>
                               <div className="col-span-1">Priority</div>
                               <div className="col-span-1">Type</div>
                               <div className="col-span-2">Submitted</div>
@@ -318,17 +281,20 @@ export default function ApprovalsTab() {
                                 return (
                                   <div 
                                     key={approval.id} 
-                                    className={`grid grid-cols-12 gap-2 px-3 py-3 transition-all duration-200 cursor-pointer border-l-4 border-transparent hover:border-amber-400 ${getRowBackgroundColor(approval.status)}`}
+                                    className={`grid grid-cols-12 gap-2 px-3 py-3 transition-all duration-200 cursor-pointer border-l-4 border-transparent hover:border-amber-400 ${getRowBackgroundColor(approval.status, approval.hasRejectedApproval)}`}
                                     onClick={() => handleApprovalClick(approval.id, approval.requestId)}
-                                    title="Click to review approval request"
+                                    title={approval.hasRejectedApproval ? "This request has been rejected by another approver - click to acknowledge" : "Click to review approval request"}
                                   >
                                     {/* Request # */}
                                     <div className="col-span-1 flex items-center">
-                                      <span className="text-sm font-mono font-medium">#{approval.requestId}</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm font-mono font-medium">#{approval.requestId}</span>
+                                       
+                                      </div>
                                     </div>
                                     
-                                    {/* Request Title */}
-                                    <div className="col-span-2">
+                                    {/* Subject */}
+                                    <div className="col-span-2 flex items-center">
                                       <div>
                                         <p className="font-medium text-sm">{approval.requestTitle || 'No Title'}</p>
                                      
@@ -353,9 +319,12 @@ export default function ApprovalsTab() {
                                     
                                     {/* Status */}
                                     <div className="col-span-1 flex items-center">
-                                      <Badge className={`${getApprovalStatusColor(approval.status)} border-0 text-xs`}>
-                                        {capitalizeWords(approval.status)}
-                                      </Badge>
+                                      <div className="flex flex-col gap-1">
+                                        <Badge className={`${getApprovalStatusColor(approval.status)} border-0 text-xs`}>
+                                          {approval.hasRejectedApproval ? 'Rejected' : capitalizeWords(approval.status)}
+                                        </Badge>
+                                       
+                                      </div>
                                     </div>
                                     
                                     {/* Priority */}
@@ -368,7 +337,7 @@ export default function ApprovalsTab() {
                                     {/* Type */}
                                     <div className="col-span-1 flex items-center">
                                       <Badge variant="outline" className="text-xs">
-                                        {capitalizeWords(approval.requestType || 'SERVICE')}
+                                        {approval.requestType || 'Service'}
                                       </Badge>
                                     </div>
                                     

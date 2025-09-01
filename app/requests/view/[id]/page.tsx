@@ -509,6 +509,7 @@ export default function RequestViewPage() {
   const [availableUsers, setAvailableUsers] = useState<any[]>([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [addingApprovers, setAddingApprovers] = useState(false);
 
   // Edit request states
   const [showEditModal, setShowEditModal] = useState(false);
@@ -2032,6 +2033,8 @@ export default function RequestViewPage() {
     }
 
     try {
+      setAddingApprovers(true);
+      
       // Find the current level that's in progress
       const currentLevel = getCurrentInProgressLevel();
 
@@ -2060,31 +2063,9 @@ export default function RequestViewPage() {
       });
 
       if (response.ok) {
-        // Send email notifications to new approvers
-        try {
-          await fetch('/api/notifications/send-approver-notification', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              requestId,
-              approvers: selectedUsers.map(user => ({
-                email: user.emp_email,
-                name: `${user.emp_fname} ${user.emp_lname}`,
-                level: parseInt(currentLevel)
-              })),
-              template: 'notify-approver-approval'
-            }),
-          });
-        } catch (emailError) {
-          console.error('Failed to send email notifications:', emailError);
-          // Don't fail the whole operation if email fails
-        }
-
         toast({
-          title: "Approver added",
-          description: `Successfully added ${selectedUsers.length} approver(s) to Level ${currentLevel} and sent email notifications`,
+          title: "Approver(s) added successfully",
+          description: `Added ${selectedUsers.map(u => `${u.emp_fname} ${u.emp_lname}`).join(', ')} to Level ${currentLevel}. Email notifications have been sent.`,
         });
         
         // Refresh the request data to show new approvals
@@ -2106,6 +2087,8 @@ export default function RequestViewPage() {
         description: error instanceof Error ? error.message : "Failed to add approvals",
         variant: "destructive"
       });
+    } finally {
+      setAddingApprovers(false);
     }
   };
 
@@ -2285,29 +2268,34 @@ export default function RequestViewPage() {
                             const formData = requestData.formData || {};
                             let description = null;
                             
-                            // Check common description field names
-                            const descriptionFields = [
-                              'description', 'Description', 'details', 'Details', 
-                              'content', 'Content', 'notes', 'Notes', 'comments', 'Comments',
-                              'message', 'Message', 'problem', 'Problem', 'issue', 'Issue'
-                            ];
-                            
-                            // First check named fields
-                            for (const field of descriptionFields) {
-                              if (formData[field]) {
-                                description = formData[field];
-                                break;
+                            // First check field 9 which is the actual description field
+                            if (formData['9']) {
+                              description = formData['9'];
+                            } else {
+                              // Check common description field names as fallback
+                              const descriptionFields = [
+                                'description', 'Description', 'details', 'Details', 
+                                'content', 'Content', 'notes', 'Notes', 'comments', 'Comments',
+                                'message', 'Message', 'problem', 'Problem', 'issue', 'Issue'
+                              ];
+                              
+                              // Check named fields
+                              for (const field of descriptionFields) {
+                                if (formData[field]) {
+                                  description = formData[field];
+                                  break;
+                                }
                               }
-                            }
-                            
-                            // If not found, check numbered fields (like "2", "3", etc.)
-                            if (!description) {
-                              for (const [key, value] of Object.entries(formData)) {
-                                if (value && typeof value === 'string' && value.length > 10) {
-                                  // Check if it's a textarea or richtext field based on content length and structure
-                                  if (value.includes('\n') || value.length > 50 || /<[^>]*>/g.test(value)) {
-                                    description = value;
-                                    break;
+                              
+                              // If still not found, check numbered fields (like "2", "3", etc.)
+                              if (!description) {
+                                for (const [key, value] of Object.entries(formData)) {
+                                  if (value && typeof value === 'string' && value.length > 10) {
+                                    // Check if it's a textarea or richtext field based on content length and structure
+                                    if (value.includes('\n') || value.length > 50 || /<[^>]*>/g.test(value)) {
+                                      description = value;
+                                      break;
+                                    }
                                   }
                                 }
                               }
@@ -4360,9 +4348,16 @@ export default function RequestViewPage() {
               </Button>
               <Button 
                 onClick={handleAddApprovals}
-                disabled={selectedUsers.length === 0}
+                disabled={selectedUsers.length === 0 || addingApprovers}
               >
-                Add {selectedUsers.length} Approver{selectedUsers.length !== 1 ? 's' : ''}
+                {addingApprovers ? (
+                  <div className="flex items-center">
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Adding...
+                  </div>
+                ) : (
+                  `Add ${selectedUsers.length} Approver${selectedUsers.length !== 1 ? 's' : ''}`
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>

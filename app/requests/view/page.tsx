@@ -181,11 +181,22 @@ const getCurrentApprovalStatus = (approvals?: RequestApproval[]): { status: stri
 const shouldShowApprovalStatus = (requestStatus: string, approvals?: RequestApproval[]): boolean => {
   // Show approval status when request has approval workflow
   if (!approvals || approvals.length === 0) {
+    console.log('shouldShowApprovalStatus: No approvals array', { requestStatus, approvalsLength: 0 });
     return false;
   }
   
-  // Show for requests that are in approval process or have completed approval
-  return requestStatus === 'for_approval' || approvals.some(approval => approval.status === 'approved');
+  // Show for requests that are in approval process or have completed approval (approved or rejected)
+  const result = requestStatus === 'for_approval' || 
+         approvals.some(approval => approval.status === 'approved' || approval.status === 'rejected');
+  
+  console.log('shouldShowApprovalStatus:', { 
+    requestStatus, 
+    approvalsLength: approvals.length,
+    approvalStatuses: approvals.map(a => a.status),
+    result 
+  });
+  
+  return result;
 };
 
 // Get status icon based on request status enum values

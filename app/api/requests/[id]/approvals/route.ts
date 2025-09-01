@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { addHistory } from '@/lib/history';
+import { notifyNewApprover } from '@/lib/notifications';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(
@@ -61,7 +62,7 @@ export async function GET(
     };
 
     // Format the approvals data
-    const formattedApprovals = approvals.map(approval => ({
+    const formattedApprovals = approvals.map((approval: any) => ({
       id: approval.id.toString(),
       level: approval.level,
       levelName: approval.name || `Level ${approval.level}`,
@@ -147,7 +148,7 @@ export async function POST(
     }));
 
     // Create the approvals in a transaction
-    const newApprovals = await prisma.$transaction(async (tx) => {
+    const newApprovals = await prisma.$transaction(async (tx: any) => {
       // Create Philippine time by manually adjusting UTC
       const now = new Date();
       const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
@@ -190,8 +191,62 @@ export async function POST(
       return createdApprovals;
     });
 
+    // 📧 Send notifications (email + in-app) to newly added approvers
+    try {
+      console.log(`📧 Sending notifications to ${newApprovals.length} newly added approver(s)...`);
+      
+      // Send notification to each newly added approver using the clean notification function
+      const notificationPromises = newApprovals.map(async (approval: any) => {
+        try {
+          if (!approval.approverId) {
+            console.warn(`Cannot send notification - no approver ID found for approval ${approval.id}`);
+            return { success: false, email: 'unknown', error: 'No approver ID' };
+          }
+
+          // The notifyNewApprover function handles both email and in-app notifications
+          const result = await notifyNewApprover(
+            requestId,
+            {
+              id: approval.approverId,
+              emp_email: approval.approver.emp_email,
+              emp_fname: approval.approver.emp_fname,
+              emp_lname: approval.approver.emp_lname,
+            },
+            approval.level
+          );
+
+          if (result) {
+            console.log(`✅ Notification sent successfully to ${approval.approver.emp_fname} ${approval.approver.emp_lname} (${approval.approver.emp_email})`);
+            return { success: true, email: approval.approver.emp_email };
+          } else {
+            console.error(`❌ Failed to send notification to ${approval.approver.emp_fname} ${approval.approver.emp_lname} (${approval.approver.emp_email})`);
+            return { success: false, email: approval.approver.emp_email, error: 'Notification sending failed' };
+          }
+
+        } catch (error) {
+          console.error(`❌ Error sending notification to approver ${approval.id}:`, error);
+          return { 
+            success: false, 
+            email: approval.approver?.emp_email || 'unknown', 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      const notificationResults = await Promise.allSettled(notificationPromises);
+      const successfulNotifications = notificationResults.filter(result => 
+        result.status === 'fulfilled' && result.value.success
+      ).length;
+
+      console.log(`📊 Notification summary: ${successfulNotifications}/${newApprovals.length} notifications sent successfully`);
+
+    } catch (notificationError) {
+      console.error('❌ Error in notification process:', notificationError);
+      // Don't fail the approval addition if notifications fail
+    }
+
     // Format the response
-    const formattedApprovals = newApprovals.map(approval => ({
+    const formattedApprovals = newApprovals.map((approval: any) => ({
       id: approval.id.toString(),
       level: approval.level,
       levelName: approval.name || `Level ${approval.level}`,

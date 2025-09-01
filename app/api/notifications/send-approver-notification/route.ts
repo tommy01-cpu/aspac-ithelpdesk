@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { sendNewApproverNotificationEmail } from '@/lib/database-email-templates';
+import { notifyNewApprover } from '@/lib/notifications';
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,40 +29,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Request not found' }, { status: 404 });
     }
 
-    // Send email to each new approver
-    const emailPromises = approvers.map(async (approver: any) => {
+    // Send notification (email + in-app) to each new approver
+    const notificationPromises = approvers.map(async (approver: any) => {
       try {
-        await sendNewApproverNotificationEmail(
-          approver.email,
-          approver.name,
-          {
-            requestId: serviceRequest.id,
-            requestTitle: `Request #${serviceRequest.id}`,
-            requesterName: `${serviceRequest.user.emp_fname} ${serviceRequest.user.emp_lname}`,
-            serviceName: 'Service Request',
-            categoryName: 'General',
-            level: approver.level,
-            priority: (serviceRequest.formData as any)?.priority || 'Medium',
-            createdAt: serviceRequest.createdAt
-          },
-          template || 'notify-approver-approval'
+        // Find the approver user data
+        const approverUser = await prisma.users.findFirst({
+          where: { emp_email: approver.email }
+        });
+
+        if (!approverUser) {
+          throw new Error(`Approver with email ${approver.email} not found`);
+        }
+
+        await notifyNewApprover(
+          serviceRequest.id,
+          approverUser,
+          approver.level || 1
         );
         return { success: true, email: approver.email };
       } catch (error) {
-        console.error(`Failed to send email to ${approver.email}:`, error);
+        console.error(`Failed to send notification to ${approver.email}:`, error);
         return { success: false, email: approver.email, error: error instanceof Error ? error.message : String(error) };
       }
     });
 
-    const results = await Promise.allSettled(emailPromises);
+    const results = await Promise.allSettled(notificationPromises);
     const successCount = results.filter(result => 
       result.status === 'fulfilled' && result.value.success
     ).length;
 
     return NextResponse.json({ 
       success: true, 
-      emailsSent: successCount,
-      totalEmails: approvers.length,
+      notificationsSent: successCount,
+      totalNotifications: approvers.length,
       results 
     });
 
