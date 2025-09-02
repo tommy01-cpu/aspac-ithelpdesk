@@ -675,6 +675,7 @@ export default function RequestViewPage() {
       // Get existing resolution data - check both new structure and fallback
       const existingResolution = String(resBlock.closureComments || fd.closureComments || '').trim();
       const existingClosureCode = String(resBlock.closureCode || '').trim();
+      const existingRequestClosureComments = String(resBlock.requestClosureComments || '').trim();
       
       // Initialize resolution notes with existing data if available
       if (existingResolution && resNotes === '') {
@@ -684,6 +685,11 @@ export default function RequestViewPage() {
       // Initialize closure code with existing data if available
       if (existingClosureCode && resolveClosureCode === '') {
         setResolveClosureCode(existingClosureCode);
+      }
+      
+      // Initialize request closure comments with existing data if available
+      if (existingRequestClosureComments && resolveComments === '') {
+        setResolveComments(existingRequestClosureComments);
       }
       
       // Initialize status with current request status
@@ -2185,7 +2191,7 @@ export default function RequestViewPage() {
           fill: #334155;
         }
       `}</style>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50" style={{ transform: 'scale(0.9)', transformOrigin: 'top left', width: '111.11%', height: '111.11%' }}>
         {/* Header */}
         <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
           <div className="w-full px-6 lg:px-8">
@@ -2778,7 +2784,13 @@ export default function RequestViewPage() {
                                         
                                         const resR = await fetch(`/api/requests/${requestId}/resolve`, {
                                           method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ fcr: false, closureCode: resolveClosureCode, closureComments: resNotes, attachmentIds: allAttachmentIds })
+                                          body: JSON.stringify({ 
+                                            fcr: false, 
+                                            closureCode: resolveClosureCode, 
+                                            closureComments: resNotes, // Resolution notes
+                                            requestClosureComments: resolveComments || '', // Request closure comments (if any)
+                                            attachmentIds: allAttachmentIds 
+                                          })
                                         });
                                         
                                         console.log('Resolve response status:', resR.status);
@@ -2807,7 +2819,13 @@ export default function RequestViewPage() {
                                         
                                         const resR = await fetch(`/api/requests/${requestId}/resolve`, {
                                           method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ fcr: false, closureCode: resolveClosureCode, closureComments: resNotes, attachmentIds: allAttachmentIds })
+                                          body: JSON.stringify({ 
+                                            fcr: false, 
+                                            closureCode: resolveClosureCode, 
+                                            closureComments: resNotes, // Resolution notes
+                                            requestClosureComments: resolveComments || '', // Request closure comments (if any)
+                                            attachmentIds: allAttachmentIds 
+                                          })
                                         });
                                         
                                         console.log('Resolve response status:', resR.status);
@@ -2875,9 +2893,11 @@ export default function RequestViewPage() {
                                     const resBlock = fd.resolution || {};
                                     const originalResolution = String(resBlock.closureComments || fd.closureComments || '').trim();
                                     const originalClosureCode = String(resBlock.closureCode || '').trim();
+                                    const originalRequestClosureComments = String(resBlock.requestClosureComments || '').trim();
                                     
                                     setResNotes(originalResolution); 
                                     setResolveClosureCode(originalClosureCode);
+                                    setResolveComments(originalRequestClosureComments);
                                     setResFiles([]);
                                     setAttachmentsToDelete([]);
                                     setResStatus(requestData?.status || 'open'); 
@@ -2897,12 +2917,13 @@ export default function RequestViewPage() {
           const fd: any = requestData.formData || {};
           const resBlock = fd.resolution || {};
           const html = String(resBlock.closureComments || fd.closureComments || '').trim();
+          const requestClosureComments = String(resBlock.requestClosureComments || '').trim();
           const closureCode = String(resBlock.closureCode || '').trim();
           // Use resolution attachments from database instead of filtering from general attachments
           const resAtts: AttachmentFile[] = (resolutionAttachments || []).filter(a => 
             !attachmentsToDelete.includes(a.id)
           );
-          const hasExistingResolution = html.length > 0 || resAtts.length > 0 || closureCode.length > 0;                          // Show existing resolution in read-only mode if not editing
+          const hasExistingResolution = html.length > 0 || resAtts.length > 0 || closureCode.length > 0 || requestClosureComments.length > 0;                          // Show existing resolution in read-only mode if not editing
                           if (hasExistingResolution && !isEditingResolution) {
                             return (
                               <div className="space-y-4">
@@ -2916,6 +2937,15 @@ export default function RequestViewPage() {
                                     />
                                   </div>
                                 )}
+                                {/* Request Closure Comments */}
+                                {/* {requestClosureComments && (
+                                  <div>
+                                    <label className="text-sm font-medium text-gray-700 mb-2 block">Request Closure Comments</label>
+                                    <div className="bg-blue-50 border rounded p-3 text-sm text-gray-700">
+                                      {requestClosureComments}
+                                    </div>
+                                  </div>
+                                )} */}
                                 {/* Attachments */}
                                 <div className="border rounded">
                                   <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium text-gray-700">Attachments</div>
@@ -3139,9 +3169,10 @@ export default function RequestViewPage() {
                           const fd: any = requestData.formData || {};
                           const resBlock = fd.resolution || {};
                           const html = String(resBlock.closureComments || fd.closureComments || '').trim();
+                          const requestClosureComments = String(resBlock.requestClosureComments || '').trim();
                           // Use the same resolutionAttachments that technician view uses
                           const resAtts: AttachmentFile[] = resolutionAttachments || [];
-                          const hasContent = html.length > 0 || resAtts.length > 0;
+                          const hasContent = html.length > 0 || resAtts.length > 0 || requestClosureComments.length > 0;
 
                           if (!hasContent) {
                             return (
@@ -3158,10 +3189,22 @@ export default function RequestViewPage() {
                             <>
                               {/* Resolution HTML */}
                               {html && (
-                                <div
-                                  className="bg-white border rounded p-3 prose max-w-none"
-                                  dangerouslySetInnerHTML={{ __html: html }}
-                                />
+                                <div>
+                                  <label className="text-sm font-medium text-gray-700 mb-2 block">Resolution Notes</label>
+                                  <div
+                                    className="bg-white border rounded p-3 prose max-w-none"
+                                    dangerouslySetInnerHTML={{ __html: html }}
+                                  />
+                                </div>
+                              )}
+                              {/* Request Closure Comments */}
+                              {requestClosureComments && (
+                                <div>
+                                  <label className="text-sm font-medium text-gray-700 mb-2 block">Request Closure Comments</label>
+                                  <div className="bg-blue-50 border rounded p-3 text-sm text-gray-700">
+                                    {requestClosureComments}
+                                  </div>
+                                </div>
                               )}
                               {/* Attachments */}
                               <div className="border rounded">
@@ -3581,10 +3624,14 @@ export default function RequestViewPage() {
                                       <td className="px-3 py-2">{String(hrs).padStart(2,'0')} hr {String(mins).padStart(2,'0')} min</td>
                                       <td className="px-3 py-2">{wl.startTime ? formatDbTimestamp(wl.startTime) : '-'}</td>
                                       <td className="px-3 py-2">{wl.endTime ? formatDbTimestamp(wl.endTime) : '-'}</td>
-                                      <td className="px-3 py-2 truncate max-w-[320px]" title={htmlToText(wl.description)}>{htmlToText(wl.description)}</td>
-                                      <td className="px-3 py-2 space-x-2">
-                                        <Button variant="outline" size="sm" onClick={() => openEditWorkLog(wl)}>Edit</Button>
-                                        <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => deleteWorkLog(wl)}>Delete</Button>
+                                      <td className="px-3 py-2 truncate max-w-[200px]" title={htmlToText(wl.description)}>{htmlToText(wl.description)}</td>
+                                      <td className="px-3 py-2 space-x-1">
+                                        <Button variant="outline" size="sm" onClick={() => openEditWorkLog(wl)} className="h-8 w-8 p-0" title="Edit work log">
+                                          <Edit className="h-4 w-4" />
+                                        </Button>
+                                        <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50 h-8 w-8 p-0" onClick={() => deleteWorkLog(wl)} title="Delete work log">
+                                          <X className="h-4 w-4" />
+                                        </Button>
                                       </td>
                                     </tr>
                                   );
@@ -3602,7 +3649,7 @@ export default function RequestViewPage() {
                   <Card>
                     <CardContent className="py-6">
                       {/* 🎯 STANDARDIZED HISTORY SYSTEM - Scrollable Chat-like Timeline */}
-                      <div className="h-96 overflow-y-auto border rounded-lg bg-gray-50 p-4">
+                      <div className="h-[510px] overflow-y-auto border rounded-lg bg-gray-50 p-4">
                         <div className="space-y-4">
                           {history && history.length > 0 ? (
                             (() => {
@@ -4628,8 +4675,9 @@ export default function RequestViewPage() {
                       }
                     }
                     
-                    // Use resolution notes from the Resolution tab instead of resolve comments
-                    const finalComments = resNotes || resolveComments;
+                    // Don't merge comments - send them separately to preserve both
+                    const resolutionNotes = resNotes || ''; // Resolution notes from Resolution tab
+                    const requestClosureComments = resolveComments || ''; // Request closure comments from modal
                     
                     const res = await fetch(`/api/requests/${requestId}/resolve`, {
                       method: 'POST',
@@ -4637,7 +4685,8 @@ export default function RequestViewPage() {
                       body: JSON.stringify({
                         fcr: resolveFcr,
                         closureCode: resolveClosureCode,
-                        closureComments: finalComments,
+                        closureComments: resolutionNotes, // Resolution notes
+                        requestClosureComments: requestClosureComments, // Request closure comments
                         attachmentIds: allAttachmentIds  // Include attachment IDs
                       })
                     });

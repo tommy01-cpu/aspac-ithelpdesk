@@ -18,12 +18,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: 'Invalid request id' }, { status: 400 });
     }
 
-    const { fcr = false, closureCode = '', closureComments = '', attachmentIds = [] } = await request.json().catch(() => ({}));
+    const { fcr = false, closureCode = '', closureComments = '', requestClosureComments = '', attachmentIds = [] } = await request.json().catch(() => ({}));
 
     console.log('RESOLVE DEBUG - Request payload:', { 
       fcr, 
       closureCode, 
-      closureComments: closureComments ? closureComments.substring(0, 100) + '...' : 'empty', 
+      closureComments: closureComments ? closureComments.substring(0, 100) + '...' : 'empty',
+      requestClosureComments: requestClosureComments ? requestClosureComments.substring(0, 100) + '...' : 'empty',
       attachmentIds,
       attachmentIdsType: typeof attachmentIds,
       attachmentIdsIsArray: Array.isArray(attachmentIds),
@@ -81,7 +82,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         ...(existingResolution || {}),
         fcr: !!fcr,
         closureCode: String(closureCode || ''),
-        closureComments: String(closureComments || ''),
+        closureComments: String(closureComments || ''), // Technical resolution notes
+        requestClosureComments: String(requestClosureComments || ''), // Request closure comments for requester
         attachments: allAttachments, // Store attachments only in resolution block
         resolvedById: actor.id,
         resolvedBy: `${actor.emp_fname} ${actor.emp_lname}`.trim(),
@@ -191,8 +193,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           // Get template data if available
           const templateData = null; // Template data not needed for notification, but parameter is required
           
-          // Send resolved notifications with resolution description
-          const resolutionDescription = closureComments || 'Request has been resolved';
+          // Send resolved notifications with request closure comments (user-facing)
+          const resolutionDescription = requestClosureComments || 'Request has been resolved';
           await notifyRequestResolved(requestWithUser, templateData, resolutionDescription);
           
           console.log(`✅ Resolved notifications sent for request #${requestId}`);

@@ -570,8 +570,7 @@ class SafeSLAMonitoringService {
         }
       }
 
-      // Log escalation in request history
-      await this.logSLAEscalation(request.id, slaStatus);
+      // Note: History logging removed for escalations per user request
 
     } catch (error) {
       throw new Error(`SLA escalation email failed: ${error instanceof Error ? error.message : 'Unknown'}`);
@@ -1069,7 +1068,7 @@ class SafeSLAMonitoringService {
         if (userId) {
           try {
             // Get user email directly since assignedTechnicianId is the user ID
-            const user = await prisma.user.findUnique({
+            const user = await prisma.users.findUnique({
               where: { id: parseInt(userId) },
               select: { emp_email: true, emp_fname: true, emp_lname: true }
             });
@@ -1170,24 +1169,12 @@ class SafeSLAMonitoringService {
   }
 
   /**
-   * Log SLA escalation in request history
+   * Log SLA escalation in request history - DISABLED per user request
    */
   private async logSLAEscalation(requestId: number, slaStatus: any): Promise<void> {
-    try {
-      await prisma.requestHistory.create({
-        data: {
-          requestId,
-          action: 'SLA Escalation',
-          details: `SLA escalation triggered - ${slaStatus.hoursOverdue} hours overdue`,
-          actorId: 1, // System user ID
-          actorName: 'System',
-          actorType: 'system',
-          timestamp: new Date()
-        }
-      });
-    } catch (error) {
-      console.error('Failed to log SLA escalation:', error);
-    }
+    // History logging for escalations has been disabled
+    // This function is kept for compatibility but does nothing
+    return;
   }
 
   /**
