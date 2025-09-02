@@ -73,7 +73,8 @@ interface SLAIncident {
 
 // Define Technician interface - matching your Prisma schema
 interface Technician {
-  id: string;
+  id: string;                 // User ID (for escalations)
+  technicianId?: string;      // Technician ID (for reference)
   displayName: string;        // matches schema
   employeeId: string;         // matches schema  
   jobTitle?: string;          // matches schema
@@ -83,6 +84,7 @@ interface Technician {
     name: string;
   };
   user?: {                    // user data from database
+    id?: number;              // user ID from database
     emp_fname?: string;
     emp_lname?: string;
     emp_code?: string;
@@ -90,18 +92,18 @@ interface Technician {
     post_des?: string;
     department?: string;
   };
-  value: string;             // for component compatibility
+  value: string;             // for component compatibility (user ID)
   name: string;              // for component compatibility
 }
 
-// Simple Technician Input Component with Dropdown
+// Simple Technician Input Component with Dropdown (stores User IDs for escalations)
 const TechnicianInput = ({ 
   selectedTechnicians = [], 
   onSelectionChange, 
   placeholder = "Select technicians..." 
 }: {
-  selectedTechnicians: string[];
-  onSelectionChange: (technicians: string[]) => void;
+  selectedTechnicians: string[]; // Array of user IDs
+  onSelectionChange: (userIds: string[]) => void; // Callback with user IDs
   placeholder?: string;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -134,11 +136,12 @@ const TechnicianInput = ({
       if (result && result.success && result.data && Array.isArray(result.data)) {
         console.log('API Response - First technician:', result.data[0]); // Debug log
         const transformedTechnicians = result.data
-          .filter((tech: any) => tech && tech.id)
+          .filter((tech: any) => tech && tech.id && tech.user?.id)
           .map((tech: any) => {
-            console.log('Processing technician:', tech.id, 'user data:', tech.user); // Debug log
+            console.log('Processing technician:', tech.id, 'user ID:', tech.user?.id, 'user data:', tech.user); // Debug log
             return {
-              id: String(tech.id),
+              id: String(tech.user.id), // Use user ID instead of technician ID
+              technicianId: String(tech.id), // Keep technician ID for reference
               displayName: `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim() || 'Unknown Technician',
               employeeId: String(tech.employeeId || tech.user?.emp_code || ''),
               jobTitle: String(tech.jobTitle || tech.user?.post_des || ''),
@@ -148,7 +151,7 @@ const TechnicianInput = ({
                 name: tech.user.department
               } : null),
               user: tech.user,  // Include the raw user data
-              value: String(tech.id),
+              value: String(tech.user.id), // Use user ID as value
               name: `${tech.user?.emp_fname || ''} ${tech.user?.emp_lname || ''}`.trim() || 'Unknown Technician'
             };
           });
@@ -203,15 +206,15 @@ const TechnicianInput = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleSelect = (technicianId: string) => {
-    if (!technicianId || typeof technicianId !== 'string') {
+  const handleSelect = (userId: string) => {
+    if (!userId || typeof userId !== 'string') {
       return;
     }
     
     const currentSelection = [...safeSelectedTechnicians];
-    const newSelection = currentSelection.includes(technicianId)
-      ? currentSelection.filter(id => id !== technicianId)
-      : [...currentSelection, technicianId];
+    const newSelection = currentSelection.includes(userId)
+      ? currentSelection.filter(id => id !== userId)
+      : [...currentSelection, userId];
     
     safeOnSelectionChange(newSelection);
     
@@ -226,8 +229,8 @@ const TechnicianInput = ({
     }
   }, [isOpen]);
 
-  const handleRemoveTechnician = (technicianId: string) => {
-    const newSelection = safeSelectedTechnicians.filter(id => id !== technicianId);
+  const handleRemoveTechnician = (userId: string) => {
+    const newSelection = safeSelectedTechnicians.filter(id => id !== userId);
     safeOnSelectionChange(newSelection);
   };
 
@@ -235,15 +238,15 @@ const TechnicianInput = ({
     if (safeSelectedTechnicians.length === 0) {
       return placeholder;
     } else if (safeSelectedTechnicians.length === 1) {
-      const techId = safeSelectedTechnicians[0];
+      const userId = safeSelectedTechnicians[0];
       
       // Handle special options
-      if (techId === 'DH') return 'Department Head';
-      if (techId === 'AS') return 'Assigned Technician';
+      if (userId === 'DH') return 'Department Head';
+      if (userId === 'AS') return 'Assigned Technician';
       
       // Look in allTechnicians first, then fall back to current technicians
-      const tech = allTechnicians.find(t => String(t.id) === String(techId)) ||
-                   technicians.find(t => String(t.id) === String(techId));
+      const tech = allTechnicians.find(t => String(t.id) === String(userId)) ||
+                   technicians.find(t => String(t.id) === String(userId));
       return (`${tech?.user?.emp_fname || ''} ${tech?.user?.emp_lname || ''}`.trim() || 'Unknown Technician');
     } else {
       return `${safeSelectedTechnicians.length} technicians selected`;
@@ -282,15 +285,15 @@ const TechnicianInput = ({
       {/* Selected Technicians Display */}
       {safeSelectedTechnicians.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
-          {safeSelectedTechnicians.map(techId => {
+          {safeSelectedTechnicians.map(userId => {
             // Handle special options
-            if (techId === 'DH') {
+            if (userId === 'DH') {
               return (
-                <div key={techId} className="inline-flex items-center bg-green-100 text-green-800 px-2 py-1 rounded-md text-sm">
+                <div key={userId} className="inline-flex items-center bg-green-100 text-green-800 px-2 py-1 rounded-md text-sm">
                   <span>Department Head</span>
                   <button
                     type="button"
-                    onClick={() => handleRemoveTechnician(techId)}
+                    onClick={() => handleRemoveTechnician(userId)}
                     className="ml-1 hover:bg-green-200 rounded-full p-0.5"
                   >
                     <X className="h-3 w-3" />
@@ -299,13 +302,13 @@ const TechnicianInput = ({
               );
             }
             
-            if (techId === 'AS') {
+            if (userId === 'AS') {
               return (
-                <div key={techId} className="inline-flex items-center bg-purple-100 text-purple-800 px-2 py-1 rounded-md text-sm">
+                <div key={userId} className="inline-flex items-center bg-purple-100 text-purple-800 px-2 py-1 rounded-md text-sm">
                   <span>Assigned Technician</span>
                   <button
                     type="button"
-                    onClick={() => handleRemoveTechnician(techId)}
+                    onClick={() => handleRemoveTechnician(userId)}
                     className="ml-1 hover:bg-purple-200 rounded-full p-0.5"
                   >
                     <X className="h-3 w-3" />
@@ -315,15 +318,15 @@ const TechnicianInput = ({
             }
             
             // Look in allTechnicians first, then fall back to current technicians
-            const tech = allTechnicians.find(t => String(t.id) === String(techId)) ||
-                        technicians.find(t => String(t.id) === String(techId));
+            const tech = allTechnicians.find(t => String(t.id) === String(userId)) ||
+                        technicians.find(t => String(t.id) === String(userId));
             const displayName = `${tech?.user?.emp_fname || ''} ${tech?.user?.emp_lname || ''}`.trim() || 'Unknown Technician';
             return (
-              <div key={techId} className="inline-flex items-center bg-blue-100 text-blue-800 px-2 py-1 rounded-md text-sm">
+              <div key={userId} className="inline-flex items-center bg-blue-100 text-blue-800 px-2 py-1 rounded-md text-sm">
                 <span>{displayName}</span>
                 <button
                   type="button"
-                  onClick={() => handleRemoveTechnician(techId)}
+                  onClick={() => handleRemoveTechnician(userId)}
                   className="ml-1 hover:bg-blue-200 rounded-full p-0.5"
                 >
                   <X className="h-3 w-3" />
@@ -577,25 +580,25 @@ export default function IncidentSLAPage() {
     },
     resolutionEscalation: {
       enabled: false,
-      escalateTo: [] as string[], // Changed to array of technician IDs
+      escalateTo: [] as string[], // Array of user IDs for escalation
       escalateType: 'before' as 'before' | 'after',
       escalateDays: '',
       escalateHours: '',
       escalateMinutes: '',
       level2Enabled: false,
-      level2EscalateTo: [] as string[], // Add technician array for level 2
+      level2EscalateTo: [] as string[], // Array of user IDs for level 2
       level2EscalateType: 'before' as 'before' | 'after',
       level2EscalateDays: '',
       level2EscalateHours: '',
       level2EscalateMinutes: '',
       level3Enabled: false,
-      level3EscalateTo: [] as string[], // Add technician array for level 3
+      level3EscalateTo: [] as string[], // Array of user IDs for level 3
       level3EscalateType: 'before' as 'before' | 'after',
       level3EscalateDays: '',
       level3EscalateHours: '',
       level3EscalateMinutes: '',
       level4Enabled: false,
-      level4EscalateTo: [] as string[], // Add technician array for level 4
+      level4EscalateTo: [] as string[], // Array of user IDs for level 4
       level4EscalateType: 'before' as 'before' | 'after',
       level4EscalateDays: '',
       level4EscalateHours: '',
@@ -1301,12 +1304,12 @@ export default function IncidentSLAPage() {
                             <Label htmlFor="escalateTo">Escalate To</Label>
                             <TechnicianInput
                               selectedTechnicians={slaForm?.resolutionEscalation?.escalateTo ?? []}
-                              onSelectionChange={(technicians) => 
+                              onSelectionChange={(userIds) => 
                                 setSlaForm(prev => ({
                                   ...prev,
                                   resolutionEscalation: { 
                                     ...(prev?.resolutionEscalation || {}), 
-                                    escalateTo: technicians 
+                                    escalateTo: userIds 
                                   }
                                 }))
                               }

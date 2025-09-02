@@ -141,9 +141,9 @@ export default function GlobalNotificationPanel() {
       />
       
       {/* Sliding Panel */}
-      <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out">
+      <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out flex flex-col">
         {/* Panel Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
           <h2 className="text-xl font-semibold text-gray-900">Notifications</h2>
           <div className="flex items-center gap-2">
             <Button
@@ -166,7 +166,7 @@ export default function GlobalNotificationPanel() {
         </div>
 
         {/* Panel Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto min-h-0 notification-panel-scroll">
           {notificationLoading ? (
             <div className="flex items-center justify-center p-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -182,7 +182,7 @@ export default function GlobalNotificationPanel() {
               {notifications.map((notification) => (
                 <div
                   key={notification.id}
-                  className={`p-4 transition-colors relative ${
+                  className={`group p-4 transition-colors relative ${
                     !notification.read 
                       ? 'bg-blue-50 border-l-4 border-l-blue-500 hover:bg-blue-100' 
                       : 'bg-white hover:bg-gray-50'
@@ -231,7 +231,7 @@ export default function GlobalNotificationPanel() {
                         e.stopPropagation();
                         deleteNotification(notification.id);
                       }}
-                      className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                      className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

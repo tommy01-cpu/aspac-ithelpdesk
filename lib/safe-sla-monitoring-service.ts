@@ -33,7 +33,7 @@ class SafeSLAMonitoringService {
   }
 
   /**
-   * MAIN SLA MONITORING PROCESS - runs every 30 minutes
+   * MAIN SLA MONITORING PROCESS - runs every 1 minute (FOR TESTING)
    * Checks SLA compliance and sends escalation emails
    */
   async monitorSLACompliance(): Promise<{ success: boolean; results?: any; error?: string }> {
@@ -270,8 +270,8 @@ class SafeSLAMonitoringService {
         // Check if SLA is breached
         const slaStatus = await this.checkSLABreach(request);
         
-        if (slaStatus.isBreached && slaStatus.shouldEscalate) {
-          // Send escalation email
+        if (slaStatus.isBreached) {
+          // Send escalation email for any SLA breach
           await this.sendSLAEscalationSafely(request, slaStatus);
           results.escalationsSent++;
           console.log(`⚠️ SLA escalation sent for request ${request.id}`);
@@ -292,7 +292,6 @@ class SafeSLAMonitoringService {
    */
   private async checkSLABreach(request: any): Promise<{
     isBreached: boolean;
-    shouldEscalate: boolean;
     hoursOverdue?: number;
     breachType?: string;
     slaService?: any;
@@ -304,20 +303,20 @@ class SafeSLAMonitoringService {
       const formData = request.formData;
       if (formData && formData.slaStop === true) {
         console.log(`⏸️ Skipping request ${request.id} - SLA timer is stopped (slaStop: true)`);
-        return { isBreached: false, shouldEscalate: false };
+        return { isBreached: false };
       }
 
       // Get SLA due date from form data (already calculated with holidays, operational hours, etc.)
       const slaDueDate = formData?.slaDueDate;
       if (!slaDueDate) {
         console.warn(`No SLA due date found for request ${request.id}`);
-        return { isBreached: false, shouldEscalate: false };
+        return { isBreached: false };
       }
 
       // Get SLA configuration for escalation settings
       const slaService = await this.getSLAServiceForRequest(request);
       if (!slaService) {
-        return { isBreached: false, shouldEscalate: false };
+        return { isBreached: false };
       }
 
       const now = new Date();
@@ -328,29 +327,25 @@ class SafeSLAMonitoringService {
       
       if (!isBreached) {
         console.log(`✅ Request ${request.id} SLA OK - Due: ${dueDate.toLocaleString()}, Now: ${now.toLocaleString()}`);
-        return { isBreached: false, shouldEscalate: false };
+        return { isBreached: false };
       }
 
       // Calculate hours overdue
       const hoursOverdue = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
       const slaHours = parseFloat(formData?.slaHours || '0');
       
-      // Check if escalation is needed based on SLA service configuration
-      const shouldEscalate = slaService.autoEscalate && 
-                            hoursOverdue > (slaService.escalationTime || 1); // Default 1 hour after breach
+      // SLA is breached - escalation will be sent
 
       console.log(`⚠️ Request ${request.id} SLA BREACHED:`, {
         dueDate: dueDate.toLocaleString(),
         now: now.toLocaleString(),
         hoursOverdue: hoursOverdue.toFixed(2),
         slaHours,
-        shouldEscalate,
         slaStop: formData?.slaStop || false
       });
 
       return {
         isBreached: true,
-        shouldEscalate,
         hoursOverdue,
         breachType: 'resolution', // Based on due date which represents final resolution time
         slaService,
@@ -360,7 +355,7 @@ class SafeSLAMonitoringService {
 
     } catch (error) {
       console.error('Error checking SLA breach:', error);
-      return { isBreached: false, shouldEscalate: false };
+      return { isBreached: false };
     }
   }
 
@@ -530,34 +525,49 @@ class SafeSLAMonitoringService {
    */
   private async sendEscalationEmail(request: any, slaStatus: any): Promise<void> {
     try {
-      // Get technician/support group email
-      const technicianEmail = await this.getTechnicianEmailForRequest(request);
+      // Get escalation email addresses based on SLA configuration
+      const escalationEmails = await this.getTechnicianEmailForRequest(request);
       
-      if (!technicianEmail) {
-        throw new Error('No technician email found for escalation');
+      if (!escalationEmails || escalationEmails.length === 0) {
+        throw new Error('No escalation email addresses found');
       }
 
-      // Prepare email variables
+      console.log(`Sending SLA escalation to: ${escalationEmails.join(', ')}`);
+
+      // Prepare email variables to match the template
       const variables = {
+        // Template variables (capitalized as expected by template)
+        Request_ID: request.id.toString(),
+        Request_Status: request.status || 'Open',
+        Due_By_Date: slaStatus.slaService?.slaDueDate || request.formData?.slaDueDate || 'N/A',
+        Technician_Name: request.formData?.assignedTechnician || 'Unassigned',
+        Request_Title: this.getRequestSummary(request),
+        Request_Description: this.getRequestDescription(request),
+        
+        // Legacy variables (for backward compatibility)
         request_id: request.id.toString(),
         requester_name: `${request.user.emp_fname} ${request.user.emp_lname}`,
         requester_email: request.user.emp_email || 'N/A',
         hours_overdue: slaStatus.hoursOverdue?.toString() || '0',
-        breach_type: slaStatus.breachType || 'response', // 'response' or 'resolution'
+        breach_type: slaStatus.breachType || 'response',
         sla_response_time: slaStatus.slaService?.responseTime?.toString() || 'N/A',
         sla_resolution_time: slaStatus.slaService?.resolutionHours?.toString() || 'N/A',
         request_priority: this.getRequestPriority(request),
         request_summary: this.getRequestSummary(request),
-        escalation_level: '1', // Can be enhanced to track escalation levels
+        escalation_level: '1',
         dashboard_url: `${process.env.NEXTAUTH_URL}/dashboard`,
         priority_sla_rules: this.formatPrioritySLARules(request.priority)
       };
 
-      // Send escalation email using template ID 19 (notify-sla-escalation)
-      const success = await sendSLAEscalationEmail(technicianEmail, variables);
-      
-      if (!success) {
-        throw new Error('Failed to send SLA escalation email');
+      // Send escalation email to all targets
+      for (const email of escalationEmails) {
+        const success = await sendSLAEscalationEmail(email, variables);
+        
+        if (!success) {
+          console.error(`Failed to send SLA escalation email to ${email}`);
+        } else {
+          console.log(`✅ SLA escalation email sent to ${email}`);
+        }
       }
 
       // Log escalation in request history
@@ -893,29 +903,269 @@ class SafeSLAMonitoringService {
   }
 
   /**
-   * Get technician email for escalation
+   * Get escalation email addresses based on SLA incident configuration
    */
-  private async getTechnicianEmailForRequest(request: any): Promise<string | null> {
+  private async getTechnicianEmailForRequest(request: any): Promise<string[] | null> {
     try {
-      // This should be enhanced based on your assignment logic
-      // For now, return the first available technician
-      const technician = await prisma.users.findFirst({
-        where: {
-          technician: {
-            isNot: null
-          },
-          emp_status: 'active'
-        },
-        select: {
-          emp_email: true
+      const formData = request.formData;
+      // Handle both slaId and slaid field names for compatibility
+      const slaId = formData?.slaId || formData?.slaid;
+      
+      if (!slaId) {
+        console.warn(`❌ No SLA ID found for request ${request.id}`);
+        console.log(`🔧 FALLBACK: Using assigned technician email for request ${request.id}`);
+        
+        // Fallback: Use assigned technician email
+        const technicianEmail = formData?.assignedTechnicianEmail;
+        if (technicianEmail) {
+          console.log(`📧 Using fallback email: ${technicianEmail}`);
+          return [technicianEmail];
+        }
+        
+        console.warn(`❌ No fallback email found for request ${request.id}`);
+        return null;
+      }
+
+      console.log(`🔍 Looking up SLA incident configuration for ID: ${slaId}`);
+
+      // Get SLA incident configuration
+      const slaIncident = await prisma.sLAIncident.findUnique({
+        where: { id: parseInt(slaId) }
+      });
+
+      if (!slaIncident) {
+        console.warn(`❌ SLA incident not found for ID ${slaId} in request ${request.id}`);
+        console.log(`🔧 FALLBACK: Using assigned technician email for request ${request.id}`);
+        
+        // Fallback: Use assigned technician email
+        const technicianEmail = formData?.assignedTechnicianEmail;
+        if (technicianEmail) {
+          console.log(`📧 Using fallback email: ${technicianEmail}`);
+          return [technicianEmail];
+        }
+        
+        return null;
+      }
+
+      if (!slaIncident.resolutionEscalationEnabled) {
+        console.log(`❌ SLA escalation not enabled for request ${request.id} (resolutionEscalationEnabled: false)`);
+        console.log(`🔧 FALLBACK: Using assigned technician email for request ${request.id}`);
+        
+        // Fallback: Use assigned technician email
+        const technicianEmail = formData?.assignedTechnicianEmail;
+        if (technicianEmail) {
+          console.log(`📧 Using fallback email: ${technicianEmail}`);
+          return [technicianEmail];
+        }
+        
+        return null;
+      }
+
+      console.log(`✅ Found SLA incident configuration for request ${request.id}:`, {
+        id: slaIncident.id,
+        resolutionEscalationEnabled: slaIncident.resolutionEscalationEnabled,
+        escalationLevel1: (slaIncident as any).escalationLevel1?.length || 0,
+        escalationLevel2: (slaIncident as any).escalationLevel2?.length || 0,
+        escalationLevel3: (slaIncident as any).escalationLevel3?.length || 0,
+        escalationLevel4: (slaIncident as any).escalationLevel4?.length || 0
+      });
+
+      // Check escalation history to determine current level
+      const escalationHistory = formData?.history?.escalations || [];
+      const currentLevel = this.getCurrentEscalationLevel(escalationHistory, slaIncident);
+      
+      if (!currentLevel) {
+        console.log(`❌ No escalation level needed for request ${request.id}`);
+        return null;
+      }
+
+      console.log(`🎯 Using escalation level ${currentLevel.level} for request ${request.id}`);
+
+      console.log(`Processing escalation level ${currentLevel.level} for request ${request.id}`);
+
+      // Resolve escalation targets to email addresses
+      const emailAddresses = await this.resolveEscalationTargets(
+        currentLevel.escalateTo, 
+        formData
+      );
+
+      // Update escalation history to prevent re-sending
+      await this.updateEscalationHistory(request.id, currentLevel.level);
+
+      return emailAddresses;
+
+    } catch (error) {
+      console.error('Error getting escalation emails:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Determine which escalation level to process
+   */
+  private getCurrentEscalationLevel(escalationHistory: any[], slaIncident: any): any {
+    const sentLevels = escalationHistory.map(h => h.level);
+
+    // Check levels in order
+    if (!sentLevels.includes(1) && slaIncident.resolutionEscalationEnabled) {
+      return {
+        level: 1,
+        escalateTo: slaIncident.escalateTo || [],
+        timing: { days: slaIncident.escalateDays, hours: slaIncident.escalateHours }
+      };
+    }
+
+    if (!sentLevels.includes(2) && slaIncident.level2Enabled) {
+      return {
+        level: 2,
+        escalateTo: slaIncident.level2EscalateTo || [],
+        timing: { days: slaIncident.level2Days, hours: slaIncident.level2Hours }
+      };
+    }
+
+    if (!sentLevels.includes(3) && slaIncident.level3Enabled) {
+      return {
+        level: 3,
+        escalateTo: slaIncident.level3EscalateTo || [],
+        timing: { days: slaIncident.level3Days, hours: slaIncident.level3Hours }
+      };
+    }
+
+    if (!sentLevels.includes(4) && slaIncident.level4Enabled) {
+      return {
+        level: 4,
+        escalateTo: slaIncident.level4EscalateTo || [],
+        timing: { days: slaIncident.level4Days, hours: slaIncident.level4Hours }
+      };
+    }
+
+    return null; // No more levels
+  }
+
+  /**
+   * Resolve escalation targets to email addresses
+   */
+  private async resolveEscalationTargets(escalateTo: any[], formData: any): Promise<string[]> {
+    const emailAddresses: string[] = [];
+
+    // Handle both JSON string and array formats
+    let targets: string[] = [];
+    if (Array.isArray(escalateTo)) {
+      targets = escalateTo;
+    } else if (typeof escalateTo === 'string') {
+      try {
+        targets = JSON.parse(escalateTo);
+      } catch {
+        targets = [escalateTo];
+      }
+    }
+
+    for (const target of targets) {
+      if (target === 'AS') {
+        // Get assigned technician's email using assignedTechnicianId (which is actually the user ID)
+        const userId = formData.assignedTechnicianId;
+        console.log(`🔍 AS escalation: Looking for user with ID: ${userId}`);
+        
+        if (userId) {
+          try {
+            // Get user email directly since assignedTechnicianId is the user ID
+            const user = await prisma.user.findUnique({
+              where: { id: parseInt(userId) },
+              select: { emp_email: true, emp_fname: true, emp_lname: true }
+            });
+            
+            if (user?.emp_email) {
+              emailAddresses.push(user.emp_email);
+              console.log(`✅ Added assigned technician email: ${user.emp_email} (userId: ${userId}, name: ${user.emp_fname} ${user.emp_lname})`);
+            } else {
+              console.warn(`❌ No email found for user ID: ${userId}`);
+            }
+          } catch (error) {
+            console.error(`❌ Error resolving AS escalation for userId ${userId}:`, error);
+          }
+        } else {
+          console.warn(`❌ No assignedTechnicianId found in formData for AS escalation`);
+        }
+      } else if (target === 'DH') {
+        // Get department head of requester's department
+        const requesterId = formData.requesterId || formData.userId;
+        if (requesterId) {
+          const requester = await prisma.users.findUnique({
+            where: { id: parseInt(requesterId) }
+          });
+          
+          // You'll need to implement department head logic based on your schema
+          // For now, this is a placeholder - adjust based on your department structure
+          if (requester?.department) {
+            const deptHead = await prisma.users.findFirst({
+              where: {
+                department: requester.department,
+                // Add your department head identification logic here
+                // e.g., post_des: { contains: 'head' } or a specific role field
+              }
+            });
+            if (deptHead?.emp_email) {
+              emailAddresses.push(deptHead.emp_email);
+              console.log(`Added department head email: ${deptHead.emp_email}`);
+            }
+          }
+        }
+      } else {
+        // Direct user ID
+        const user = await prisma.users.findUnique({
+          where: { id: parseInt(target) }
+        });
+        if (user?.emp_email) {
+          emailAddresses.push(user.emp_email);
+          console.log(`Added user email: ${user.emp_email}`);
+        }
+      }
+    }
+
+    return emailAddresses.filter(email => email); // Remove any null/undefined emails
+  }
+
+  /**
+   * Update escalation history in request formData
+   */
+  private async updateEscalationHistory(requestId: number, level: number): Promise<void> {
+    try {
+      const request = await prisma.request.findUnique({
+        where: { id: requestId }
+      });
+
+      if (!request) return;
+
+      // Safely handle formData as it could be various types
+      const currentFormData = (typeof request.formData === 'object' && request.formData !== null) 
+        ? request.formData as any 
+        : {};
+      
+      const currentHistory = currentFormData.history || {};
+      const escalations = currentHistory.escalations || [];
+
+      escalations.push({
+        level,
+        sentAt: new Date().toISOString(),
+        timestamp: Date.now()
+      });
+
+      await prisma.request.update({
+        where: { id: requestId },
+        data: {
+          formData: {
+            ...currentFormData,
+            history: {
+              ...currentHistory,
+              escalations
+            }
+          }
         }
       });
 
-      return technician?.emp_email || null;
-
+      console.log(`Updated escalation history for request ${requestId}, level ${level}`);
     } catch (error) {
-      console.error('Error getting technician email:', error);
-      return null;
+      console.error('Error updating escalation history:', error);
     }
   }
 
@@ -955,7 +1205,19 @@ class SafeSLAMonitoringService {
   private getRequestSummary(request: any): string {
     try {
       const formData = request.formData;
-      return formData.description || formData.issue_description || 'No description available';
+      return formData['8'] || formData.title || formData.issue_description || 'No title available';
+    } catch {
+      return 'No title available';
+    }
+  }
+
+  /**
+   * Get request description from form data
+   */
+  private getRequestDescription(request: any): string {
+    try {
+      const formData = request.formData;
+      return formData['9'] || formData.description || formData.issue_description || 'No description available';
     } catch {
       return 'No description available';
     }
@@ -997,13 +1259,90 @@ class SafeSLAMonitoringService {
   }
 
   /**
-   * Health check
+   * Enhanced status check with more details
    */
-  getStatus(): { isProcessing: boolean; lastRun?: string } {
+  getStatus(): { 
+    isProcessing: boolean; 
+    isAutoClosing: boolean;
+    lastRun?: string;
+    uptime: string;
+    instance: string;
+  } {
     return {
       isProcessing: this.isProcessing,
-      lastRun: new Date().toISOString()
+      isAutoClosing: this.isAutoClosing,
+      lastRun: new Date().toISOString(),
+      uptime: process.uptime().toString() + ' seconds',
+      instance: 'SafeSLAMonitoringService-' + Date.now()
     };
+  }
+
+  /**
+   * Detailed health check with service information
+   */
+  async getHealthCheck(): Promise<{
+    status: 'healthy' | 'processing' | 'error';
+    slaMonitoring: {
+      isRunning: boolean;
+      lastCheck?: string;
+      nextCheck?: string;
+    };
+    autoClose: {
+      isRunning: boolean;
+      lastCheck?: string;
+      nextCheck?: string;
+    };
+    database: {
+      connected: boolean;
+      error?: string;
+    };
+    timestamp: string;
+  }> {
+    try {
+      // Test database connection
+      let dbConnected = false;
+      let dbError: string | undefined;
+      
+      try {
+        await prisma.$queryRaw`SELECT 1`;
+        dbConnected = true;
+      } catch (error) {
+        dbError = error instanceof Error ? error.message : 'Database connection failed';
+      }
+
+      const status = this.isProcessing || this.isAutoClosing ? 'processing' : 
+                     !dbConnected ? 'error' : 'healthy';
+
+      return {
+        status,
+        slaMonitoring: {
+          isRunning: this.isProcessing,
+          lastCheck: new Date().toISOString(),
+          nextCheck: new Date(Date.now() + 1 * 60 * 1000).toISOString() // 1 minute from now (TESTING)
+        },
+        autoClose: {
+          isRunning: this.isAutoClosing,
+          lastCheck: new Date().toISOString(),
+          nextCheck: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours from now
+        },
+        database: {
+          connected: dbConnected,
+          error: dbError
+        },
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        slaMonitoring: { isRunning: false },
+        autoClose: { isRunning: false },
+        database: { 
+          connected: false, 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        },
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 
   /**
