@@ -29,7 +29,29 @@ export async function POST() {
     }
 
     for (const id of toClose) {
-      await prisma.request.update({ where: { id }, data: { status: 'closed' } });
+      // Create Philippine time for closedDate
+      const now = new Date();
+      const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+      const closedDate = philippineTime.toISOString().slice(0, 19).replace('T', ' ');
+
+      // Get current formData and add closedDate
+      const currentRequest = await prisma.request.findUnique({
+        where: { id },
+        select: { formData: true }
+      });
+      
+      const updatedFormData = {
+        ...(currentRequest?.formData as any || {}),
+        closedDate: closedDate
+      };
+
+      await prisma.request.update({ 
+        where: { id }, 
+        data: { 
+          status: 'closed',
+          formData: updatedFormData
+        } 
+      });
       try {
         await addHistory(prisma as any, {
           requestId: id,

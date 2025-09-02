@@ -2,7 +2,9 @@ import './globals.css';
 import type { Metadata } from 'next';
 import { Inter, Nunito_Sans } from 'next/font/google';
 import { SessionProvider } from './providers/session-provider';
+import { NotificationProvider } from '../contexts/notification-context';
 import HeaderVisibility from '../components/header-visibility';
+import GlobalNotificationPanel from '../components/GlobalNotificationPanel';
 import { Toaster } from '@/components/ui/toaster';
 
 // Import SAFE background service manager to auto-start all services
@@ -28,10 +30,13 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${inter.className} ${nunitoSans.variable}`}>
         <SessionProvider>
-          <HeaderVisibility>
-            {children}
-          </HeaderVisibility>
-          <Toaster />
+          <NotificationProvider>
+            <HeaderVisibility>
+              {children}
+            </HeaderVisibility>
+            <GlobalNotificationPanel />
+            <Toaster />
+          </NotificationProvider>
         </SessionProvider>
       </body>
     </html>

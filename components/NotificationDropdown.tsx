@@ -25,9 +25,10 @@ interface Notification {
 
 interface NotificationDropdownProps {
   className?: string;
+  onViewAllClick?: () => void;
 }
 
-export default function NotificationDropdown({ className }: NotificationDropdownProps) {
+export default function NotificationDropdown({ className, onViewAllClick }: NotificationDropdownProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
@@ -264,8 +265,16 @@ export default function NotificationDropdown({ className }: NotificationDropdown
           <>
             <DropdownMenuSeparator />
             <div className="p-2">
-              <Button variant="ghost" size="sm" className="w-full" asChild>
-                <a href="/notifications">View all notifications</a>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="w-full" 
+                onClick={() => {
+                  setIsOpen(false);
+                  onViewAllClick?.();
+                }}
+              >
+                View all notifications
               </Button>
             </div>
           </>

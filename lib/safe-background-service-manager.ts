@@ -258,7 +258,7 @@ class SafeBackgroundServiceManager {
   }
 
   /**
-   * Start auto-close scheduler - runs daily at 12:00 AM
+   * Start auto-close scheduler - runs twice daily at 12:00 AM and 12:00 PM
    */
   private startAutoCloseScheduler(): void {
     const isDevelopment = process.env.NODE_ENV === 'development';
@@ -266,47 +266,61 @@ class SafeBackgroundServiceManager {
     if (isDevelopment) {
       console.log('🔄 Auto-close scheduler started (dev mode - reduced logging)');
     } else {
-      console.log('🔄 Starting auto-close scheduler (12:00 AM daily)...');
+      console.log('🔄 Starting auto-close scheduler (12:00 AM and 12:00 PM daily)...');
     }
     
-    this.scheduleNext12AM();
+    this.scheduleNextAutoClose();
   }
 
   /**
-   * Schedule next 12:00 AM run for auto-close
+   * Schedule next auto-close run for 12:00 AM or 12:00 PM (whichever is next)
    */
-  private scheduleNext12AM(): void {
+  private scheduleNextAutoClose(): void {
     try {
       const now = new Date();
-      const next12AM = new Date(now);
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      let timeUntilNext;
+      let nextRun;
 
-      // Set to 11:41 AM for testing
-      next12AM.setHours(13, 53, 0, 0);
+      // TESTING: Uncomment below for 2-minute testing
+      // if (isDevelopment) {
+      //   timeUntilNext = 2 * 60 * 1000; // 2 minutes
+      //   nextRun = new Date(now.getTime() + timeUntilNext);
+      //   console.log(`🧪 TESTING: Next auto-close in 2 minutes at ${nextRun.toLocaleString()}`);
+      // } else {
+
+      // PRODUCTION MODE: Run at 12:00 AM or 12:00 PM
+      nextRun = new Date(now);
+      const currentHour = now.getHours();
       
-      // If 3:20 PM already passed today, schedule for tomorrow
-      if (next12AM.getTime() < now.getTime()) {
-        next12AM.setDate(next12AM.getDate() + 1);
+      if (currentHour < 12) {
+        // Before noon - schedule for 12:00 PM today
+        nextRun.setHours(12, 0, 0, 0);
+      } else {
+        // After noon - schedule for 12:00 AM tomorrow
+        nextRun.setDate(nextRun.getDate() + 1);
+        nextRun.setHours(0, 0, 0, 0);
       }
       
-      const timeUntil12AM = next12AM.getTime() - now.getTime();
-
-      const isDevelopment = process.env.NODE_ENV === 'development';
+      timeUntilNext = nextRun.getTime() - now.getTime();
       
       if (!isDevelopment) {
-        console.log(`⏰ Next auto-close scheduled for: ${next12AM.toLocaleString()}`);
+        console.log(`⏰ Next auto-close scheduled for: ${nextRun.toLocaleString()}`);
+        console.log(`⏰ Time until next run: ${Math.round(timeUntilNext / (1000 * 60))} minutes`);
       }
+      // } // End of testing comment block
 
       this.autoCloseScheduler = setTimeout(() => {
         this.runAutoClose();
-        this.scheduleNext12AM(); // Schedule next day
-      }, timeUntil12AM);
+        this.scheduleNextAutoClose(); // Schedule next run
+      }, timeUntilNext);
 
     } catch (error) {
-      console.error('❌ Error scheduling 12AM auto-close (will retry in 1 hour):', error);
+      console.error('❌ Error scheduling auto-close (will retry in 1 hour):', error);
       
       // Fallback: retry in 1 hour if scheduling fails
       this.autoCloseScheduler = setTimeout(() => {
-        this.scheduleNext12AM();
+        this.scheduleNextAutoClose();
       }, 60 * 60 * 1000); // 1 hour
     }
   }
@@ -316,7 +330,8 @@ class SafeBackgroundServiceManager {
    */
   private async runAutoClose(): Promise<void> {
     try {
-      console.log('🔄 9:28 AM - Running auto-close for resolved requests...');
+      const now = new Date();
+      console.log(`🔄 ${now.toLocaleString()} - Running auto-close for resolved requests...`);
 
       // SAFETY LAYER: Timeout protection
       const timeoutPromise = new Promise((_, reject) => 

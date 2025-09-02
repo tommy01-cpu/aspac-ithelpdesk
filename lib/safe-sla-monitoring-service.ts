@@ -163,12 +163,12 @@ class SafeSLAMonitoringService {
 
     try {
       // Get resolved requests older than 10 days
-      // const tenDaysAgo = new Date();
-      // tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
-
-      // 🧪 TESTING: Auto-close resolved requests after 5 minutes instead of 10 days
-      const fiveMinutesAgo = new Date();
-      fiveMinutesAgo.setMinutes(fiveMinutesAgo.getMinutes() - 5); // 5 minutes ago for testing
+      const tenDaysAgo = new Date();
+      tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+      
+      // TESTING: Uncomment below for 5-minute testing
+      // const fiveMinutesAgo = new Date();
+      // fiveMinutesAgo.setMinutes(fiveMinutesAgo.getMinutes() - 5);
 
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Database timeout')), 15000)
@@ -204,7 +204,8 @@ class SafeSLAMonitoringService {
         }
         
         const resolvedTime = new Date(resolvedAt);
-        const isOldEnough = resolvedTime <= fiveMinutesAgo;
+        const isOldEnough = resolvedTime <= tenDaysAgo;
+        // TESTING: For 5-minute testing, use: resolvedTime <= fiveMinutesAgo;
         
         if (isOldEnough) {
           console.log(`✅ Request ${request.id} resolved at ${resolvedTime.toLocaleString()}, eligible for auto-close`);
@@ -214,11 +215,11 @@ class SafeSLAMonitoringService {
       });
 
       if (!resolvedRequests || resolvedRequests.length === 0) {
-        console.log('📋 No resolved requests found that need auto-closing (5 minutes for testing)');
+        console.log('📋 No resolved requests found that need auto-closing (10 days)');
         return results;
       }
 
-      console.log(`🔄 Found ${resolvedRequests.length} resolved requests to auto-close (5 minutes for testing)`);
+      console.log(`🔄 Found ${resolvedRequests.length} resolved requests to auto-close (10 days)`);
 
       // Process each request
       for (const request of resolvedRequests) {
@@ -229,7 +230,7 @@ class SafeSLAMonitoringService {
           await this.autoCloseRequestSafely(request);
           
           results.requestsClosed++;
-          console.log(`✅ Auto-closed request ${request.id} (resolved 5+ minutes ago based on resolution date - TESTING)`);
+          console.log(`✅ Auto-closed request ${request.id} (resolved 10+ days ago based on resolution date)`);
 
         } catch (error) {
           results.closureFailed++;
@@ -354,6 +355,36 @@ class SafeSLAMonitoringService {
   }
 
   /**
+   * Determine if a request is an incident or service request
+   */
+  private getRequestType(request: any): 'incident' | 'service' {
+    try {
+      // First try to get type from template
+      if (request.template?.type) {
+        return request.template.type.toLowerCase() === 'incident' ? 'incident' : 'service';
+      }
+      
+      // Try to get from formData if available
+      if (request.formData?.type) {
+        return request.formData.type.toLowerCase() === 'incident' ? 'incident' : 'service';
+      }
+      
+      // Check template name/title for keywords
+      const templateName = request.template?.name || '';
+      const incidentKeywords = ['incident', 'outage', 'emergency', 'critical', 'down', 'failure'];
+      
+      const isIncident = incidentKeywords.some(keyword => 
+        templateName.toLowerCase().includes(keyword)
+      );
+      
+      return isIncident ? 'incident' : 'service';
+    } catch (error) {
+      console.warn(`Could not determine request type for ${request.id}, defaulting to 'service':`, error);
+      return 'service'; // Default to service if unable to determine
+    }
+  }
+
+  /**
    * Get SLA service configuration for a request
    */
   private async getSLAServiceForRequest(request: any): Promise<any> {
@@ -396,43 +427,75 @@ class SafeSLAMonitoringService {
   }
 
   /**
-   * Get default SLA rules based on your Priority enum: Low, Medium, High, Top
+   * Get default SLA rules based on Priority and Type (incident vs service)
    */
-  private getDefaultSLAByPriority(priority: string): any {
-    const slaRules = {
-      'Top': {          // Top Priority (Most Critical)
+  private getDefaultSLAByPriority(priority: string, type: 'incident' | 'service' = 'service'): any {
+    // Define SLA rules for INCIDENT requests
+    const incidentSlaRules = {
+      'Top': {          // Top Priority Incidents (Most Critical)
+        responseTime: 2,      // 2 hours response (faster for incidents)
+        resolutionHours: 8,   // 8 hours resolution (faster for incidents)
+        escalationTime: 1,    // Escalate after 1 hour
+        autoEscalate: true
+      },
+      'High': {         // High Priority Incidents
+        responseTime: 4,      // 4 hours response
+        resolutionHours: 24,  // 24 hours (1 day) resolution
+        escalationTime: 2,    // Escalate after 2 hours
+        autoEscalate: true
+      },
+      'Medium': {       // Medium Priority Incidents
+        responseTime: 8,      // 8 hours response
+        resolutionHours: 48,  // 48 hours (2 days) resolution
+        escalationTime: 4,    // Escalate after 4 hours
+        autoEscalate: true
+      },
+      'Low': {          // Low Priority Incidents
+        responseTime: 24,     // 24 hours (1 day) response
+        resolutionHours: 72,  // 72 hours (3 days) resolution
+        escalationTime: 8,    // Escalate after 8 hours
+        autoEscalate: true
+      }
+    };
+
+    // Define SLA rules for SERVICE requests
+    const serviceSlaRules = {
+      'Top': {          // Top Priority Services
         responseTime: 4,      // 4 hours response
         resolutionHours: 24,  // 24 hours resolution
         escalationTime: 2,    // Escalate after 2 hours
         autoEscalate: true
       },
-      'High': {         // High Priority
+      'High': {         // High Priority Services
         responseTime: 8,      // 8 hours response
         resolutionHours: 72,  // 72 hours (3 days) resolution
         escalationTime: 4,    // Escalate after 4 hours
         autoEscalate: true
       },
-      'Medium': {       // Medium Priority
+      'Medium': {       // Medium Priority Services
         responseTime: 24,     // 24 hours (1 day) response
         resolutionHours: 168, // 168 hours (7 days) resolution
         escalationTime: 12,   // Escalate after 12 hours
         autoEscalate: true
       },
-      'Low': {          // Low Priority
+      'Low': {          // Low Priority Services
         responseTime: 48,     // 48 hours (2 days) response
         resolutionHours: 336, // 336 hours (14 days) resolution
         escalationTime: 24,   // Escalate after 24 hours
-        autoEscalate: false   // No auto-escalation for low priority
+        autoEscalate: false   // No auto-escalation for low priority services
       }
     };
 
+    // Select the appropriate rule set based on type
+    const slaRules = type === 'incident' ? incidentSlaRules : serviceSlaRules;
     const defaultSLA = slaRules[priority as keyof typeof slaRules] || slaRules['Low'];
     
     return {
       ...defaultSLA,
       priority,
-      name: `Default SLA - ${priority} Priority`,
-      description: `Auto-generated SLA rules for ${priority} priority requests`,
+      type,
+      name: `Default SLA - ${priority} Priority ${type.charAt(0).toUpperCase() + type.slice(1)}`,
+      description: `Auto-generated SLA rules for ${priority} priority ${type} requests`,
       excludeHolidays: true,
       excludeWeekends: false,
       operationalHours: true
@@ -511,7 +574,7 @@ class SafeSLAMonitoringService {
     }
 
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Auto-close timeout')), 10000)
+      setTimeout(() => reject(new Error('Auto-close timeout')), 30000) // Increased to 30 seconds
     );
 
     const closePromise = this.closeRequestSafely(request);
@@ -529,7 +592,7 @@ class SafeSLAMonitoringService {
         userId: request.userId,
         type: 'REQUEST_CLOSED',
         title: 'Request Auto-Closed',
-        message: `Your request #${request.id} has been automatically closed by the system after being resolved for 5 minutes.`,
+        message: `Your request #${request.id} has been automatically closed by the system after being resolved for 10 days.`,
         data: {
           requestId: request.id,
           status: 'closed',
@@ -615,7 +678,7 @@ class SafeSLAMonitoringService {
         userId: request.userId,
         type: 'REQUEST_CLOSED',
         title: 'Request Auto-Closed',
-        message: `Your request "${requestTitle}" has been automatically closed by the system after being resolved for 5 minutes.`,
+        message: `Your request "${requestTitle}" has been automatically closed by the system after being resolved for 10 days.`,
         data: {
           requestId: request.id,
           action: 'auto_closed',
@@ -667,20 +730,52 @@ class SafeSLAMonitoringService {
    */
   private async closeRequestSafely(request: any): Promise<void> {
     try {
-      // Update request status to closed
+      // Create Philippine time for closedDate (without UTC conversion)
+      const currentTime = new Date();
+      const philippineClosedTime = new Date(currentTime.getTime() + (8 * 60 * 60 * 1000));
+      const closedDate = philippineClosedTime.toISOString().slice(0, 19).replace('T', ' ');
+
+      // Get current formData and add closedDate
+      const currentFormData = request.formData || {};
+      const updatedFormData = {
+        ...currentFormData,
+        closedDate: closedDate
+      };
+
+      // Update request status to closed and add closedDate to formData
       await prisma.request.update({
         where: { id: request.id },
         data: { 
           status: 'closed',
+          formData: updatedFormData,
           updatedAt: new Date()
         }
       });
 
       // 📧 Send CC notifications before logging (in case notification fails)
-      await this.sendClosedCCNotifications(request);
+      try {
+        const ccPromise = this.sendClosedCCNotifications(request);
+        const ccTimeout = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('CC notification timeout')), 15000)
+        );
+        await Promise.race([ccPromise, ccTimeout]);
+      } catch (error) {
+        console.error(`⚠️ CC notification failed for request ${request.id}:`, error);
+        // Continue with the process even if CC notification fails
+      }
 
-      // 🔔 Send notification and email to requester
-      await this.sendRequesterClosedNotification(request);
+      // 🔔 Send notification to requester
+      try {
+        const notificationPromise = this.notifyRequesterOfClosure(request);
+        const notificationTimeout = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Requester notification timeout')), 15000)
+        );
+        await Promise.race([notificationPromise, notificationTimeout]);
+      } catch (error) {
+        console.error(`⚠️ Requester notification failed for request ${request.id}:`, error);
+        // Continue with the process even if notification fails
+      }
+
 
       // Log closure in request history
       // Format Philippine time for display
@@ -704,7 +799,7 @@ class SafeSLAMonitoringService {
         data: {
           requestId: request.id,
           action: 'Status Changed to Closed',
-          details: `Auto-closed after 5 minutes from resolution date (TESTING MODE) at ${philippineTime}`, // Removed PHT suffix
+          details: `Auto-closed after 10 days from resolution date at ${philippineTime}`, // Removed PHT suffix
           actorId: 1, // System user ID
           actorName: 'System',
           actorType: 'system',

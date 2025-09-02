@@ -43,16 +43,25 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const now = new Date();
     const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
 
+    // Prepare formData update
+    const updatedFormData = {
+      ...(existing.formData as any || {}),
+      resolutionNotes: notes || null,
+      resolutionAttachmentIds: Array.isArray(attachmentIds) ? attachmentIds : [],
+    };
+
+    // Add closedDate if status is being changed to closed
+    if (actualStatus === 'closed') {
+      const closedDate = philippineTime.toISOString().slice(0, 19).replace('T', ' ');
+      updatedFormData.closedDate = closedDate;
+    }
+
     const updated = await prisma.request.update({
       where: { id: requestId },
       data: {
         status: newStatus,
         updatedAt: philippineTime,
-        formData: {
-          ...(existing.formData as any || {}),
-          resolutionNotes: notes || null,
-          resolutionAttachmentIds: Array.isArray(attachmentIds) ? attachmentIds : [],
-        }
+        formData: updatedFormData
       }
     });
 

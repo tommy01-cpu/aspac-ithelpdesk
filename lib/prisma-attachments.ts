@@ -37,6 +37,26 @@ if (!g.prismaAttachments) {
       { emit: 'event', level: 'warn' },
     ],
   })
+  
+  // Handle connection events
+  g.prismaAttachments.$on('error', (e: any) => {
+    console.error('Prisma attachments client error:', e)
+  })
+  
+  g.prismaAttachments.$on('warn', (e: any) => {
+    console.warn('Prisma attachments client warning:', e)
+  })
 }
 
 export const prismaAttachments = g.prismaAttachments
+
+// Helper function to ensure connection
+export async function ensureAttachmentsConnection() {
+  try {
+    await prismaAttachments.$connect()
+    return true
+  } catch (error) {
+    console.error('Failed to connect to attachments database:', error)
+    return false
+  }
+}

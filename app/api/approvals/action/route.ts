@@ -170,6 +170,10 @@ export async function POST(request: NextRequest) {
       });
     } else if (action === 'reject') {
       // If any approval is rejected, automatically close the request
+      
+      // Create Philippine time for closedDate
+      const closedDate = philippineTime.toISOString().slice(0, 19).replace('T', ' ');
+
         await prisma.request.update({
           where: { id: approval.requestId },
           data: { 
@@ -177,7 +181,8 @@ export async function POST(request: NextRequest) {
             updatedAt: philippineTime, // Use UTC time for database
             formData: {
               ...(approval.request.formData as any || {}),
-              '5': 'rejected' // Update the approval status field to rejected
+              '5': 'rejected', // Update the approval status field to rejected
+              closedDate: closedDate // Add closed date when rejected
             }
           }
         });      await addHistory(prisma, {

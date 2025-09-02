@@ -23,16 +23,22 @@ export async function GET(request: Request) {
 
     const userId = parseInt(session.user.id);
     
-    let notifications;
+    let rawNotifications;
     if (unreadOnly) {
-      notifications = await prisma.notification.findMany({
+      rawNotifications = await prisma.notification.findMany({
         where: { userId, isRead: false },
         orderBy: { createdAt: 'desc' },
         take: limit,
       });
     } else {
-      notifications = await getUserNotifications(userId, limit);
+      rawNotifications = await getUserNotifications(userId, limit);
     }
+
+    // Map isRead to read for frontend compatibility
+    const notifications = rawNotifications.map((notification: any) => ({
+      ...notification,
+      read: notification.isRead
+    }));
 
     const unreadCount = await getUnreadNotificationCount(userId);
 

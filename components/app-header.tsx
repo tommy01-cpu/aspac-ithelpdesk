@@ -24,9 +24,11 @@ import { Label } from "@/components/ui/label";
 import { Search, Bell, Settings, User, LogOut, KeyRound, ChevronDown, Clock } from "lucide-react";
 import { cn } from "../lib/utils";
 import NotificationDropdown from "@/components/NotificationDropdown";
+import { useNotificationPanel } from "@/contexts/notification-context";
 
 export default function AppHeader() {
   const { data: session } = useSession();
+  const { openNotificationPanel } = useNotificationPanel();
   const [imgError, setImgError] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [passwordData, setPasswordData] = useState({
@@ -301,7 +303,10 @@ export default function AppHeader() {
             <Button variant="ghost" size="icon" className="text-white hover:text-white hover:bg-black/10 transition-all duration-200">
               <Search className="h-4 w-4" />
             </Button>
-            <NotificationDropdown className="text-white hover:text-white hover:bg-black/10 transition-all duration-200" />
+            <NotificationDropdown 
+              className="text-white hover:text-white hover:bg-black/10 transition-all duration-200" 
+              onViewAllClick={openNotificationPanel}
+            />
             {/* Only show Settings icon if user is an admin */}
             {session?.user?.isAdmin && (
               <Link href="/admin/settings">

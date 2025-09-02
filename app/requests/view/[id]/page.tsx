@@ -2630,8 +2630,8 @@ export default function RequestViewPage() {
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Closed Date</span>
                             <span className="text-sm text-gray-600">
-                              {requestData.formData?.resolution?.closedAt
-                                ? formatDbTimestamp(String(requestData.formData.resolution.closedAt))
+                              {requestData.formData?.closedDate
+                                ? formatDbTimestamp(String(requestData.formData.closedDate))
                                 : '-'}
                             </span>
                           </div>
