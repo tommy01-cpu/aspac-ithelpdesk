@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     // Get departments based on user role
     let departments;
-    if (user?.isTechnician || user?.technician?.isAdmin) {
+    if (user?.technician || user?.technician?.isAdmin) {
       // Technicians and admins can see all departments
       departments = await prisma.department.findMany({
         where: { isActive: true },

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
+import { formatStatusForDisplay } from '@/lib/status-colors';
 
 export async function POST(
   request: NextRequest,
@@ -59,7 +60,7 @@ export async function POST(
     }
     
     if (oldStatus !== status) {
-      changes.push(`Status changed from ${oldStatus} to ${status}`);
+      changes.push(`Status changed from ${formatStatusForDisplay(oldStatus)} to ${formatStatusForDisplay(status)}`);
       oldValues.status = oldStatus;
       newValues.status = status;
     }

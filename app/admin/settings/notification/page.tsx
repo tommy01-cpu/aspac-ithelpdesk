@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Mail, FileText, Server, Bell } from 'lucide-react';
+import { ArrowLeft, Mail, FileText, Server, Bell, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 import { SessionWrapper } from '@/components/session-wrapper';
 import dynamic from 'next/dynamic';
@@ -19,7 +20,7 @@ interface TabItem {
 // Dynamically import the components to avoid SSR issues
 const MailServerSettings = dynamic(() => import('./mail-server-settings/page'), { ssr: false });
 
-// Create a simplified version of the email template list for embedding
+// Create a comprehensive email template list with full functionality
 const EmailTemplatesList = () => {
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,18 +70,17 @@ const EmailTemplatesList = () => {
 
   return (
     <div className="space-y-6">
-      {/* Search and Actions */}
+      {/* Search */}
       <div className="flex items-center justify-between">
         <div className="flex-1 max-w-md">
-          <input
+          <Input
             type="text"
             placeholder="Search templates..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
+            className="w-full"
           />
         </div>
-     
       </div>
 
       {/* Templates Table */}
@@ -115,7 +115,8 @@ const EmailTemplatesList = () => {
                       onClick={() => handleEdit(template.id)}
                       className="text-blue-600 hover:text-blue-700 border-blue-200 hover:bg-blue-50"
                     >
-                      Customize
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit
                     </Button>
                   </td>
                 </tr>
@@ -127,9 +128,14 @@ const EmailTemplatesList = () => {
         {filteredTemplates.length === 0 && !loading && (
           <div className="text-center py-12">
             <FileText className="w-16 h-16 mx-auto text-slate-400 mb-4" />
-            <h3 className="text-lg font-semibold text-slate-800 mb-2">No templates found</h3>
+            <h3 className="text-lg font-semibold text-slate-800 mb-2">
+              {searchQuery ? 'No templates found' : 'No email templates available'}
+            </h3>
             <p className="text-slate-600">
-              {searchQuery ? 'Try adjusting your search query' : 'Create your first email template to get started'}
+              {searchQuery 
+                ? 'Try adjusting your search query or browse all templates.' 
+                : 'Email templates are managed by the system.'
+              }
             </p>
           </div>
         )}
@@ -170,7 +176,7 @@ export default function NotificationSettingsPage() {
     const tab = notificationTabs.find(t => t.id === tabId);
     if (tab) {
       setActiveTab(tabId);
-      // Update URL with tab parameter for both tabs to maintain the side panel
+      // Update URL with tab parameter for all tabs to maintain the side panel
       router.push(`/admin/settings/notification?tab=${tabId}`);
     }
   };

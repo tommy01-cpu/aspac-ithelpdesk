@@ -314,7 +314,7 @@ export async function GET(request: NextRequest) {
     });
 
     // If user is not technician/admin, apply restrictions
-    if (!user?.isTechnician && !(user?.technician?.isAdmin)) {
+    if (!user?.technician && !(user?.technician?.isAdmin)) {
       // Check if user is department head of any departments
       const headOfDepartments = await prisma.department.findMany({
         where: { 

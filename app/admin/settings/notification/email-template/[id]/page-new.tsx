@@ -99,7 +99,7 @@ export default function EmailTemplateEditorPage() {
       });
 
       if (response.ok) {
-        router.push('/admin/settings/notification/email-template');
+        router.push('/admin/settings/notification?tab=email-template');
       } else {
         console.error('Failed to save template');
         alert('Failed to save template. Please try again.');
@@ -113,7 +113,7 @@ export default function EmailTemplateEditorPage() {
   };
 
   const handleCancel = () => {
-    router.push('/admin/settings/notification/email-template');
+    router.push('/admin/settings/notification?tab=email-template');
   };
 
   // Sync content between editor and preview
@@ -233,7 +233,7 @@ export default function EmailTemplateEditorPage() {
           <div className="text-center">
             <h3 className="text-lg font-semibold text-slate-800 mb-2">Template Not Found</h3>
             <p className="text-slate-600 mb-4">The requested email template could not be found.</p>
-            <Link href="/admin/settings/notification/email-template">
+            <Link href="/admin/settings/notification?tab=email-template">
               <Button variant="outline">Back to Templates</Button>
             </Link>
           </div>
@@ -250,7 +250,7 @@ export default function EmailTemplateEditorPage() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <Link href="/admin/settings/notification/email-template">
+                <Link href="/admin/settings/notification?tab=email-template">
                   <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900 hover:bg-slate-100">
                     <ArrowLeft className="h-4 w-4 mr-2" />
                     Back to Templates

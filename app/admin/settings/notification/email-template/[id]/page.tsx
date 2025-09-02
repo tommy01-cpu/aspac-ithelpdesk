@@ -193,7 +193,7 @@ export default function EmailTemplateEditorPage() {
 
       if (response.ok) {
         alert('Template saved successfully!');
-        router.push('/admin/settings/notification/email-template');
+        router.push('/admin/settings/notification?tab=email-template');
       } else {
         const errorData = await response.json();
         console.error('Failed to save template:', errorData);
@@ -629,7 +629,7 @@ export default function EmailTemplateEditorPage() {
           <div className="w-full px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
               <div className="flex items-center gap-4">
-                <Link href="/admin/settings/notification/email-template">
+                <Link href="/admin/settings/notification?tab=email-template">
                   <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900 hover:bg-slate-100">
                     <ArrowLeft className="h-4 w-4 mr-2" />
                     Back to Email Templates

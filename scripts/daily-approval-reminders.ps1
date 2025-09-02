@@ -64,7 +64,7 @@ try {
     # Additional troubleshooting info
     Write-Log "Troubleshooting tips:" "INFO"
     Write-Log "  1. Ensure IT Helpdesk application is running on port 3000" "INFO"
-    Write-Log "  2. Check if localhost:3000 is accessible" "INFO"
+    Write-Log "  2. Check if 192.168.1.85:3000 is accessible" "INFO"
     Write-Log "  3. Verify no firewall is blocking the connection" "INFO"
     Write-Log "  4. Check IT Helpdesk server logs for errors" "INFO"
     

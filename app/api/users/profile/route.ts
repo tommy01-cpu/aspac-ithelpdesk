@@ -14,17 +14,9 @@ export async function GET(request: NextRequest) {
     // Get the user from the database
     const user = await prisma.users.findFirst({
       where: { emp_email: session.user.email },
-      select: {
-        id: true,
-        emp_fname: true,
-        emp_lname: true,
-        emp_email: true,
-        emp_code: true,
-        post_des: true,
-        department: true,
-        isServiceApprover: true,
-        isTechnician: true,
-        emp_status: true
+      include: {
+        technician: true,
+        userDepartment: true
       }
     });
 

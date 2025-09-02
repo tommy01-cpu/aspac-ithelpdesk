@@ -11,7 +11,7 @@ export interface LoadBalancingConfig {
 }
 
 export interface TechnicianWorkload {
-  technicianId: number;
+  technicianId: number; // Note: This is actually the user ID of the technician
   activeTickets: number;
   assignedTickets: number;
   lastAssigned?: Date;
@@ -19,7 +19,7 @@ export interface TechnicianWorkload {
 
 export interface AssignmentResult {
   success: boolean;
-  technicianId?: number;
+  technicianId?: number; // Note: This is actually the user ID of the technician
   technicianName?: string;
   technicianEmail?: string;
   supportGroupId?: number;
@@ -57,15 +57,15 @@ async function readGlobalStrategyFromDisk(): Promise<Exclude<GlobalStrategy, 'le
 /**
  * Get technician workload statistics
  */
-export async function getTechnicianWorkload(technicianId: number): Promise<TechnicianWorkload> {
+export async function getTechnicianWorkload(userId: number): Promise<TechnicianWorkload> {
   try {
-    // Count active tickets assigned to this technician
+    // Count active tickets assigned to this user (technician)
     const activeTickets = await prisma.request.count({
       where: {
         formData: {
           path: ['assignedTechnicianId'],
-          // Match the technician id stored as a string in JSON
-          equals: technicianId.toString() as any
+          // Match the user id stored as a string in JSON
+          equals: userId.toString() as any
         },
         status: {
           in: ['open', 'on_hold', 'for_approval']
@@ -73,12 +73,12 @@ export async function getTechnicianWorkload(technicianId: number): Promise<Techn
       }
     });
 
-    // Count all tickets assigned to this technician (historical)
+    // Count all tickets assigned to this user (technician) (historical)
     const assignedTickets = await prisma.request.count({
       where: {
         formData: {
           path: ['assignedTechnicianId'],
-          equals: technicianId.toString() as any
+          equals: userId.toString() as any
         }
       }
     });
@@ -88,7 +88,7 @@ export async function getTechnicianWorkload(technicianId: number): Promise<Techn
       where: {
         formData: {
           path: ['assignedTechnicianId'],
-          equals: technicianId.toString() as any
+          equals: userId.toString() as any
         }
       },
       orderBy: {
@@ -100,15 +100,15 @@ export async function getTechnicianWorkload(technicianId: number): Promise<Techn
     });
 
     return {
-      technicianId,
+      technicianId: userId, // This field name is kept for backward compatibility
       activeTickets,
       assignedTickets,
       lastAssigned: lastAssignedRequest?.updatedAt
     };
   } catch (error) {
-    console.error(`Error getting technician workload for ${technicianId}:`, error);
+    console.error(`Error getting technician workload for user ${userId}:`, error);
     return {
-      technicianId,
+      technicianId: userId, // This field name is kept for backward compatibility
       activeTickets: 0,
       assignedTickets: 0
     };
@@ -153,7 +153,7 @@ export async function getSupportGroupTechnicians(supportGroupId: number): Promis
       technicians.map(async (tech) => {
         const workload = await getTechnicianWorkload(tech.id);
         return {
-          id: tech.id,
+          id: tech.user.id, // Use user ID instead of technician ID
           name: `${tech.user.emp_fname} ${tech.user.emp_lname}`.trim(),
           email: tech.user.emp_email || '',
           workload
@@ -174,16 +174,20 @@ export async function getSupportGroupTechnicians(supportGroupId: number): Promis
  */
 export async function getLastAssignedMapForGroup(supportGroupId: number): Promise<Record<number, Date>> {
   try {
-    // Get technician IDs in this support group
+    // Get user IDs of technicians in this support group (since we store user IDs in assignedTechnicianId)
     const techs = await prisma.technician.findMany({
       where: {
         isActive: true,
         supportGroupMemberships: { some: { supportGroupId, supportGroup: { isActive: true } } },
       },
-      select: { id: true },
+      include: {
+        user: {
+          select: { id: true }
+        }
+      }
     });
-    const techIdSet = new Set(techs.map(t => t.id.toString()));
-    if (techIdSet.size === 0) return {};
+    const userIdSet = new Set(techs.map(t => t.user.id.toString()));
+    if (userIdSet.size === 0) return {};
 
     // Fetch recent requests that have assignedTechnicianId in this set
     // Limit to a reasonable window to keep it fast
@@ -202,18 +206,18 @@ export async function getLastAssignedMapForGroup(supportGroupId: number): Promis
     const map: Record<number, Date> = {};
     for (const r of recent) {
       const fd = (r.formData as any) || {};
-      const techIdStr = fd.assignedTechnicianId ? String(fd.assignedTechnicianId) : undefined;
-      if (!techIdStr || !techIdSet.has(techIdStr)) continue;
-      const techIdNum = parseInt(techIdStr, 10);
-      if (map[techIdNum]) continue; // already have the most recent one due to ordering
+      const userIdStr = fd.assignedTechnicianId ? String(fd.assignedTechnicianId) : undefined;
+      if (!userIdStr || !userIdSet.has(userIdStr)) continue;
+      const userIdNum = parseInt(userIdStr, 10);
+      if (map[userIdNum]) continue; // already have the most recent one due to ordering
       // Prefer assignedDate in formData; fall back to updatedAt
       const assignedDateIso: string | undefined = fd.assignedDate ? String(fd.assignedDate) : undefined;
       const d = assignedDateIso ? new Date(assignedDateIso) : new Date(r.updatedAt);
       if (!Number.isNaN(d.getTime())) {
-        map[techIdNum] = d;
+        map[userIdNum] = d;
       }
       // Break early if we already found all
-      if (Object.keys(map).length >= techIdSet.size) break;
+      if (Object.keys(map).length >= userIdSet.size) break;
     }
     return map;
   } catch (err) {
@@ -507,7 +511,7 @@ export async function autoAssignTechnician(
             formData: {
               ...(await prisma.request.findUnique({ where: { id: requestId }, select: { formData: true } }))?.formData as any || {},
               assignedTechnician: assignedTechnician.name,
-              assignedTechnicianId: assignedTechnician.userId.toString(),
+              assignedTechnicianId: assignedTechnician.id.toString(),
               assignedTechnicianEmail: assignedTechnician.email,
               assignedDate: assignedDatePH
             }

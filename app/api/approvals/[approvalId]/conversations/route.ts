@@ -175,7 +175,7 @@ export async function POST(
               Request_Status: formatStatusForDisplay(approval.request.status),
               Request_Subject: formData?.subject || formData?.title || formData?.['8'] || `Request #${approval.request.id}`,
               Request_Description: formData?.description || formData?.details || formData?.['9'] || 'No description provided',
-              Request_Link: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/requests/view/${approval.request.id}`
+              Request_Link: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`
             };
           } else {
             // Approver posted, notify the requester  
@@ -190,7 +190,7 @@ export async function POST(
               Request_Status: formatStatusForDisplay(approval.request.status),
               Request_Subject: formData?.subject || formData?.title || formData?.['8'] || `Request #${approval.request.id}`,
               Request_Description: formData?.description || formData?.details || formData?.['9'] || 'No description provided',
-              Request_Link: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/requests/view/${approval.request.id}`
+              Request_Link: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`
             };
           }
 

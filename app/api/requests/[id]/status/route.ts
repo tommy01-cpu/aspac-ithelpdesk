@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { addHistory } from '@/lib/history';
 import { RequestStatus } from '@prisma/client';
 import { sendRequestClosedCCEmail } from '@/lib/database-email-templates';
+import { formatStatusForDisplay } from '@/lib/status-colors';
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -55,18 +56,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       }
     });
 
-    // Create proper status display labels
-    const statusLabels: { [key: string]: string } = {
-      'on_hold': 'On Hold',
-      'open': 'Open',
-      'cancelled': 'Cancelled',
-      'closed': 'Closed',
-      'for_approval': 'For Approval',
-      'resolved': 'Resolved'
-    };
-
-    const oldStatusLabel = statusLabels[existing.status.toString()] || existing.status.toString().replace(/_/g, ' ');
-    const newStatusLabel = statusLabels[status] || statusLabels[actualStatus] || String(actualStatus).replace(/_/g, ' ');
+    // Create proper status display labels using the formatting function
+    const oldStatusLabel = formatStatusForDisplay(existing.status.toString());
+    const newStatusLabel = formatStatusForDisplay(status || actualStatus);
 
     // Add history entry with Philippine time (using new Prisma create method)
     await addHistory(prisma, {

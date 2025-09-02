@@ -165,7 +165,7 @@ export async function POST(
             Request_Status: formatStatusForDisplay(approval.request.status),
             Request_Subject: requestSubject,
             Request_Description: requestDescription,
-            Request_Link: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/requests/view/${approval.request.id}`
+            Request_Link: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`
           };
 
           // Use template 28 (clarification_response_to_approver)

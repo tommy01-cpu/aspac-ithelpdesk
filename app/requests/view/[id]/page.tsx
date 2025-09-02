@@ -732,6 +732,16 @@ export default function RequestViewPage() {
       const response = await fetch(`/api/requests/${requestId}`);
       
       if (!response.ok) {
+        // If request not found (404), redirect to homepage
+        if (response.status === 404) {
+          toast({
+            title: "Request Not Found",
+            description: "The request you're looking for doesn't exist or you don't have permission to view it.",
+            variant: "destructive"
+          });
+          router.push('/'); // Redirect to homepage
+          return;
+        }
         throw new Error('Failed to fetch request data');
       }
 
@@ -766,6 +776,10 @@ export default function RequestViewPage() {
         description: "Failed to load request data",
         variant: "destructive"
       });
+      // If there's any other error, also redirect to homepage after a delay
+      setTimeout(() => {
+        router.push('/');
+      }, 2000);
     } finally {
       setLoading(false);
     }
@@ -2643,8 +2657,9 @@ export default function RequestViewPage() {
                           const resBlock = fd.resolution || {};
                           const html = String(resBlock.closureComments || fd.closureComments || '').trim();
                           const hasExistingResolution = html.length > 0;
+                          const isResolved = requestData?.status?.toLowerCase() === 'resolved';
                           
-                          if (hasExistingResolution && !isEditingResolution) {
+                          if (hasExistingResolution && !isEditingResolution && isResolved) {
                             return (
                               <Button
                                 variant="outline"

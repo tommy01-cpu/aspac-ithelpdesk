@@ -33,7 +33,7 @@ function formatTimestampForNotification(timestamp: Date | string): string {
 
 // Helper function to get base URL
 const getBaseUrl = () => {
-  return process.env.NEXTAUTH_URL || 'http://localhost:3000';
+  return process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000';
 };
 
 // Helper function to ensure all email variables have string values
@@ -273,23 +273,9 @@ export const notifyRequestCreated = async (requestData: any, templateData: any) 
       data: { requestId, status: requestData.status },
     });
 
-    // Create notifications for CC users
-    for (const email of emailsToNotify) {
-      try {
-        const user = await prisma.users.findFirst({ where: { emp_email: email } });
-        if (user) {
-          await createNotification({
-            userId: user.id,
-            type: 'REQUEST_CREATED',
-            title: `New Request: #${requestId} from ${requesterName}`,
-            message: `${requesterName} created a new request: "${requestSubject}"`,
-            data: { requestId, requesterId: requestData.userId, status: requestData.status },
-          });
-        }
-      } catch (error) {
-        console.error(`Error creating notification for CC user ${email}:`, error);
-      }
-    }
+    // ✅ REMOVED: CC app notifications since email notifications are already sent
+    // CC users now receive only email notifications to avoid duplication
+    console.log(`✅ Skipped creating ${emailsToNotify.length} CC app notifications since email notifications were sent to:`, ccEmailsToNotify.join(', '));
 
     return true;
   } catch (error) {
@@ -617,23 +603,9 @@ export const notifyRequestResolved = async (
       data: { requestId, status: requestData.status, resolution: resolutionDescription },
     });
 
-    // Create notifications for CC users
-    for (const email of emailsToNotify) {
-      try {
-        const user = await prisma.users.findFirst({ where: { emp_email: email } });
-        if (user) {
-          await createNotification({
-            userId: user.id,
-            type: 'REQUEST_RESOLVED',
-            title: `Request Resolved: #${requestId} from ${requesterName}`,
-            message: `Request "${requestSubject}" from ${requesterName} has been resolved.`,
-            data: { requestId, requesterId: requestData.userId, status: requestData.status, resolution: resolutionDescription },
-          });
-        }
-      } catch (error) {
-        console.error(`Error creating resolved notification for CC user ${email}:`, error);
-      }
-    }
+    // ✅ REMOVED: CC app notifications since email notifications are already sent
+    // CC users now receive only email notifications to avoid duplication
+    console.log(`✅ Skipped creating ${emailsToNotify.length} CC app notifications since email notifications were sent to:`, emailsToNotify.join(', '));
 
     return true;
   } catch (error) {
@@ -762,7 +734,7 @@ export const sendApprovalOutcomeNotification = async (
     const requestUrl = `${baseUrl}/requests/view/${requestId}`;
     const encodedRequestUrl = encodeURIComponent(requestUrl);
 
-    // Email variables - Only include comments if action is 'rejected'
+    // Email variables - Include comments for both approved and rejected requests
     const emailVariables: RequestEmailVariables = {
       Request_ID: requestId.toString(),
       Request_Status: formatStatusForDisplay(action === 'approved' ? 'approved' : 'rejected'),
@@ -773,9 +745,9 @@ export const sendApprovalOutcomeNotification = async (
       Request_Title: requestSubject,
       Approver_Name: '', // TODO: Add approver name if available
       Approver_Email: '', // TODO: Add approver email if available
-      Approval_Comments: action === 'rejected' && comments ? comments : '',
+      Approval_Comments: comments || '',
       Request_Approval_Status: action === 'approved' ? 'Approved' : 'Rejected', // Added for template compatibility
-      Request_Approval_Comment: action === 'rejected' && comments ? comments : '', // Added for template compatibility
+      Request_Approval_Comment: comments || '', // Include comments for both approved and rejected requests
       Clarification: '', // Not applicable for approval outcome
       Request_URL: requestUrl,
       Request_Link: requestUrl,
@@ -971,7 +943,7 @@ export const notifyNewApprover = async (
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
       Requester_Name: requesterName,
-      Requester_Email: requestData.user.emp_email,
+      Requester_Email: requestData.user.emp_email || '',
       Request_Title: requestSubject,
       Approver_Name: approverName,
       Approver_Email: approverEmail,

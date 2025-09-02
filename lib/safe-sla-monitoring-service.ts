@@ -1,5 +1,7 @@
 import { prisma } from './prisma';
-import { sendSLAEscalationEmail } from './database-email-templates';
+import { sendSLAEscalationEmail, sendRequestClosedCCEmail, sendEmailWithTemplateId, sendEmail } from './database-email-templates';
+import { formatStatusForDisplay } from './status-colors';
+import { createNotification } from './notifications';
 
 /**
  * SAFE SLA Monitoring Service
@@ -11,6 +13,7 @@ import { sendSLAEscalationEmail } from './database-email-templates';
 class SafeSLAMonitoringService {
   private static instance: SafeSLAMonitoringService;
   private isProcessing = false;
+  private isAutoClosing = false; // Add auto-close lock
   private maxRetries = 3;
   private batchSize = 10; // Process requests in small batches
 
@@ -70,7 +73,13 @@ class SafeSLAMonitoringService {
    * Runs daily to check for requests that need auto-closing
    */
   async autoCloseResolvedRequests(): Promise<{ success: boolean; results?: any; error?: string }> {
+    if (this.isAutoClosing) {
+      console.log('🔄 Auto-close already processing, skipping...');
+      return { success: false, error: 'Auto-close already in progress' };
+    }
+
     try {
+      this.isAutoClosing = true;
       console.log('🔄 Starting auto-close process for resolved requests...');
 
       // Check if this instance is properly initialized
@@ -90,6 +99,8 @@ class SafeSLAMonitoringService {
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error' 
       };
+    } finally {
+      this.isAutoClosing = false;
     }
   }
 
@@ -152,20 +163,22 @@ class SafeSLAMonitoringService {
 
     try {
       // Get resolved requests older than 10 days
-      const tenDaysAgo = new Date();
-      tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+      // const tenDaysAgo = new Date();
+      // tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+
+      // 🧪 TESTING: Auto-close resolved requests after 5 minutes instead of 10 days
+      const fiveMinutesAgo = new Date();
+      fiveMinutesAgo.setMinutes(fiveMinutesAgo.getMinutes() - 5); // 5 minutes ago for testing
 
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Database timeout')), 15000)
       );
 
-      const resolvedRequests = await Promise.race([
+      // Get all resolved requests and filter by resolvedAt timestamp in formData
+      const allResolvedRequests = await Promise.race([
         prisma.request.findMany({
           where: {
-            status: 'resolved',
-            updatedAt: {
-              lte: tenDaysAgo
-            }
+            status: 'resolved'
           },
           include: {
             user: {
@@ -177,17 +190,35 @@ class SafeSLAMonitoringService {
               }
             }
           },
-          take: 50 // Limit to prevent memory issues
+          take: 100 // Get more candidates to filter by resolvedAt
         }),
         timeoutPromise
       ]) as any[];
 
+      // Filter by actual resolution timestamp from formData
+      const resolvedRequests = allResolvedRequests.filter(request => {
+        const resolvedAt = request.formData?.resolution?.resolvedAt;
+        if (!resolvedAt) {
+          console.log(`⚠️ Request ${request.id} has no resolvedAt timestamp in formData`);
+          return false; // Skip requests without resolution timestamp
+        }
+        
+        const resolvedTime = new Date(resolvedAt);
+        const isOldEnough = resolvedTime <= fiveMinutesAgo;
+        
+        if (isOldEnough) {
+          console.log(`✅ Request ${request.id} resolved at ${resolvedTime.toLocaleString()}, eligible for auto-close`);
+        }
+        
+        return isOldEnough;
+      });
+
       if (!resolvedRequests || resolvedRequests.length === 0) {
-        console.log('📋 No resolved requests found that need auto-closing');
+        console.log('📋 No resolved requests found that need auto-closing (5 minutes for testing)');
         return results;
       }
 
-      console.log(`🔄 Found ${resolvedRequests.length} resolved requests to auto-close`);
+      console.log(`🔄 Found ${resolvedRequests.length} resolved requests to auto-close (5 minutes for testing)`);
 
       // Process each request
       for (const request of resolvedRequests) {
@@ -198,7 +229,7 @@ class SafeSLAMonitoringService {
           await this.autoCloseRequestSafely(request);
           
           results.requestsClosed++;
-          console.log(`✅ Auto-closed request ${request.id} (resolved 10+ days ago)`);
+          console.log(`✅ Auto-closed request ${request.id} (resolved 5+ minutes ago based on resolution date - TESTING)`);
 
         } catch (error) {
           results.closureFailed++;
@@ -468,6 +499,17 @@ class SafeSLAMonitoringService {
    * Auto-close resolved request safely
    */
   private async autoCloseRequestSafely(request: any): Promise<void> {
+    // Double-check the request is still in resolved status before processing
+    const currentRequest = await prisma.request.findUnique({
+      where: { id: request.id },
+      select: { status: true }
+    });
+
+    if (!currentRequest || currentRequest.status !== 'resolved') {
+      console.log(`⚠️ Request ${request.id} is no longer in resolved status, skipping auto-close`);
+      return;
+    }
+
     const timeoutPromise = new Promise((_, reject) => 
       setTimeout(() => reject(new Error('Auto-close timeout')), 10000)
     );
@@ -475,6 +517,149 @@ class SafeSLAMonitoringService {
     const closePromise = this.closeRequestSafely(request);
 
     await Promise.race([closePromise, timeoutPromise]);
+  }
+
+  /**
+   * Send notifications to requester when request is auto-closed
+   */
+  private async notifyRequesterOfClosure(request: any): Promise<void> {
+    try {
+      // Create app notification
+      await createNotification({
+        userId: request.userId,
+        type: 'REQUEST_CLOSED',
+        title: 'Request Auto-Closed',
+        message: `Your request #${request.id} has been automatically closed by the system after being resolved for 5 minutes.`,
+        data: {
+          requestId: request.id,
+          status: 'closed',
+          closureReason: 'auto-closed'
+        }
+      });
+
+      console.log(`✅ App notification sent to requester for request ${request.id}`);
+
+      // For email, we'll use the resolved template as there's no specific closed template
+      // This is better than no email notification at all
+      if (request.user?.emp_email) {
+        // Note: Using resolved template as fallback since no specific closed template exists
+        console.log(`📧 Sending closure notification email to ${request.user.emp_email} for request ${request.id}`);
+        
+        // We could add a specific closed email template later, for now just log
+        console.log(`📝 Email notification would be sent here (no closed template found, only CC template available)`);
+      }
+
+    } catch (error) {
+      // Don't fail the entire close operation if notifications fail
+      console.error(`⚠️ Failed to send requester notifications for request ${request.id}:`, error);
+    }
+  }
+
+  /**
+   * Send CC notifications for closed request
+   */
+  private async sendClosedCCNotifications(request: any): Promise<void> {
+    try {
+      // Check if request has CC emails in formData field 10
+      if (request.formData?.[10]) {
+        const ccEmails = request.formData[10];
+        
+        // Handle both array and string formats
+        let emailArray: string[] = [];
+        
+        if (Array.isArray(ccEmails)) {
+          // Already an array - filter out empty values
+          emailArray = ccEmails.filter(email => email && email.trim && email.trim() !== '');
+        } else if (typeof ccEmails === 'string' && ccEmails.trim() !== '') {
+          // String format - split by comma
+          emailArray = ccEmails.split(',').map((email: string) => email.trim()).filter(email => email !== '');
+        }
+        
+        // Only send if there are valid CC emails
+        if (emailArray.length > 0) {
+          console.log(`📧 Sending CC notifications for closed request ${request.id} to: ${emailArray.join(', ')}`);
+          
+          const variables = {
+            Request_ID: request.id.toString(),
+            Request_Status: formatStatusForDisplay('closed'),
+            Request_Subject: request.formData?.[8] || 'Request',
+            Request_Description: request.formData?.[9] || '',
+            Requester_Name: `${request.user?.emp_fname || ''} ${request.user?.emp_lname || ''}`.trim(),
+            Request_Resolution: request.formData?.resolution?.description || 'Auto-closed by system',
+            CLOSED_DATE: new Date().toLocaleString("en-US", {timeZone: "Asia/Manila"})
+          };
+          
+          await sendRequestClosedCCEmail(emailArray, variables);
+          
+          console.log(`✅ CC notifications sent successfully for request ${request.id}`);
+        } else {
+          console.log(`📋 No valid CC emails found for request ${request.id}`);
+        }
+      }
+    } catch (error) {
+      // Don't fail the entire close operation if CC notification fails
+      console.error(`⚠️ Failed to send CC notifications for request ${request.id}:`, error);
+    }
+  }
+
+  /**
+   * Send notification and email to requester about auto-closure
+   */
+  private async sendRequesterClosedNotification(request: any): Promise<void> {
+    try {
+      const requesterName = `${request.user?.emp_fname || ''} ${request.user?.emp_lname || ''}`.trim();
+      const requestTitle = request.formData?.[8] || 'Your Request';
+      
+      // Create app notification
+      await createNotification({
+        userId: request.userId,
+        type: 'REQUEST_CLOSED',
+        title: 'Request Auto-Closed',
+        message: `Your request "${requestTitle}" has been automatically closed by the system after being resolved for 5 minutes.`,
+        data: {
+          requestId: request.id,
+          action: 'auto_closed',
+          closedAt: new Date().toISOString()
+        }
+      });
+
+      // Send email notification using database template ID 31
+      const variables = {
+        Request_ID: request.id.toString(),
+        Request_Status: formatStatusForDisplay('closed'),
+        Request_Subject: request.formData?.[8] || 'Request',
+        Request_Description: request.formData?.[9] || '',
+        Requester_Name: requesterName,
+        Request_Resolution: request.formData?.resolution?.description || 'Auto-closed by system',
+        CLOSED_DATE: new Date().toLocaleString("en-US", {
+          timeZone: "Asia/Manila",
+          year: 'numeric',
+          month: 'long', 
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        })
+      };
+
+      // Send email using template ID 31
+      const emailContent = await sendEmailWithTemplateId(31, variables);
+      if (emailContent && request.user?.emp_email) {
+        await sendEmail({
+          to: [request.user.emp_email],
+          subject: emailContent.subject,
+          message: emailContent.textContent,
+          htmlMessage: emailContent.htmlContent,
+        });
+        
+        console.log(`✅ Requester notification sent to ${request.user.emp_email} for request ${request.id}`);
+      }
+
+    } catch (error) {
+      // Don't fail the entire close operation if notification fails
+      console.error(`⚠️ Failed to send requester notification for request ${request.id}:`, error);
+    }
   }
 
   /**
@@ -491,16 +676,39 @@ class SafeSLAMonitoringService {
         }
       });
 
+      // 📧 Send CC notifications before logging (in case notification fails)
+      await this.sendClosedCCNotifications(request);
+
+      // 🔔 Send notification and email to requester
+      await this.sendRequesterClosedNotification(request);
+
       // Log closure in request history
+      // Format Philippine time for display
+      const philippineTime = new Date().toLocaleString("en-US", {
+        timeZone: "Asia/Manila",
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+      
+      // Create proper Philippine time timestamp for database (without timezone conversion)
+      const now = new Date();
+      // Add 8 hours to UTC to get Philippine time
+      const philippineTimestamp = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+      
       await prisma.requestHistory.create({
         data: {
           requestId: request.id,
           action: 'Status Changed to Closed',
-          details: 'Auto-closed after 10 days in resolved status',
+          details: `Auto-closed after 5 minutes from resolution date (TESTING MODE) at ${philippineTime}`, // Removed PHT suffix
           actorId: 1, // System user ID
           actorName: 'System',
           actorType: 'system',
-          timestamp: new Date()
+          timestamp: philippineTimestamp // Philippine time for database
         }
       });
 
@@ -555,7 +763,9 @@ class SafeSLAMonitoringService {
       // For now, return the first available technician
       const technician = await prisma.users.findFirst({
         where: {
-          isTechnician: true,
+          technician: {
+            isNot: null
+          },
           emp_status: 'active'
         },
         select: {

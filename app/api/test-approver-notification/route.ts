@@ -29,8 +29,8 @@ export async function GET() {
       approval_level: '1',
       Priority: 'Medium',
       Created_Date: new Date().toLocaleDateString(),
-      approval_link: 'http://localhost:3000/requests/approvals/123',
-      Base_URL: 'http://localhost:3000'
+      approval_link: 'http://192.168.1.85:3000/requests/approvals/123',
+      Base_URL: 'http://192.168.1.85:3000'
     };
 
     console.log('🔧 Testing email template processing...');

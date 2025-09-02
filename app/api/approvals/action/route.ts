@@ -7,6 +7,7 @@ import { calculateSLADueDate } from '@/lib/sla-calculator';
 import { autoAssignTechnician } from '@/lib/load-balancer';
 import { sendApprovalOutcomeNotification, sendClarificationRequestNotification, notifyApprovalRequired } from '@/lib/notifications';
 import { prisma } from '@/lib/prisma';
+import { formatStatusForDisplay } from '@/lib/status-colors';
 
 export async function POST(request: NextRequest) {
   try {
@@ -57,17 +58,17 @@ export async function POST(request: NextRequest) {
       case 'approve':
         newApprovalStatus = ApprovalStatus.approved;
         historyAction = 'Approved';
-        historyDetails = comments ? `Request approved by ${user.emp_fname} ${user.emp_lname}. Comments: ${comments}` : `Request approved by ${user.emp_fname} ${user.emp_lname}`;
+        historyDetails = comments ? `Request approved by ${user.emp_fname} ${user.emp_lname}. \nComments: \n${comments}` : `Request approved by ${user.emp_fname} ${user.emp_lname}`;
         break;
       case 'reject':
         newApprovalStatus = ApprovalStatus.rejected;
         historyAction = 'Rejected';
-        historyDetails = comments ? `Request rejected by ${user.emp_fname} ${user.emp_lname}. Comments: ${comments}` : `Request rejected by ${user.emp_fname} ${user.emp_lname}`;
+        historyDetails = comments ? `Request rejected by ${user.emp_fname} ${user.emp_lname}. \nComments: \n${comments}` : `Request rejected by ${user.emp_fname} ${user.emp_lname}`;
         break;
       case 'clarification':
         newApprovalStatus = ApprovalStatus.for_clarification;
         historyAction = 'Requested Clarification';
-        historyDetails = comments ? `Clarification requested by ${user.emp_fname} ${user.emp_lname}. Message: ${comments}` : `Clarification requested by ${user.emp_fname} ${user.emp_lname}`;
+        historyDetails = comments ? `Clarification requested by ${user.emp_fname} ${user.emp_lname}. \nMessage: \n${comments}` : `Clarification requested by ${user.emp_fname} ${user.emp_lname}`;
         break;
       case 'acknowledge':
         console.log(`🔄 Processing acknowledge action for approval ${approvalId}`);
@@ -254,7 +255,7 @@ export async function POST(request: NextRequest) {
               else lines.push(`DueBy Date set to ${fmt(newDue)}`);
             }
             if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
-            lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Open`);
+            lines.push(`Status changed from ${formatStatusForDisplay(prevStatus)} to Open`);
             lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
             await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
           } else {
@@ -292,7 +293,7 @@ export async function POST(request: NextRequest) {
               if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDuePH)}`);
               else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
             }
-            lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
+            lines.push(`Status changed from ${formatStatusForDisplay(approval.request.status)} to Open`);
             lines.push('Technician Auto Assign : NO');
             await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
           }
@@ -302,13 +303,13 @@ export async function POST(request: NextRequest) {
       };
 
       // Helper to send approval notification when request is fully approved
-      const sendApprovalNotificationIfNeeded = async () => {
+      const sendApprovalNotificationIfNeeded = async (finalApprovalComments?: string) => {
         try {
           const allApprovals = await prisma.requestApproval.findMany({ where: { requestId: approval.requestId } });
           const allFullyApproved = allApprovals.length > 0 && allApprovals.every(a => a.status === ApprovalStatus.approved);
           
           if (allFullyApproved) {
-            await sendApprovalOutcomeNotification(approval.requestId, 'approved');
+            await sendApprovalOutcomeNotification(approval.requestId, 'approved', finalApprovalComments);
             console.log('✅ Approval notification sent to requester');
           }
         } catch (emailError) {
@@ -641,9 +642,67 @@ export async function POST(request: NextRequest) {
                         else lines.push(`DueBy Date set to ${fmt(newDue)}`);
                       }
                       if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
-                      lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Open`);
+                      lines.push(`Status changed from ${formatStatusForDisplay(prevStatus)} to Open`);
                       lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
                       await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
+
+                      // 📧 Send technician assignment notifications after full approval
+                      console.log('🔍 DEBUG: Checking for technician assignment notification...');
+                      console.log('🔍 DEBUG: slaResult?.results?.assignment:', JSON.stringify(slaResult?.results?.assignment, null, 2));
+                      console.log('🔍 DEBUG: Assignment success:', slaResult?.results?.assignment?.success);
+                      console.log('🔍 DEBUG: Technician ID:', slaResult?.results?.assignment?.technician?.id);
+                      
+                      if (slaResult?.results?.assignment?.success && slaResult?.results?.assignment?.technician?.id) {
+                        try {
+                          const { notifyRequestAssigned } = require('@/lib/notifications');
+                          
+                          const assignedTechnicianData = await prisma.users.findUnique({
+                            where: { id: slaResult.results.assignment.technician.id },
+                            select: {
+                              id: true,
+                              emp_fname: true,
+                              emp_lname: true,
+                              emp_email: true,
+                            }
+                          });
+
+                          const requestWithUserAndTemplate = await prisma.request.findUnique({
+                            where: { id: approval.requestId },
+                            include: {
+                              user: {
+                                select: {
+                                  id: true,
+                                  emp_fname: true,
+                                  emp_lname: true,
+                                  emp_email: true,
+                                }
+                              }
+                            }
+                          });
+
+                          // Get template data separately
+                          const templateData = await prisma.template.findUnique({
+                            where: { id: parseInt(requestWithUserAndTemplate?.templateId || '0') }
+                          });
+
+                          if (assignedTechnicianData && requestWithUserAndTemplate && templateData) {
+                            console.log('📧 Sending technician assignment notifications after approval...');
+                            await notifyRequestAssigned(requestWithUserAndTemplate, templateData, assignedTechnicianData);
+                            console.log('✅ Technician assignment notifications sent successfully');
+                          } else {
+                            console.log('❌ Missing data for technician assignment notification:', {
+                              assignedTechnicianData: !!assignedTechnicianData,
+                              requestWithUserAndTemplate: !!requestWithUserAndTemplate,
+                              templateData: !!templateData
+                            });
+                          }
+                        } catch (notificationError) {
+                          console.error('❌ Error sending technician assignment notifications:', notificationError);
+                          // Don't fail the approval process if notifications fail
+                        }
+                      } else {
+                        console.log('❌ Technician assignment notification not sent - conditions not met');
+                      }
                     } else {
                       // SLA endpoint failed; fallback
                       const priority = ((finalRequest.formData as any)?.priority || '').toLowerCase();
@@ -679,7 +738,7 @@ export async function POST(request: NextRequest) {
                         if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDuePH)}`);
                         else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
                       }
-                      lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
+                      lines.push(`Status changed from ${formatStatusForDisplay(approval.request.status)} to Open`);
                       lines.push('Technician Auto Assign : NO');
                       await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
                     }
@@ -689,7 +748,7 @@ export async function POST(request: NextRequest) {
 
                   // Send approval notification after successful finalization
                   try {
-                    await sendApprovalOutcomeNotification(approval.requestId, 'approved');
+                    await sendApprovalOutcomeNotification(approval.requestId, 'approved', comments);
                     console.log('✅ Final approval notification sent to requester');
                   } catch (emailError) {
                     console.error('❌ Failed to send final approval notification:', emailError);
@@ -707,7 +766,7 @@ export async function POST(request: NextRequest) {
           });
 
           // Check if all approvals are approved (including the current one we just updated)
-          const allApproved = allRequestApprovals.every(app => {
+          const allApproved = allRequestApprovals.every((app: any) => {
             // If this is the current approval being processed, consider it approved
             if (app.id === parseInt(approvalId)) {
               return true;
@@ -790,7 +849,7 @@ export async function POST(request: NextRequest) {
                   if (assignedTechName) {
                     lines.push(`Technician : ${assignedTechName}`);
                   }
-                  lines.push(`Status changed from ${prevStatus.replace(/_/g, ' ')} to Open`);
+                  lines.push(`Status changed from ${formatStatusForDisplay(prevStatus)} to Open`);
                   lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
 
                   await addHistory(prisma, {
@@ -800,6 +859,51 @@ export async function POST(request: NextRequest) {
                     actorType: 'system',
                     details: lines.join('\n'),
                   });
+
+                  // 📧 Send technician assignment notifications after full approval
+                  if (slaResult?.results?.assignment?.success && slaResult?.results?.assignment?.technician?.id) {
+                    try {
+                      const { notifyRequestAssigned } = require('@/lib/notifications');
+                      
+                      const assignedTechnicianData = await prisma.users.findUnique({
+                        where: { id: slaResult.results.assignment.technician.id },
+                        select: {
+                          id: true,
+                          emp_fname: true,
+                          emp_lname: true,
+                          emp_email: true,
+                        }
+                      });
+
+                      const requestWithUserAndTemplate = await prisma.request.findUnique({
+                        where: { id: approval.requestId },
+                        include: {
+                          user: {
+                            select: {
+                              id: true,
+                              emp_fname: true,
+                              emp_lname: true,
+                              emp_email: true,
+                            }
+                          }
+                        }
+                      });
+
+                      // Get template data separately
+                      const templateData = await prisma.template.findUnique({
+                        where: { id: parseInt(requestWithUserAndTemplate?.templateId || '0') }
+                      });
+
+                      if (assignedTechnicianData && requestWithUserAndTemplate && templateData) {
+                        console.log('📧 Sending technician assignment notifications after approval...');
+                        await notifyRequestAssigned(requestWithUserAndTemplate, templateData, assignedTechnicianData);
+                        console.log('✅ Technician assignment notifications sent successfully');
+                      }
+                    } catch (notificationError) {
+                      console.error('Error sending technician assignment notifications:', notificationError);
+                      // Don't fail the approval process if notifications fail
+                    }
+                  }
                 } catch (e) {
                   console.warn('Failed to add consolidated Updated history entry:', e);
                 }
@@ -925,7 +1029,7 @@ export async function POST(request: NextRequest) {
                     else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
                   }
                   if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
-                  lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
+                  lines.push(`Status changed from ${formatStatusForDisplay(approval.request.status)} to Open`);
                   lines.push(`Technician Auto Assign : ${assignedTechName ? 'YES' : 'NO'}`);
 
                   await addHistory(prisma, {
@@ -1054,7 +1158,7 @@ export async function POST(request: NextRequest) {
                   else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
                 }
                 if (assignedTechName) lines.push(`Technician : ${assignedTechName}`);
-                lines.push(`Status changed from ${approval.request.status.replace(/_/g, ' ')} to Open`);
+                lines.push(`Status changed from ${formatStatusForDisplay(approval.request.status)} to Open`);
                 lines.push(`Technician Auto Assign : ${assignedTechName ? 'YES' : 'NO'}`);
 
                 await addHistory(prisma, {
@@ -1071,7 +1175,7 @@ export async function POST(request: NextRequest) {
 
               // Send approval notification after successful finalization
               try {
-                await sendApprovalOutcomeNotification(approval.requestId, 'approved');
+                await sendApprovalOutcomeNotification(approval.requestId, 'approved', comments);
                 console.log('✅ Final approval notification sent to requester (fallback path)');
               } catch (emailError) {
                 console.error('❌ Failed to send final approval notification:', emailError);
@@ -1085,7 +1189,7 @@ export async function POST(request: NextRequest) {
       await finalizeIfAllApproved();
       
       // Send approval notification if all approvals are complete
-      await sendApprovalNotificationIfNeeded();
+      await sendApprovalNotificationIfNeeded(comments);
     } else if (action === 'clarification') {
       // For clarification, we only update the approval status
       // The request status remains unchanged

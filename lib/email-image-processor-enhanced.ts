@@ -79,7 +79,7 @@ export async function processImagesForEmailWithOptions(
 
           // Generate public URL
           const publicUrl = `/uploads/request-images/${filename}`;
-          const fullUrl = `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}${publicUrl}`;
+          const fullUrl = `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}${publicUrl}`;
           
           // Replace base64 data URL with public URL in HTML
           const newImgTag = fullMatch.replace(
@@ -138,7 +138,7 @@ export async function processImagesForEmailAuto(
     };
   }
 
-  const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+  const baseUrl = process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000';
   
   // Determine if we have a public domain or internal network
   const isPublicDomain = baseUrl.includes('aspacphils.com.ph') || 

@@ -279,9 +279,9 @@ class SafeBackgroundServiceManager {
     try {
       const now = new Date();
       const next12AM = new Date(now);
-      
-      // Set to 9:28 AM for testing
-      next12AM.setHours(15, 20, 0, 0);
+
+      // Set to 11:41 AM for testing
+      next12AM.setHours(13, 53, 0, 0);
       
       // If 3:20 PM already passed today, schedule for tomorrow
       if (next12AM.getTime() < now.getTime()) {

@@ -570,7 +570,7 @@ export default function Home() {
               {/* Bible Verse of the Day */}
               <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
                 <div className="text-center mb-4">
-                  <h2 className="text-xl font-bold text-slate-900 mb-1">Bible Verse of the Day</h2>
+                  <h2 className="text-xl font-bold text-slate-900 mb-1">Today's Inspiration</h2>
                 </div>
                 <div className="text-center">
                   {verseOfTheDay.loading ? (

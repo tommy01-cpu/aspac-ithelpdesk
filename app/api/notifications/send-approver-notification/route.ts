@@ -41,9 +41,18 @@ export async function POST(request: NextRequest) {
           throw new Error(`Approver with email ${approver.email} not found`);
         }
 
+        if (!approverUser.emp_email) {
+          throw new Error(`Approver ${approver.email} has no email address in their profile`);
+        }
+
         await notifyNewApprover(
           serviceRequest.id,
-          approverUser,
+          {
+            id: approverUser.id,
+            emp_email: approverUser.emp_email,
+            emp_fname: approverUser.emp_fname,
+            emp_lname: approverUser.emp_lname,
+          },
           approver.level || 1
         );
         return { success: true, email: approver.email };

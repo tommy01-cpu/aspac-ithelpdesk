@@ -101,13 +101,13 @@ export async function POST() {
           const request = approval.request;
           const requesterName = `${request.user.emp_fname} ${request.user.emp_lname}`.trim();
           const requestSubject = getRequestSubject(request.formData);
-          const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+          const baseUrl = process.env.BASE_URL || 'http://192.168.1.85:3000';
           const specificRequestApprovalUrl = `${baseUrl}${process.env.APPROVAL_URL || '/requests/approvals'}/${request.id}`;
           const specificRequestViewUrl = `${baseUrl}${process.env.REQUEST_VIEW_URL || '/requests/view'}/${request.id}`;
           return `- Request #${request.id}: "${requestSubject}" from ${requesterName} - [View Request](${specificRequestViewUrl}) | [Approve Here](${specificRequestApprovalUrl})`;
         }).join('\n');
 
-        const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+        const baseUrl = process.env.BASE_URL || 'http://192.168.1.85:3000';
         const approvalBasePath = process.env.APPROVAL_URL || '/requests/approvals';
         const requestViewBasePath = process.env.REQUEST_VIEW_URL || '/requests/view';
         
