@@ -58,7 +58,12 @@ interface SLAIncident {
   description: string;
   priority: 'Low' | 'Medium' | 'High' | 'Top' | '';
   responseTime: string;
-  resolutionTime: string;
+  resolutionTime: {
+    days: number;
+    hours: number;
+    minutes: number;
+    formatted: string;
+  };
   status: string;
   createdAt?: string;
   updatedAt?: string;
@@ -713,20 +718,24 @@ export default function IncidentSLAPage() {
     return parts.join(' ');
   };
 
-  const formatResolutionTimeForTable = (totalHours: number | string) => {
-    const hours = typeof totalHours === 'string' ? parseFloat(totalHours) : totalHours;
-    if (!hours || hours === 0) return 'Not set';
+  const formatResolutionTimeForTable = (resolutionTime: any) => {
+    // Handle both old string format and new object format for backward compatibility
+    if (typeof resolutionTime === 'string') {
+      return resolutionTime;
+    }
     
-    const days = Math.floor(hours / 24);
-    const remainingHours = hours % 24;
-    const minutes = 0; // Since API stores in hours, we don't have minute precision
+    if (typeof resolutionTime === 'object' && resolutionTime.formatted) {
+      return resolutionTime.formatted;
+    }
     
+    // Fallback for direct breakdown
+    const { days = 0, hours = 0, minutes = 0 } = resolutionTime || {};
     const parts = [];
     if (days > 0) parts.push(`${days} day${days === 1 ? '' : 's'}`);
-    if (remainingHours > 0) parts.push(`${remainingHours} hour${remainingHours === 1 ? '' : 's'}`);
-    if (parts.length === 0) parts.push('Less than 1 hour');
+    if (hours > 0) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
+    if (minutes > 0) parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`);
     
-    return parts.join(' ');
+    return parts.length > 0 ? parts.join(' ') : 'Not set';
   };
 
   const handleEdit = async (id: number) => {

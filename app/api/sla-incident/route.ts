@@ -68,7 +68,12 @@ export async function GET(request: NextRequest) {
       description: incident.description,
       priority: incident.priority,
       responseTime: formatTime(incident.responseDays || 0, incident.responseHours || 0, incident.responseMinutes || 0),
-      resolutionTime: formatTime(incident.resolutionDays || 0, incident.resolutionHours || 0, incident.resolutionMinutes || 0),
+      resolutionTime: {
+        days: incident.resolutionDays || 0,
+        hours: incident.resolutionHours || 0,
+        minutes: incident.resolutionMinutes || 0,
+        formatted: formatTime(incident.resolutionDays || 0, incident.resolutionHours || 0, incident.resolutionMinutes || 0)
+      },
       status: incident.status,
       createdAt: incident.createdAt,
       updatedAt: incident.updatedAt,

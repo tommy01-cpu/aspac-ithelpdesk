@@ -32,19 +32,7 @@ if (!g.prismaAttachments) {
         url: getConstrainedAttachmentsUrl(),
       },
     },
-    log: [
-      { emit: 'event', level: 'error' },
-      { emit: 'event', level: 'warn' },
-    ],
-  })
-  
-  // Handle connection events
-  g.prismaAttachments.$on('error', (e: any) => {
-    console.error('Prisma attachments client error:', e)
-  })
-  
-  g.prismaAttachments.$on('warn', (e: any) => {
-    console.warn('Prisma attachments client warning:', e)
+    log: ['error', 'warn'],
   })
 }
 
