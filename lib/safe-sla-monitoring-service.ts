@@ -195,6 +195,14 @@ class SafeSLAMonitoringService {
         timeoutPromise
       ]) as any[];
 
+      console.log(`🔍 Found ${allResolvedRequests.length} resolved requests in database`);
+      
+      // Log details of each resolved request for debugging
+      allResolvedRequests.forEach(request => {
+        const resolvedAt = request.formData?.resolution?.resolvedAt;
+        console.log(`📋 Request ${request.id}: resolvedAt = ${resolvedAt || 'MISSING'}, status = ${request.status}`);
+      });
+
       // Filter by actual resolution timestamp from formData
       const resolvedRequests = allResolvedRequests.filter(request => {
         const resolvedAt = request.formData?.resolution?.resolvedAt;
@@ -206,6 +214,8 @@ class SafeSLAMonitoringService {
         const resolvedTime = new Date(resolvedAt);
         const isOldEnough = resolvedTime <= tenDaysAgo;
         // TESTING: For 5-minute testing, use: resolvedTime <= fiveMinutesAgo;
+        
+        console.log(`🔍 Request ${request.id}: resolved at ${resolvedTime.toLocaleString()}, cutoff time ${tenDaysAgo.toLocaleString()}, eligible: ${isOldEnough}`);
         
         if (isOldEnough) {
           console.log(`✅ Request ${request.id} resolved at ${resolvedTime.toLocaleString()}, eligible for auto-close`);
@@ -669,11 +679,18 @@ class SafeSLAMonitoringService {
    * Send notification and email to requester about auto-closure
    */
   private async sendRequesterClosedNotification(request: any): Promise<void> {
+    console.log(`🔍 DEBUG: Starting sendRequesterClosedNotification for request ${request.id}`);
+    
     try {
       const requesterName = `${request.user?.emp_fname || ''} ${request.user?.emp_lname || ''}`.trim();
       const requestTitle = request.formData?.[8] || 'Your Request';
       
+      console.log(`🔍 DEBUG: Request details - ID: ${request.id}, Requester: ${requesterName}, Title: ${requestTitle}`);
+      console.log(`🔍 DEBUG: User object:`, request.user);
+      console.log(`🔍 DEBUG: User ID: ${request.userId}, Email: ${request.user?.emp_email}`);
+      
       // Create app notification
+      console.log(`🔍 DEBUG: Creating app notification for user ${request.userId}`);
       await createNotification({
         userId: request.userId,
         type: 'REQUEST_CLOSED',
@@ -685,6 +702,7 @@ class SafeSLAMonitoringService {
           closedAt: new Date().toISOString()
         }
       });
+      console.log(`✅ DEBUG: App notification created successfully`);
 
       // Send email notification using database template ID 31
       const variables = {
@@ -706,23 +724,48 @@ class SafeSLAMonitoringService {
         })
       };
 
-      // Send email using template ID 31
+      console.log(`🔍 DEBUG: Email variables prepared:`, variables);
+
+      // Send email using template ID 31 (REQUEST_CLOSED_REQUESTER)
+      console.log(`🔍 DEBUG: Attempting to get email template ID 31 for request ${request.id}`);
+      
       const emailContent = await sendEmailWithTemplateId(31, variables);
-      if (emailContent && request.user?.emp_email) {
-        await sendEmail({
-          to: [request.user.emp_email],
-          subject: emailContent.subject,
-          message: emailContent.textContent,
-          htmlMessage: emailContent.htmlContent,
-        });
-        
-        console.log(`✅ Requester notification sent to ${request.user.emp_email} for request ${request.id}`);
+      console.log(`🔍 DEBUG: Email template result:`, emailContent ? 'SUCCESS' : 'FAILED');
+      
+      if (!emailContent) {
+        console.error(`❌ DEBUG: Template ID 31 not found or failed to load for request ${request.id}`);
+        console.log(`📝 DEBUG: Available variables:`, variables);
+        console.log(`🔍 DEBUG: Function will exit early due to missing template`);
+        return; // Exit early if template doesn't exist
       }
+      
+      if (!request.user?.emp_email) {
+        console.error(`❌ DEBUG: No email address found for user ${request.userId} on request ${request.id}`);
+        console.log(`🔍 DEBUG: User object:`, request.user);
+        console.log(`🔍 DEBUG: Function will exit early due to missing email`);
+        return;
+      }
+      
+      console.log(`📧 DEBUG: Sending email to ${request.user.emp_email} using template ID 31`);
+      console.log(`📧 DEBUG: Email subject: ${emailContent.subject}`);
+      console.log(`📧 DEBUG: Email content length: ${emailContent.htmlContent?.length || 0} chars`);
+      
+      await sendEmail({
+        to: [request.user.emp_email],
+        subject: emailContent.subject,
+        message: emailContent.textContent,
+        htmlMessage: emailContent.htmlContent,
+      });
+      
+      console.log(`✅ DEBUG: Requester notification sent to ${request.user.emp_email} for request ${request.id}`);
 
     } catch (error) {
       // Don't fail the entire close operation if notification fails
-      console.error(`⚠️ Failed to send requester notification for request ${request.id}:`, error);
+      console.error(`❌ DEBUG: Failed to send requester notification for request ${request.id}:`, error);
+      console.error(`❌ DEBUG: Error stack:`, error instanceof Error ? error.stack : 'No stack trace');
     }
+    
+    console.log(`🔍 DEBUG: Finished sendRequesterClosedNotification for request ${request.id}`);
   }
 
   /**
@@ -764,9 +807,9 @@ class SafeSLAMonitoringService {
         // Continue with the process even if CC notification fails
       }
 
-      // 🔔 Send notification to requester
+      // 🔔 Send notification and email to requester using template ID 31
       try {
-        const notificationPromise = this.notifyRequesterOfClosure(request);
+        const notificationPromise = this.sendRequesterClosedNotification(request);
         const notificationTimeout = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Requester notification timeout')), 15000)
         );

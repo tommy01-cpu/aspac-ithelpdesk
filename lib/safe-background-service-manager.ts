@@ -282,11 +282,11 @@ class SafeBackgroundServiceManager {
       let timeUntilNext;
       let nextRun;
 
-      // TESTING: Uncomment below for 2-minute testing
+      // TESTING: Uncomment below for 1-minute testing
       // if (isDevelopment) {
-      //   timeUntilNext = 2 * 60 * 1000; // 2 minutes
+      //   timeUntilNext = 1 * 60 * 1000; // 1 minute
       //   nextRun = new Date(now.getTime() + timeUntilNext);
-      //   console.log(`🧪 TESTING: Next auto-close in 2 minutes at ${nextRun.toLocaleString()}`);
+      //   console.log(`🧪 TESTING: Next auto-close in 1 minute at ${nextRun.toLocaleString()}`);
       // } else {
 
       // PRODUCTION MODE: Run at 12:00 AM or 12:00 PM
