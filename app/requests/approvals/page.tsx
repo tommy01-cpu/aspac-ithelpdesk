@@ -46,6 +46,7 @@ interface ApprovalRequest {
   description?: string;
   comments?: string;
   hasRejectedApproval?: boolean; // Flag to indicate if any approval was rejected
+  requestStatus?: string; // Status from the request table
 }
 
 interface PaginationData {
@@ -63,7 +64,17 @@ const capitalizeWords = (str: string) => {
 };
 
 // Function to get row background color based on status
-const getRowBackgroundColor = (status: string, hasRejectedApproval?: boolean) => {
+const getRowBackgroundColor = (status: string, hasRejectedApproval?: boolean, requestStatus?: string) => {
+  // If request is cancelled, show red background (cancelled)
+  if (requestStatus === 'cancelled') {
+    return 'bg-red-50/70 hover:bg-red-100/70';
+  }
+  
+  // If request is closed, show red background (rejected)
+  if (requestStatus === 'closed') {
+    return 'bg-red-50/70 hover:bg-red-100/70';
+  }
+  
   // If any approval has been rejected, show red background regardless of individual status
   if (hasRejectedApproval || status === 'rejected') {
     return 'bg-red-50/70 hover:bg-red-100/70';
@@ -281,9 +292,17 @@ export default function ApprovalsTab() {
                                 return (
                                   <div 
                                     key={approval.id} 
-                                    className={`grid grid-cols-12 gap-2 px-3 py-3 transition-all duration-200 cursor-pointer border-l-4 border-transparent hover:border-amber-400 ${getRowBackgroundColor(approval.status, approval.hasRejectedApproval)}`}
+                                    className={`grid grid-cols-12 gap-2 px-3 py-3 transition-all duration-200 cursor-pointer border-l-4 border-transparent hover:border-amber-400 ${getRowBackgroundColor(approval.status, approval.hasRejectedApproval, approval.requestStatus)}`}
                                     onClick={() => handleApprovalClick(approval.id, approval.requestId)}
-                                    title={approval.hasRejectedApproval ? "This request has been rejected by another approver - click to acknowledge" : "Click to review approval request"}
+                                    title={
+                                      approval.requestStatus === 'cancelled' 
+                                        ? "This request has been cancelled - click to acknowledge"
+                                        : approval.requestStatus === 'closed' 
+                                          ? "This request has been closed - click to acknowledge"
+                                          : approval.hasRejectedApproval 
+                                            ? "This request has been rejected by another approver - click to acknowledge" 
+                                            : "Click to review approval request"
+                                    }
                                   >
                                     {/* Request # */}
                                     <div className="col-span-1 flex items-center">
@@ -320,9 +339,20 @@ export default function ApprovalsTab() {
                                     {/* Status */}
                                     <div className="col-span-1 flex items-center">
                                       <div className="flex flex-col gap-1">
-                                        <Badge className={`${getApprovalStatusColor(approval.status)} border-0 text-xs`}>
-                                          {approval.hasRejectedApproval ? 'Rejected' : capitalizeWords(approval.status)}
+                                        <Badge className={`${getApprovalStatusColor(
+                                          approval.requestStatus === 'cancelled' 
+                                            ? 'cancelled' 
+                                            : approval.requestStatus === 'closed' 
+                                              ? 'rejected' 
+                                              : (approval.hasRejectedApproval ? 'rejected' : approval.status)
+                                        )} border-0 text-xs`}>
+                                          {approval.requestStatus === 'cancelled' 
+                                            ? 'Cancelled' 
+                                            : approval.requestStatus === 'closed' 
+                                              ? 'Rejected' 
+                                              : (approval.hasRejectedApproval ? 'Rejected' : capitalizeWords(approval.status))}
                                         </Badge>
+                                        
                                        
                                       </div>
                                     </div>

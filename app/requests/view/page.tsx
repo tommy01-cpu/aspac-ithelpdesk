@@ -459,7 +459,16 @@ export default function MyRequestsPage() {
     
     // Check approval status filter
     const { status: currentApprovalStatus } = getCurrentApprovalStatus(request.approvals);
-    const matchesApprovalStatus = approvalStatusFilter === 'ALL' || currentApprovalStatus === approvalStatusFilter;
+    const showApprovalStatus = shouldShowApprovalStatus(request.status, request.approvals);
+    
+    let matchesApprovalStatus = true;
+    if (approvalStatusFilter === 'N/A') {
+      // Filter for requests that don't have approval workflows (show N/A)
+      matchesApprovalStatus = !showApprovalStatus;
+    } else if (approvalStatusFilter !== 'ALL') {
+      // Filter for specific approval status
+      matchesApprovalStatus = showApprovalStatus && currentApprovalStatus === approvalStatusFilter;
+    }
 
     // Debug: Log filtering for first few requests
     if (requests.indexOf(request) < 3) {
@@ -621,6 +630,7 @@ export default function MyRequestsPage() {
                         <SelectItem value="for_clarification">For Clarification</SelectItem>
                         <SelectItem value="approved">Approved</SelectItem>
                         <SelectItem value="rejected">Rejected</SelectItem>
+                        <SelectItem value="N/A">N/A</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

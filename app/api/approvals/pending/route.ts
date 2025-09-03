@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
       const hasRejectedApproval = allApprovalsForRequest.some((app: any) => app.status === APPROVAL_STATUS.REJECTED);
       
       // Determine the actual approval status to show
-      let displayStatus = approval.status;
+      let displayStatus: string = approval.status;
       if (hasRejectedApproval) {
         displayStatus = APPROVAL_STATUS.REJECTED;
       }
@@ -144,6 +144,7 @@ export async function GET(request: NextRequest) {
         priority: priority,
         status: displayStatus, // This now shows 'rejected' if any approver rejected
         originalStatus: approval.status, // Keep original status for reference
+        requestStatus: approval.request.status, // Include the request status from request table
         level: approval.level,
         levelName: `Level ${approval.level}`, // Use level number instead of name field to avoid confusion
         description: formData?.description || formData?.['9'] || '',

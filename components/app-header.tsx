@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Search, Bell, Settings, User, LogOut, KeyRound, ChevronDown, Clock } from "lucide-react";
+import { Search, Bell, Settings, User, LogOut, KeyRound, ChevronDown, Clock, FileText } from "lucide-react";
 import { cn } from "../lib/utils";
 import NotificationDropdown from "@/components/NotificationDropdown";
 import { useNotificationPanel } from "@/contexts/notification-context";
@@ -233,7 +233,7 @@ export default function AppHeader() {
               )}
               
               {/* Only show Reports if user is admin, technician, or has elevated privileges */}
-              {(session?.user?.isAdmin || session?.user?.isTechnician || session?.user?.isServiceApprover) && (
+              {/* {(session?.user?.isAdmin || session?.user?.isTechnician || session?.user?.isServiceApprover) && (
                 <Link href="/reports">
                   <Button 
                     variant="ghost" 
@@ -245,7 +245,7 @@ export default function AppHeader() {
                     Reports
                   </Button>
                 </Link>
-              )}
+              )} */}
               
               {/* Only show Technician View if user is a technician */}
               {session?.user?.isTechnician && (
@@ -270,7 +270,7 @@ export default function AppHeader() {
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                       <Link href="/technician/requests" className="w-full text-white hover:text-white hover:bg-black/20">
-                        All Requests
+                        Requests
                       </Link>
                     </DropdownMenuItem>
                     {/* <DropdownMenuItem asChild>
@@ -300,9 +300,9 @@ export default function AppHeader() {
             </div>
           </nav>
           <div className="flex items-center space-x-3">
-            <Button variant="ghost" size="icon" className="text-white hover:text-white hover:bg-black/10 transition-all duration-200">
+            {/* <Button variant="ghost" size="icon" className="text-white hover:text-white hover:bg-black/10 transition-all duration-200">
               <Search className="h-4 w-4" />
-            </Button>
+            </Button> */}
             <NotificationDropdown 
               className="text-white hover:text-white hover:bg-black/10 transition-all duration-200" 
               onViewAllClick={openNotificationPanel}
@@ -351,6 +351,15 @@ export default function AppHeader() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator style={{ backgroundColor: 'rgba(109, 91, 43, 0.5)' }} />
+                <DropdownMenuItem 
+                  onClick={() => {
+                    window.open('/IT%20Helpdesk%20System%20Quick%20Reference%20Guide.pdf', '_blank');
+                  }}
+                  className="text-white hover:text-white hover:bg-black/20"
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  <span>Reference Guide</span>
+                </DropdownMenuItem>
                 <DropdownMenuItem 
                   onClick={() => {
                     resetPasswordModal();

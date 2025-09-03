@@ -2641,6 +2641,14 @@ export default function RequestViewPage() {
                                 : '-'}
                             </span>
                           </div>
+                          {requestData.status === 'cancelled' && (
+                            <div className="flex justify-between">
+                              <span className="text-sm font-medium text-gray-700">Cancelled Date</span>
+                              <span className="text-sm text-gray-600">
+                                {formatDbTimestamp(requestData.updatedAt)}
+                              </span>
+                            </div>
+                          )}
                           {/* <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Last Update Time</span>
                             <span className="text-sm text-gray-600">
@@ -3291,7 +3299,16 @@ export default function RequestViewPage() {
                             let levelIcon = Clock;
                             let levelBgColor = 'bg-gray-400';
                             
-                            if (hasRejected) {
+                            // Check if request is closed or cancelled
+                            if (requestData?.status === 'closed' || requestData?.status === 'cancelled') {
+                              if (requestData?.status === 'closed') {
+                                levelStatus = 'Yet to Progress ';
+                              } else if (requestData?.status === 'cancelled') {
+                                levelStatus = 'Yet to Progress ';
+                              }
+                              levelIcon = Clock;
+                              levelBgColor = 'bg-gray-400';
+                            } else if (hasRejected) {
                               levelStatus = 'Rejected';
                               levelIcon = AlertCircle;
                               levelBgColor = 'bg-red-500';
@@ -3329,7 +3346,7 @@ export default function RequestViewPage() {
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      {levelStatus === 'In Progress' && (
+                                      {levelStatus === 'In Progress' && session?.user?.isTechnician && (
                                         <>
                                           <Button size="sm" variant="outline" className="text-xs">
                                             Send for Approval
@@ -3387,35 +3404,70 @@ export default function RequestViewPage() {
                                               <div className="flex items-center gap-2">
                                                 {/* Status Badge */}
                                                 <div className="flex items-center gap-1.5 min-w-[190px] justify-end">
-                                                  {approval.status === 'approved' ? (
-                                                    <>
-                                                      <CheckCircle className="h-4 w-4 text-green-500" />
-                                                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                                                        Approved
-                                                      </Badge>
-                                                    </>
-                                                  ) : approval.status === 'rejected' ? (
-                                                    <>
-                                                      <AlertCircle className="h-4 w-4 text-red-500" />
-                                                      <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                                                        Rejected
-                                                      </Badge>
-                                                    </>
-                                                  ) : approval.status === 'for_clarification' ? (
-                                                    <>
-                                                      <Clock className="h-4 w-4 text-sky-500" />
-                                                      <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200">
-                                                        For Clarification
-                                                      </Badge>
-                                                    </>
-                                                  ) : (
-                                                    <>
-                                                      <Clock className="h-4 w-4 text-orange-500" />
-                                                      <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                                                        Pending Approval
-                                                      </Badge>
-                                                    </>
-                                                  )}
+                                                  {(() => {
+                                                    // Check if any approval has been rejected in the entire workflow
+                                                    const hasAnyRejection = approvals.some((app: any) => app.status === 'rejected');
+                                                    
+                                                    // If there's a rejection and this approval is pending/for_clarification, show N/A
+                                                    const isPendingOrForClarification = approval.status === 'pending_approval' || 
+                                                                                       approval.status === 'for_clarification' || 
+                                                                                       approval.status === 'not_sent';
+                                                    
+                                                    if (hasAnyRejection && isPendingOrForClarification && approval.status !== 'rejected') {
+                                                      return (
+                                                        <>
+                                                        </>
+                                                      );
+                                                    }
+
+                                                    // Original status logic
+                                                    if (approval.status === 'approved') {
+                                                      return (
+                                                        <>
+                                                          <CheckCircle className="h-4 w-4 text-green-500" />
+                                                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                                            Approved
+                                                          </Badge>
+                                                        </>
+                                                      );
+                                                    } else if (approval.status === 'rejected') {
+                                                      return (
+                                                        <>
+                                                          <AlertCircle className="h-4 w-4 text-red-500" />
+                                                          <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                                                            Rejected
+                                                          </Badge>
+                                                        </>
+                                                      );
+                                                    } else if (approval.status === 'acknowledged') {
+                                                      return (
+                                                        <>
+                                                          <CheckCircle className="h-4 w-4 text-gray-500" />
+                                                          <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
+                                                            Acknowledged
+                                                          </Badge>
+                                                        </>
+                                                      );
+                                                    } else if (approval.status === 'for_clarification') {
+                                                      return (
+                                                        <>
+                                                          <Clock className="h-4 w-4 text-sky-500" />
+                                                          <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200">
+                                                            For Clarification
+                                                          </Badge>
+                                                        </>
+                                                      );
+                                                    } else {
+                                                      return (
+                                                        <>
+                                                          <Clock className="h-4 w-4 text-orange-500" />
+                                                          <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                                                            Pending Approval
+                                                          </Badge>
+                                                        </>
+                                                      );
+                                                    }
+                                                  })()}
                                                 </div>
 
                                                 {/* Conversation Button */}
@@ -3923,6 +3975,15 @@ export default function RequestViewPage() {
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">Approval Status</span>
                       {(() => {
+                        // For cancelled requests, show N/A
+                        if (requestData.status === 'cancelled') {
+                          return (
+                            <Badge className="bg-gray-100 text-gray-800 border-gray-200" variant="outline">
+                              N/A
+                            </Badge>
+                          );
+                        }
+                        
                         // For incident templates, show N/A
                         if (templateData?.type === 'incident') {
                           return (
@@ -4024,7 +4085,7 @@ export default function RequestViewPage() {
               </Card>
 
               {/* Actions */}
-              {session?.user?.isTechnician && (
+              {session?.user?.isTechnician && requestData?.status !== 'cancelled' && requestData?.status !== 'closed' && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
@@ -5252,20 +5313,34 @@ export default function RequestViewPage() {
                   try {
                     setIsUpdatingStatus(true);
                     
+                    // Prepare request body with notifications for cancelled status
+                    const requestBody: any = {
+                      status: selectedStatus
+                    };
+                    
+                    // Add notifications when status is cancelled
+                    if (selectedStatus === 'cancelled') {
+                      requestBody.sendEmail = true;
+                      requestBody.emailTemplate = '32'; // Use template 32 for cancellation
+                      requestBody.sendAppNotification = true;
+                    }
+                    
                     const response = await fetch(`/api/requests/${requestId}/status`, {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',
                       },
-                      body: JSON.stringify({
-                        status: selectedStatus
-                      }),
+                      body: JSON.stringify(requestBody),
                     });
                     
                     if (response.ok) {
+                      const notificationMessage = selectedStatus === 'cancelled' 
+                        ? `Request status has been changed to ${statusLabels[selectedStatus]}. Notification emails sent and app notifications created.`
+                        : `Request status has been changed to ${statusLabels[selectedStatus]}.`;
+                        
                       toast({
                         title: "Status Updated",
-                        description: `Request status has been changed to ${statusLabels[selectedStatus]}.`,
+                        description: notificationMessage,
                         className: "bg-green-50 border-green-200 text-green-800"
                       });
                       

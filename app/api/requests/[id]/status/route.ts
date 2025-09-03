@@ -4,8 +4,9 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { addHistory } from '@/lib/history';
 import { RequestStatus } from '@prisma/client';
-import { sendRequestClosedCCEmail } from '@/lib/database-email-templates';
+import { sendRequestClosedCCEmail, sendEmailWithTemplateId } from '@/lib/database-email-templates';
 import { formatStatusForDisplay } from '@/lib/status-colors';
+import { createNotification } from '@/lib/notifications';
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: 'Invalid request id' }, { status: 400 });
     }
 
-    const { status, notes, attachmentIds, sendEmail, emailTemplate } = await request.json();
+    const { status, notes, attachmentIds, sendEmail, emailTemplate, sendAppNotification } = await request.json();
     
     // Handle different status mappings
     let actualStatus = status;
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     });
 
     // Send email notification if requested
-    if (sendEmail && emailTemplate === 'acknowledge-cc-closed') {
+    if (sendEmail && emailTemplate) {
       try {
         // Get the request with user data for email
         const requestWithUser = await prisma.request.findUnique({
@@ -102,9 +103,18 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
             emailRecipients = [emailNotifyField.trim()];
           }
 
-          // Send email notification if there are recipients
+          // Only send CC emails if there are actual CC recipients specified
+          // Don't automatically include the requester if no CC emails exist
           if (emailRecipients.length > 0) {
-            // Prepare email variables for the closed CC email template
+            // Include the requester in notifications only if CC emails exist
+            if (requestWithUser.user.emp_email && !emailRecipients.includes(requestWithUser.user.emp_email)) {
+              emailRecipients.push(requestWithUser.user.emp_email);
+            }
+          }
+
+          // Send email notification only if there are CC recipients
+          if (emailRecipients.length > 0) {
+            // Prepare email variables
             const requesterName = `${requestWithUser.user.emp_fname} ${requestWithUser.user.emp_lname}`.trim();
             const requestSubject = formData?.['8'] || 'IT Helpdesk Request';
             const requestDescription = formData?.['9'] || 'No description provided';
@@ -120,17 +130,106 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
               Emails_To_Notify: emailRecipients.join(', ')
             };
 
-            // Send the closed CC email using the dedicated function
-            const emailSent = await sendRequestClosedCCEmail(emailRecipients, emailVariables);
-            
-            if (!emailSent) {
-              console.error('Failed to send closed CC email notification');
+            // Handle different email templates
+            if (emailTemplate === 'acknowledge-cc-closed') {
+              // Send the closed CC email using the dedicated function
+              const emailSent = await sendRequestClosedCCEmail(emailRecipients, emailVariables);
+              
+              if (!emailSent) {
+                console.error('Failed to send closed CC email notification');
+              }
+            } else if (emailTemplate === '32') {
+              // Send cancellation email using template 32
+              const emailSent = await sendEmailWithTemplateId(
+                parseInt(emailTemplate),
+                emailVariables,
+                emailRecipients[0] // Use first recipient as override (if any)
+              );
+              
+              if (!emailSent) {
+                console.error('Failed to send cancellation email notification');
+              }
             }
           }
         }
       } catch (emailError) {
         console.error('Error sending email notification:', emailError);
         // Don't fail the request if email fails
+      }
+    }
+
+    // Send app notification if requested
+    if (sendAppNotification) {
+      try {
+        // Get the request with user data for notification
+        const requestWithUser = await prisma.request.findUnique({
+          where: { id: requestId },
+          include: {
+            user: true
+          }
+        });
+
+        if (requestWithUser) {
+          const formData = requestWithUser.formData as any;
+          const requestSubject = formData?.['8'] || 'IT Helpdesk Request';
+          
+          // Determine notification type based on status
+          let notificationType: 'REQUEST_CLOSED' = 'REQUEST_CLOSED';
+          
+          // Create notification for the requester
+          await createNotification({
+            userId: requestWithUser.user.id,
+            type: notificationType,
+            title: `Request #${requestId} ${actualStatus === 'cancelled' ? 'Cancelled' : 'Status Changed'}`,
+            message: `Your request "${requestSubject}" has been ${actualStatus === 'cancelled' ? 'cancelled' : `changed to ${newStatusLabel}`}.`,
+            data: {
+              requestId: requestId,
+              oldStatus: existing.status,
+              newStatus: actualStatus,
+              requestSubject: requestSubject
+            }
+          });
+
+          // Also notify people in the email notification list if available
+          const emailNotifyField = formData?.['10'];
+          let additionalEmails: string[] = [];
+
+          if (Array.isArray(emailNotifyField)) {
+            additionalEmails = emailNotifyField.filter(email => 
+              typeof email === 'string' && 
+              email.trim() && 
+              email !== requestWithUser.user.emp_email
+            );
+          } else if (typeof emailNotifyField === 'string' && emailNotifyField.trim() && 
+                     emailNotifyField !== requestWithUser.user.emp_email) {
+            additionalEmails = [emailNotifyField.trim()];
+          }
+
+          // Create notifications for additional users
+          for (const email of additionalEmails) {
+            const user = await prisma.users.findFirst({
+              where: { emp_email: email }
+            });
+            
+            if (user) {
+              await createNotification({
+                userId: user.id,
+                type: notificationType,
+                title: `Request #${requestId} ${actualStatus === 'cancelled' ? 'Cancelled' : 'Status Changed'}`,
+                message: `Request "${requestSubject}" by ${requestWithUser.user.emp_fname} ${requestWithUser.user.emp_lname} has been ${actualStatus === 'cancelled' ? 'cancelled' : `changed to ${newStatusLabel}`}.`,
+                data: {
+                  requestId: requestId,
+                  oldStatus: existing.status,
+                  newStatus: actualStatus,
+                  requestSubject: requestSubject
+                }
+              });
+            }
+          }
+        }
+      } catch (notificationError) {
+        console.error('Error creating app notification:', notificationError);
+        // Don't fail the request if notification fails
       }
     }
 

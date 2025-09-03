@@ -192,34 +192,34 @@ class SafeBackgroundServiceManager {
   }
 
   /**
-   * Start SLA monitoring scheduler - runs every 1 minute (FOR TESTING)
+   * Start SLA monitoring scheduler - runs every 30 minutes
    */
   private startSLAScheduler(): void {
     const isDevelopment = process.env.NODE_ENV === 'development';
     
     if (isDevelopment) {
-      console.log('⏰ [TESTING] SLA monitoring scheduler started (every 1 minute for testing)');
+      console.log('⏰ SLA monitoring scheduler started (every 30 minutes)');
     } else {
-      console.log('⏰ Starting SLA monitoring scheduler (every 1 minute)...');
+      console.log('⏰ Starting SLA monitoring scheduler (every 30 minutes)...');
     }
     
     this.scheduleNextSLACheck();
   }
 
   /**
-   * Schedule next SLA check - every 1 minute (FOR TESTING)
+   * Schedule next SLA check - every 30 minutes
    */
   private scheduleNextSLACheck(): void {
     try {
-      // TESTING: Change to 1 minute for testing
-      const intervalMs = 1 * 60 * 1000; // 1 minute (was 30 * 60 * 1000)
+      // Set to 30 minutes for production use
+      const intervalMs = 30 * 60 * 1000; // 30 minutes
       
       const isDevelopment = process.env.NODE_ENV === 'development';
       
       if (isDevelopment) {
-        console.log(`⏰ [TESTING] Next SLA check scheduled in 1 minute`);
+        console.log(`⏰ Next SLA check scheduled in 30 minutes`);
       } else {
-        console.log(`⏰ Next SLA check scheduled in 1 minute`);
+        console.log(`⏰ Next SLA check scheduled in 30 minutes`);
       }
 
       this.slaScheduler = setTimeout(() => {
@@ -491,7 +491,7 @@ class SafeBackgroundServiceManager {
       if (this.services.has('sla-monitoring')) {
         status.services.slaMonitoring = {
           status: this.slaScheduler ? 'running' : 'stopped',
-          details: 'Monitors SLA compliance every 1 minute (TESTING)'
+          details: 'Monitors SLA compliance every 30 minutes'
         };
       }
 

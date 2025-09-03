@@ -891,6 +891,11 @@ export default function ApprovalDetailsPage() {
   const getApprovalStatusDisplay = () => {
     if (!requestDetails) return { text: 'Pending Approval', color: getApprovalStatusColor('pending approval') };
     
+    // Check if the request has been cancelled first
+    if (requestDetails.status === 'cancelled') {
+      return { text: 'Cancelled', color: getApprovalStatusColor('cancelled') };
+    }
+    
     // Check if any approval has been rejected first
     if (hasAnyRejectedApproval()) {
       return { text: 'Rejected', color: getApprovalStatusColor('rejected') };
@@ -1692,14 +1697,19 @@ export default function ApprovalDetailsPage() {
                   {/* Action Buttons */}
                   <Card>
                     <CardContent className="pt-6">
-                      {hasAnyRejectedApproval() ? (
-                        /* Show acknowledge button when any approval is rejected */
+                      {hasAnyRejectedApproval() || (requestDetails && requestDetails.status === 'cancelled') ? (
+                        /* Show acknowledge button when any approval is rejected OR request is cancelled */
                         <div className="space-y-4">
                           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                             <div className="flex items-start gap-3">
                               <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
                               <div className="text-sm text-red-800">
-                                <p className="font-medium">This request has been rejected by another approver.</p>
+                                <p className="font-medium">
+                                  {requestDetails && requestDetails.status === 'cancelled' 
+                                    ? 'This request has been cancelled.' 
+                                    : 'This request has been rejected by another approver.'
+                                  }
+                                </p>
                                 <p className="mt-1">Please acknowledge to remove this from your pending list.</p>
                               </div>
                             </div>
@@ -2032,10 +2042,16 @@ export default function ApprovalDetailsPage() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <UserCheck className="h-5 w-5 text-orange-500" />
-                Acknowledge Rejection
+                {requestDetails && requestDetails.status === 'cancelled' 
+                  ? 'Acknowledge Cancellation' 
+                  : 'Acknowledge Rejection'
+                }
               </DialogTitle>
               <DialogDescription>
-                You are about to acknowledge that this request has been rejected by another approver.
+                {requestDetails && requestDetails.status === 'cancelled'
+                  ? 'You are about to acknowledge that this request has been cancelled.'
+                  : 'You are about to acknowledge that this request has been rejected by another approver.'
+                }
               </DialogDescription>
             </DialogHeader>
             
@@ -2046,9 +2062,19 @@ export default function ApprovalDetailsPage() {
                   <div className="text-sm text-red-800">
                     <p className="font-medium">Important:</p>
                     <ul className="mt-1 space-y-1 text-xs">
-                      <li>• This request has been rejected by another approver</li>
-                      <li>• Acknowledging will remove this from your pending list</li>
-                      <li>• This action cannot be undone</li>
+                      {requestDetails && requestDetails.status === 'cancelled' ? (
+                        <>
+                          <li>• This request has been cancelled</li>
+                          <li>• Acknowledging will remove this from your pending list</li>
+                          <li>• This action cannot be undone</li>
+                        </>
+                      ) : (
+                        <>
+                          <li>• This request has been rejected by another approver</li>
+                          <li>• Acknowledging will remove this from your pending list</li>
+                          <li>• This action cannot be undone</li>
+                        </>
+                      )}
                     </ul>
                   </div>
                 </div>

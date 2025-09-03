@@ -27,7 +27,10 @@ export type ApprovalStatus =
   | 'for approval'        // legacy support
   | 'pending'             // legacy support
   | 'pending clarification' // legacy support
-  | 'pending-clarification'; // legacy support
+  | 'pending-clarification' // legacy support
+  | 'Request Cancelled'   // request status override
+  | 'Request Closed'      // request status override
+  | 'Acknowledged';       // acknowledged status
 
 export type Priority = 
   | 'low' 
@@ -102,6 +105,7 @@ export const getApprovalStatusColor = (status: string): string => {
       return 'bg-green-100 text-green-800 border-green-200 status-badge';
     
     case 'rejected':
+    case 'cancelled':
       return 'bg-red-100 text-red-800 border-red-200 status-badge';
     
     case 'pending_approval':

@@ -33,7 +33,7 @@ class SafeSLAMonitoringService {
   }
 
   /**
-   * MAIN SLA MONITORING PROCESS - runs every 1 minute (FOR TESTING)
+   * MAIN SLA MONITORING PROCESS - runs every 30 minutes
    * Checks SLA compliance and sends escalation emails
    */
   async monitorSLACompliance(): Promise<{ success: boolean; results?: any; error?: string }> {
@@ -1305,7 +1305,7 @@ class SafeSLAMonitoringService {
         slaMonitoring: {
           isRunning: this.isProcessing,
           lastCheck: new Date().toISOString(),
-          nextCheck: new Date(Date.now() + 1 * 60 * 1000).toISOString() // 1 minute from now (TESTING)
+          nextCheck: new Date(Date.now() + 30 * 60 * 1000).toISOString() // 30 minutes from now
         },
         autoClose: {
           isRunning: this.isAutoClosing,
