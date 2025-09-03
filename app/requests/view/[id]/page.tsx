@@ -469,6 +469,11 @@ export default function RequestViewPage() {
   const [dragActive, setDragActive] = useState(false);
   const noteFileInputRef = useRef<HTMLInputElement>(null);
   const conversationRefs = useRef<{[approvalId: string]: HTMLDivElement | null}>({});
+  // Loading states for conversation actions
+  const [sendingMessage, setSendingMessage] = useState<{[approvalId: string]: boolean}>({});
+  const [sendingClarification, setSendingClarification] = useState<{[approvalId: string]: boolean}>({});
+  const [sendingMainReply, setSendingMainReply] = useState(false);
+  const [addingNote, setAddingNote] = useState(false);
   // Work Logs state (technician-only)
   const [workLogs, setWorkLogs] = useState<any[]>([]);
   const [loadingWorkLogs, setLoadingWorkLogs] = useState(false);
@@ -1640,9 +1645,11 @@ export default function RequestViewPage() {
 
   const sendConversationMessage = async (approvalId: string) => {
     const message = newConversationMessage[approvalId]?.trim();
-    if (!message) return;
+    if (!message || sendingMessage[approvalId]) return;
 
     try {
+      setSendingMessage(prev => ({ ...prev, [approvalId]: true }));
+      
       const response = await fetch(`/api/approvals/${approvalId}/conversations`, {
         method: 'POST',
         headers: {
@@ -1680,6 +1687,7 @@ export default function RequestViewPage() {
         toast({
           title: "Message sent",
           description: "Your message has been added to the conversation",
+          className: "bg-green-50 border-green-200 text-green-800"
         });
       }
     } catch (error) {
@@ -1689,14 +1697,18 @@ export default function RequestViewPage() {
         description: "Failed to send message",
         variant: "destructive"
       });
+    } finally {
+      setSendingMessage(prev => ({ ...prev, [approvalId]: false }));
     }
   };
 
   const requestClarification = async (approvalId: string) => {
     const message = newConversationMessage[approvalId]?.trim();
-    if (!message) return;
+    if (!message || sendingClarification[approvalId]) return;
 
     try {
+      setSendingClarification(prev => ({ ...prev, [approvalId]: true }));
+      
       // First, update the approval status to for_clarification
       const statusResponse = await fetch('/api/approvals/action', {
         method: 'POST',
@@ -1755,6 +1767,7 @@ export default function RequestViewPage() {
       toast({
         title: "Clarification Requested",
         description: "Your clarification request has been sent and the approval status updated",
+        className: "bg-green-50 border-green-200 text-green-800"
       });
     } catch (error) {
       console.error('Error requesting clarification:', error);
@@ -1763,14 +1776,18 @@ export default function RequestViewPage() {
         description: error instanceof Error ? error.message : "Failed to request clarification",
         variant: "destructive"
       });
+    } finally {
+      setSendingClarification(prev => ({ ...prev, [approvalId]: false }));
     }
   };
 
   const sendMainConversationReply = async () => {
     const message = newComment.trim();
-    if (!message) return;
+    if (!message || sendingMainReply) return;
 
     try {
+      setSendingMainReply(true);
+      
       const response = await fetch(`/api/requests/${requestId}/conversations`, {
         method: 'POST',
         headers: {
@@ -1791,6 +1808,7 @@ export default function RequestViewPage() {
         toast({
           title: "Reply sent",
           description: "Your reply has been added to the conversation",
+          className: "bg-green-50 border-green-200 text-green-800"
         });
       } else {
         throw new Error('Failed to send reply');
@@ -1802,6 +1820,8 @@ export default function RequestViewPage() {
         description: "Failed to send reply",
         variant: "destructive"
       });
+    } finally {
+      setSendingMainReply(false);
     }
   };
 
@@ -1845,9 +1865,11 @@ export default function RequestViewPage() {
 
   const addNote = async () => {
     const message = newNote.trim();
-    if (!message) return;
+    if (!message || addingNote) return;
 
     try {
+      setAddingNote(true);
+      
       // First, upload files if any
       let uploadedFileData: any[] = [];
       if (noteAttachments.length > 0) {
@@ -1894,6 +1916,7 @@ export default function RequestViewPage() {
         toast({
           title: "Note added",
           description: "Your note has been added successfully",
+          className: "bg-green-50 border-green-200 text-green-800"
         });
         
         // Refresh the entire page to ensure all data is up to date
@@ -1909,6 +1932,8 @@ export default function RequestViewPage() {
         description: "Failed to add note",
         variant: "destructive"
       });
+    } finally {
+      setAddingNote(false);
     }
   };
 
@@ -3596,21 +3621,35 @@ export default function RequestViewPage() {
                                                   <div className="flex flex-col gap-2">
                                                     <Button
                                                       onClick={() => sendConversationMessage(approval.id)}
-                                                      disabled={!newConversationMessage[approval.id]?.trim()}
+                                                      disabled={!newConversationMessage[approval.id]?.trim() || sendingMessage[approval.id]}
                                                       size="sm"
                                                       className="self-end"
                                                     >
-                                                      <Reply className="h-4 w-4" />
+                                                      {sendingMessage[approval.id] ? (
+                                                        <div className="flex items-center justify-center">
+                                                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                                                          Sending...
+                                                        </div>
+                                                      ) : (
+                                                        <Reply className="h-4 w-4" />
+                                                      )}
                                                     </Button>
                                                     {approval.status === 'pending_approval' && (
                                                       <Button
                                                         onClick={() => requestClarification(approval.id)}
-                                                        disabled={!newConversationMessage[approval.id]?.trim()}
+                                                        disabled={!newConversationMessage[approval.id]?.trim() || sendingClarification[approval.id]}
                                                         size="sm"
                                                         variant="outline"
                                                         className="self-end border-orange-300 text-orange-600 hover:bg-orange-50"
                                                       >
-                                                        <AlertCircle className="h-4 w-4" />
+                                                        {sendingClarification[approval.id] ? (
+                                                          <div className="flex items-center justify-center">
+                                                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-orange-600 border-t-transparent mr-2"></div>
+                                                            Sending...
+                                                          </div>
+                                                        ) : (
+                                                          <AlertCircle className="h-4 w-4" />
+                                                        )}
                                                       </Button>
                                                     )}
                                                   </div>
@@ -5321,7 +5360,7 @@ export default function RequestViewPage() {
                     // Add notifications when status is cancelled
                     if (selectedStatus === 'cancelled') {
                       requestBody.sendEmail = true;
-                      requestBody.emailTemplate = '32'; // Use template 32 for cancellation
+                      requestBody.emailTemplate = 'email-user-cancelled'; // Use template name for cancellation
                       requestBody.sendAppNotification = true;
                     }
                     
@@ -5496,6 +5535,131 @@ export default function RequestViewPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Notes Modal */}
+        {showNotesModal && (
+          <Dialog open={showNotesModal} onOpenChange={setShowNotesModal}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Add Notes</DialogTitle>
+                <DialogDescription>
+                  Add a note to this request. This will be visible to all users who have access to this request.
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Note Content
+                  </label>
+                  <RichTextEditor
+                    value={newNote}
+                    onChange={setNewNote}
+                    placeholder="Enter your note here..."
+                    className="min-h-[200px]"
+                  />
+                </div>
+                
+                {/* File Upload Area */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Attachments (Optional)
+                  </label>
+                  <div
+                    className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                      dragActive 
+                        ? 'border-blue-400 bg-blue-50' 
+                        : 'border-gray-300 hover:border-gray-400'
+                    }`}
+                    onDragOver={handleNoteDragOver}
+                    onDragLeave={handleNoteDragLeave}
+                    onDrop={handleNoteDrop}
+                    onClick={() => noteFileInputRef.current?.click()}
+                  >
+                    <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-600 mb-1">
+                      Drag and drop files here, or click to browse
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Maximum file size: 20MB
+                    </p>
+                    <input
+                      ref={noteFileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files) {
+                          handleNoteFiles(Array.from(e.target.files));
+                        }
+                      }}
+                    />
+                  </div>
+                  
+                  {/* File List */}
+                  {noteAttachments.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm font-medium text-gray-700">
+                        Selected Files ({noteAttachments.length})
+                      </p>
+                      {noteAttachments.map((file, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                          <div className="flex items-center gap-2">
+                            <Paperclip className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm text-gray-700 truncate">
+                              {file.name}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              ({formatFileSize(file.size)})
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeNoteFile(index)}
+                            className="h-6 w-6 p-0 text-gray-400 hover:text-red-600"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <DialogFooter>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setShowNotesModal(false);
+                    setNewNote('');
+                    setNoteAttachments([]);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={addNote}
+                  disabled={!newNote.trim() || addingNote}
+                >
+                  {addingNote ? (
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                      Adding Note...
+                    </div>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Note
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </SessionWrapper>
   );

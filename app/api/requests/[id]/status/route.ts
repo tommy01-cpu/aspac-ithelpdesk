@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { addHistory } from '@/lib/history';
 import { RequestStatus } from '@prisma/client';
-import { sendRequestClosedCCEmail, sendEmailWithTemplateId } from '@/lib/database-email-templates';
+import { sendRequestClosedCCEmail, sendEmailWithTemplateId, sendEmail } from '@/lib/database-email-templates';
 import { formatStatusForDisplay } from '@/lib/status-colors';
 import { createNotification } from '@/lib/notifications';
 
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: 'Invalid request id' }, { status: 400 });
     }
 
-    const { status, notes, attachmentIds, sendEmail, emailTemplate, sendAppNotification } = await request.json();
+    const { status, notes, attachmentIds, sendEmail: shouldSendEmail, emailTemplate, sendAppNotification } = await request.json();
     
     // Handle different status mappings
     let actualStatus = status;
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     });
 
     // Send email notification if requested
-    if (sendEmail && emailTemplate) {
+    if (shouldSendEmail && emailTemplate) {
       try {
         // Get the request with user data for email
         const requestWithUser = await prisma.request.findUnique({
@@ -95,25 +95,16 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           // Get email recipients from formData['10'] (E-mail Id(s) To Notify)
           const formData = requestWithUser.formData as any;
           const emailNotifyField = formData?.['10'];
-          let emailRecipients: string[] = [];
+          let ccEmailRecipients: string[] = [];
 
           if (Array.isArray(emailNotifyField)) {
-            emailRecipients = emailNotifyField.filter(email => typeof email === 'string' && email.trim());
+            ccEmailRecipients = emailNotifyField.filter(email => typeof email === 'string' && email.trim());
           } else if (typeof emailNotifyField === 'string' && emailNotifyField.trim()) {
-            emailRecipients = [emailNotifyField.trim()];
+            ccEmailRecipients = [emailNotifyField.trim()];
           }
 
-          // Only send CC emails if there are actual CC recipients specified
-          // Don't automatically include the requester if no CC emails exist
-          if (emailRecipients.length > 0) {
-            // Include the requester in notifications only if CC emails exist
-            if (requestWithUser.user.emp_email && !emailRecipients.includes(requestWithUser.user.emp_email)) {
-              emailRecipients.push(requestWithUser.user.emp_email);
-            }
-          }
-
-          // Send email notification only if there are CC recipients
-          if (emailRecipients.length > 0) {
+          // Always send emails for cancellation (at minimum to requester)
+          if (true) {
             // Prepare email variables
             const requesterName = `${requestWithUser.user.emp_fname} ${requestWithUser.user.emp_lname}`.trim();
             const requestSubject = formData?.['8'] || 'IT Helpdesk Request';
@@ -127,27 +118,88 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
               Requester_Name: requesterName,
               Requester_Email: requestWithUser.user.emp_email || '',
               Request_Title: requestSubject,
-              Emails_To_Notify: emailRecipients.join(', ')
+              Emails_To_Notify: ccEmailRecipients.join(', '),
+              Request_URL: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${requestId}`
             };
 
             // Handle different email templates
             if (emailTemplate === 'acknowledge-cc-closed') {
               // Send the closed CC email using the dedicated function
-              const emailSent = await sendRequestClosedCCEmail(emailRecipients, emailVariables);
+              const emailSent = await sendRequestClosedCCEmail(ccEmailRecipients, emailVariables);
               
               if (!emailSent) {
                 console.error('Failed to send closed CC email notification');
               }
-            } else if (emailTemplate === '32') {
-              // Send cancellation email using template 32
-              const emailSent = await sendEmailWithTemplateId(
-                parseInt(emailTemplate),
+            } else if (emailTemplate === 'email-user-cancelled') {
+              // Send cancellation email using template 32 (requester notification)
+              console.log('📧 Processing cancellation emails - Template 32 for requester');
+              const emailContent32 = await sendEmailWithTemplateId(
+                32, // Template ID for email-user-cancelled
                 emailVariables,
-                emailRecipients[0] // Use first recipient as override (if any)
+                requestWithUser.user.emp_email || undefined // Send to requester directly
               );
               
-              if (!emailSent) {
-                console.error('Failed to send cancellation email notification');
+              if (emailContent32) {
+                // Actually send the email to requester
+                const emailSent = await sendEmail({
+                  to: requestWithUser.user.emp_email || '',
+                  cc: emailContent32.cc,
+                  subject: emailContent32.subject,
+                  message: emailContent32.textContent,
+                  htmlMessage: emailContent32.htmlContent,
+                });
+                
+                if (!emailSent) {
+                  console.error('Failed to send cancellation email notification using template 32');
+                } else {
+                  console.log('✅ Successfully sent cancellation email to requester using template 32');
+                }
+              } else {
+                console.error('Failed to prepare cancellation email content from template 32');
+              }
+
+              // Send CC email using template 29 for cancelled requests (only if there are actual CC recipients)
+              if (actualStatus === 'cancelled') {
+                console.log('📧 Processing cancellation emails - Template 29 for CC recipients');
+                
+                // Get only the CC recipients (exclude the requester)
+                const ccOnlyRecipients = ccEmailRecipients.filter((email: string) => 
+                  email !== requestWithUser.user.emp_email
+                );
+                
+                if (ccOnlyRecipients.length > 0) {
+                  console.log('Found CC recipients for template 29:', ccOnlyRecipients);
+                  try {
+                    const emailContent29 = await sendEmailWithTemplateId(
+                      29,
+                      emailVariables,
+                      ccOnlyRecipients[0] // Use first CC recipient as override
+                    );
+                    
+                    if (emailContent29) {
+                      // Actually send the CC email to CC recipients only
+                      const ccEmailSent = await sendEmail({
+                        to: ccOnlyRecipients,
+                        cc: emailContent29.cc,
+                        subject: emailContent29.subject,
+                        message: emailContent29.textContent,
+                        htmlMessage: emailContent29.htmlContent,
+                      });
+                      
+                      if (!ccEmailSent) {
+                        console.error('Failed to send cancellation CC email notification using template 29');
+                      } else {
+                        console.log('✅ Successfully sent cancellation CC email using template 29 to:', ccOnlyRecipients);
+                      }
+                    } else {
+                      console.error('Failed to prepare cancellation CC email content from template 29');
+                    }
+                  } catch (ccEmailError) {
+                    console.error('Error sending cancellation CC email using template 29:', ccEmailError);
+                  }
+                } else {
+                  console.log('ℹ️  No CC recipients found for template 29 cancellation email (only requester in notification list)');
+                }
               }
             }
           }

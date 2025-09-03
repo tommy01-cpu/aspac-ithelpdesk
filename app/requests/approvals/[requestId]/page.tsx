@@ -620,7 +620,7 @@ export default function ApprovalDetailsPage() {
     try {
       setActionLoading('clarification');
       
-      // First, update the approval status to for_clarification
+      // Send clarification request with template 15 - this will handle both status update and email notification
       const statusResponse = await fetch('/api/approvals/action', {
         method: 'POST',
         headers: {
@@ -629,16 +629,16 @@ export default function ApprovalDetailsPage() {
         body: JSON.stringify({
           approvalId: selectedApproval.id,
           action: 'clarification',
-          comments: undefined, // Don't add to request comments
+          comments: clarificationMessage.trim(), // Send the clarification message
         }),
       });
 
       if (!statusResponse.ok) {
         const errorData = await statusResponse.json();
-        throw new Error(errorData.error || 'Failed to update approval status');
+        throw new Error(errorData.error || 'Failed to send clarification request');
       }
 
-      // Then, create a conversation message
+      // Create a conversation message
       const conversationResponse = await fetch(`/api/approvals/${selectedApproval.id}/conversations`, {
         method: 'POST',
         headers: {
@@ -680,6 +680,8 @@ export default function ApprovalDetailsPage() {
       toast({
         title: "Clarification Requested",
         description: "Your clarification request has been sent to the requester",
+        variant: "default",
+        className: "border-green-200 bg-green-50 text-green-800",
       });
 
       // Navigate back to the approvals list to avoid intermediate re-renders
@@ -1839,6 +1841,7 @@ export default function ApprovalDetailsPage() {
                       <li>• This will change the approval status to "For Clarification"</li>
                       <li>• The request status will remain "For Approval"</li>
                       <li>• A conversation will be started with the requester</li>
+                      <li>• Email notification will be sent using template 15</li>
                     </ul>
                   </div>
                 </div>

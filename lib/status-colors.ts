@@ -186,6 +186,9 @@ export const formatStatusForDisplay = (status: string): string => {
   switch (status?.toLowerCase().trim()) {
     case 'for_approval':
       return 'For Approval';
+    case 'for_clarification':
+    case 'for clarification':
+      return 'For Clarification';
     case 'cancelled':
       return 'Cancelled';
     case 'open':

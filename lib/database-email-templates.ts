@@ -13,7 +13,7 @@ const TEMPLATE_ID_MAPPING = {
   'APPROVAL_REQUIRED': 12, // notify-approver-approval
   'APPROVAL_REMINDER': 13, // approval-reminder
   'REQUEST_APPROVED_REJECTED': 14, // notify-approval-status
-  'APPROVER_ADDED': 30, // notify-approver-added (CORRECT ID)
+  'APPROVER_ADDED': 12, // notify-approver-added (Changed from 30 to 12)
   
   // Clarification templates
   'CLARIFICATION_REQUIRED': 15, // notify-clarification
@@ -564,7 +564,7 @@ export const sendApprovalRequiredEmail = async (
   }
 };
 
-// Approver added email (Template ID 30 - notify-approver-added)
+// Approver added email (Template ID 12 - notify-approver-added)
 export const sendApproverAddedEmail = async (
   approverEmail: string, 
   variables: Record<string, string>
@@ -572,9 +572,9 @@ export const sendApproverAddedEmail = async (
   try {
     console.log('📧 Sending approver added email using database template...');
     
-    const emailContent = await sendEmailWithTemplateId(30, variables, approverEmail);
+    const emailContent = await sendEmailWithTemplateId(12, variables, approverEmail);
     if (!emailContent) {
-      throw new Error('Failed to prepare email content from database template 30');
+      throw new Error('Failed to prepare email content from database template 12');
     }
     
     const result = await sendEmail({
@@ -756,6 +756,62 @@ export const sendRequestClosedCCEmail = async (
     return true;
   } catch (error) {
     console.error('❌ Error sending request closed CC email:', error);
+    return false;
+  }
+};
+
+// Request cancelled email (Template ID 32 - cancellation notification)
+export const sendRequestCancelledEmail = async (
+  emails: string[], 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending request cancelled email using database template 32...');
+    
+    const emailContent = await sendEmailWithTemplateId(32, variables);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 32');
+    }
+    
+    const result = await sendEmail({
+      to: emails,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Request cancelled email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending request cancelled email:', error);
+    return false;
+  }
+};
+
+// Request cancelled CC email (Template ID 29 - cancellation CC notification)
+export const sendRequestCancelledCCEmail = async (
+  ccEmails: string[], 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending request cancelled CC email using database template 29...');
+    
+    const emailContent = await sendEmailWithTemplateId(29, variables);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 29');
+    }
+    
+    const result = await sendEmail({
+      to: ccEmails,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: emailContent.htmlContent,
+    });
+    
+    console.log('✅ Request cancelled CC email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending request cancelled CC email:', error);
     return false;
   }
 };

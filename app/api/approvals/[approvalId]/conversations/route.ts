@@ -148,7 +148,8 @@ export async function POST(
           actorId: user.id,
         });
 
-        // Send email notification and in-app notification for ALL conversation messages
+        // Send email notification and in-app notification for conversation messages
+        // Skip email for clarification requests since template 15 is already sent by approval action
         try {
           // Import the status formatting function first
           const { formatStatusForDisplay } = await import('@/lib/status-colors');
@@ -156,131 +157,139 @@ export async function POST(
           // Get proper request subject and description from form data
           const formData = approval.request.formData as any;
           
-          // Determine who to notify and which template to use
-          let emailRecipient = '';
-          let recipientName = '';
-          let templateId = 0;
-          let templateVariables: any = {};
-          
-          if (user.id === approval.request.userId) {
-            // User (requester) posted, notify the approver
-            emailRecipient = approval.approver?.emp_email || '';
-            recipientName = `${approval.approver?.emp_fname || ''} ${approval.approver?.emp_lname || ''}`.trim();
-            templateId = 28; // clarification_response_to_approver
+          // Skip email notification if this is a clarification request (template 15 already sent)
+          if (!isClarificationRequest) {
+            // Determine who to notify and which template to use
+            let emailRecipient = '';
+            let recipientName = '';
+            let templateId = 0;
+            let templateVariables: any = {};
             
-            templateVariables = {
-              Approver_Name: recipientName,
-              Clarification: message.trim(),
-              Request_ID: approval.request.id.toString(),
-              Request_Status: formatStatusForDisplay(approval.request.status),
-              Request_Subject: formData?.subject || formData?.title || formData?.['8'] || `Request #${approval.request.id}`,
-              Request_Description: formData?.description || formData?.details || formData?.['9'] || 'No description provided',
-              Request_Link: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`
-            };
-          } else {
-            // Approver posted, notify the requester  
-            emailRecipient = approval.request.user.emp_email || '';
-            recipientName = `${approval.request.user.emp_fname} ${approval.request.user.emp_lname}`;
-            templateId = 29; // clarification_request_to_requester
-            
-            templateVariables = {
-              Requester_Name: recipientName,
-              Clarification: message.trim(),
-              Request_ID: approval.request.id.toString(),
-              Request_Status: formatStatusForDisplay(approval.request.status),
-              Request_Subject: formData?.subject || formData?.title || formData?.['8'] || `Request #${approval.request.id}`,
-              Request_Description: formData?.description || formData?.details || formData?.['9'] || 'No description provided',
-              Request_Link: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`
-            };
-          }
-
-          if (emailRecipient) {
-            // Use database email template system with the appropriate template
-            const emailContent = await sendEmailWithTemplateId(
-              templateId,
-              templateVariables,
-              emailRecipient // Override recipient
-            );
-            
-            if (emailContent) {
-              // Send the email using the database template system
-              await sendEmail({
-                to: emailRecipient,
-                subject: emailContent.subject,
-                htmlMessage: emailContent.htmlContent,
-                message: emailContent.textContent
-              });
+            if (user.id === approval.request.userId) {
+              // User (requester) posted, notify the approver
+              emailRecipient = approval.approver?.emp_email || '';
+              recipientName = `${approval.approver?.emp_fname || ''} ${approval.approver?.emp_lname || ''}`.trim();
+              templateId = 28; // clarification_response_to_approver
               
-              console.log('✅ Clarification conversation email sent to:', emailRecipient, 'using template:', templateId);
+              templateVariables = {
+                Approver_Name: recipientName,
+                Clarification: message.trim(),
+                Request_ID: approval.request.id.toString(),
+                Request_Status: formatStatusForDisplay(approval.request.status),
+                Request_Subject: formData?.subject || formData?.title || formData?.['8'] || `Request #${approval.request.id}`,
+                Request_Description: formData?.description || formData?.details || formData?.['9'] || 'No description provided',
+                Request_Link: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`
+              };
             } else {
-              console.error('❌ Failed to prepare email content from database template:', templateId);
+              // Approver posted regular message, use template 15 for clarification messages
+              emailRecipient = approval.request.user.emp_email || '';
+              recipientName = `${approval.request.user.emp_fname} ${approval.request.user.emp_lname}`;
+              templateId = 15; // Use template 15 for all approver clarification messages
+              
+              templateVariables = {
+                Requester_Name: recipientName,
+                Request_ID: approval.request.id.toString(),
+                Request_Status: formatStatusForDisplay(approval.request.status),
+                Request_Subject: formData?.subject || formData?.title || formData?.['8'] || `Request #${approval.request.id}`,
+                Request_Description: formData?.description || formData?.details || formData?.['9'] || 'No description provided',
+                Clarification: message.trim(),
+                Request_URL: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`,
+                Request_Link: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`,
+                Base_URL: process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000',
+                Encoded_Request_URL: encodeURIComponent(`${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`)
+              };
             }
 
-            // Create in-app notification for ALL conversation messages
-            console.log('🔍 Notification Debug Info:', {
-              currentUserId: user.id,
-              requesterId: approval.request.userId,
-              approverId: approval.approverId,
-              isRequesterSending: user.id === approval.request.userId,
-              isClarificationRequest: isClarificationRequest,
-              userEmail: user.emp_email,
-              approverEmail: approval.approver?.emp_email,
-              requesterEmail: approval.request.user?.emp_email
-            });
+            if (emailRecipient) {
+              // Use database email template system with the appropriate template
+              const emailContent = await sendEmailWithTemplateId(
+                templateId,
+                templateVariables,
+                emailRecipient // Override recipient
+              );
+              
+              if (emailContent) {
+                // Send the email using the database template system
+                await sendEmail({
+                  to: emailRecipient,
+                  subject: emailContent.subject,
+                  htmlMessage: emailContent.htmlContent,
+                  message: emailContent.textContent
+                });
+                
+                console.log('✅ Clarification conversation email sent to:', emailRecipient, 'using template:', templateId);
+              } else {
+                console.error('❌ Failed to prepare email content from database template:', templateId);
+              }
+            }
+          } else {
+            console.log('🚫 Skipping email notification for clarification request - template 15 already sent by approval action');
+          }
 
-            if (user.id === approval.request.userId) {
-              // Requester responded, notify approver
-              console.log('🎯 Requester is sending message, will notify approver');
-              if (approval.approverId && approval.approverId !== approval.request.userId) {
-                console.log('✅ Conditions met, sending notification to approver:', approval.approverId);
+          // Create in-app notification for conversation messages
+          console.log('🔍 Notification Debug Info:', {
+            currentUserId: user.id,
+            requesterId: approval.request.userId,
+            approverId: approval.approverId,
+            isRequesterSending: user.id === approval.request.userId,
+            isClarificationRequest: isClarificationRequest,
+            userEmail: user.emp_email,
+            approverEmail: approval.approver?.emp_email,
+            requesterEmail: approval.request.user?.emp_email
+          });
+
+          if (user.id === approval.request.userId) {
+            // Requester responded, notify approver
+            console.log('🎯 Requester is sending message, will notify approver');
+            if (approval.approverId && approval.approverId !== approval.request.userId) {
+              console.log('✅ Conditions met, sending notification to approver:', approval.approverId);
+              await createNotification({
+                userId: approval.approverId,
+                type: 'CLARIFICATION_REQUIRED',
+                title: 'Clarification Response Received',
+                message: `The requester has responded to your clarification request for Request #${approval.request.id}`,
+                data: {
+                  requestId: approval.request.id,
+                  approvalId: approval.id,
+                  message: message.trim(),
+                  redirectUrl: `/requests/approvals/${approval.request.id}`
+                }
+              });
+              console.log('✅ In-app notification sent to approver:', approval.approverId);
+              console.log('🔗 Redirect URL set to: /requests/approvals/' + approval.request.id);
+            } else {
+              console.log('❌ Cannot notify approver - approverId:', approval.approverId, 'same as requester:', approval.request.userId);
+            }
+          } else {
+            // Approver posted, notify requester (only if they're different people)
+            console.log('🎯 Approver is sending message, will notify requester');
+            if (approval.approverId !== approval.request.userId) {
+              console.log('✅ Conditions met, sending notification to requester:', approval.request.userId);
+              const redirectUrl = `/requests/view/${approval.request.id}?tab=approvals`;
+              
+              // Only create notification for regular messages, not clarification requests
+              // (clarification requests are handled by the approval action API)
+              if (!isClarificationRequest) {
+                console.log('🎯 Creating APPROVAL_REQUIRED notification for conversation');
                 await createNotification({
-                  userId: approval.approverId,
-                  type: 'CLARIFICATION_REQUIRED',
-                  title: 'Clarification Response Received',
-                  message: `The requester has responded to your clarification request for Request #${approval.request.id}`,
+                  userId: approval.request.userId,
+                  type: 'APPROVAL_REQUIRED',
+                  title: 'New Message in Approval Conversation',
+                  message: `An approver has sent a message regarding Request #${approval.request.id}`,
                   data: {
                     requestId: approval.request.id,
                     approvalId: approval.id,
                     message: message.trim(),
-                    redirectUrl: `/requests/approvals/${approval.request.id}`
+                    redirectUrl: redirectUrl
                   }
                 });
-                console.log('✅ In-app notification sent to approver:', approval.approverId);
-                console.log('🔗 Redirect URL set to: /requests/approvals/' + approval.request.id);
+                console.log('✅ Conversation notification sent to requester:', approval.request.userId);
               } else {
-                console.log('❌ Cannot notify approver - approverId:', approval.approverId, 'same as requester:', approval.request.userId);
+                console.log('🚫 Skipping notification for clarification request - handled by approval action API');
               }
+              console.log('🔗 Redirect URL set to:', redirectUrl);
             } else {
-              // Approver posted, notify requester (only if they're different people)
-              console.log('🎯 Approver is sending message, will notify requester');
-              if (approval.approverId !== approval.request.userId) {
-                console.log('✅ Conditions met, sending notification to requester:', approval.request.userId);
-                const redirectUrl = `/requests/view/${approval.request.id}?tab=approvals`;
-                
-                // Only create notification for regular messages, not clarification requests
-                // (clarification requests are handled by the approval action API)
-                if (!isClarificationRequest) {
-                  console.log('🎯 Creating APPROVAL_REQUIRED notification for conversation');
-                  await createNotification({
-                    userId: approval.request.userId,
-                    type: 'APPROVAL_REQUIRED',
-                    title: 'New Message in Approval Conversation',
-                    message: `An approver has sent a message regarding Request #${approval.request.id}`,
-                    data: {
-                      requestId: approval.request.id,
-                      approvalId: approval.id,
-                      message: message.trim(),
-                      redirectUrl: redirectUrl
-                    }
-                  });
-                  console.log('✅ Conversation notification sent to requester:', approval.request.userId);
-                } else {
-                  console.log('🚫 Skipping notification for clarification request - handled by approval action API');
-                }
-                console.log('🔗 Redirect URL set to:', redirectUrl);
-              } else {
-                console.log('🚫 No notification sent - approver and requester are the same person');
-              }
+              console.log('🚫 No notification sent - approver and requester are the same person');
             }
           }
         } catch (emailError) {
