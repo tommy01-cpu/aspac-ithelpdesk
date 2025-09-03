@@ -10,12 +10,10 @@ import Link from 'next/link';
 import { SessionWrapper } from '@/components/session-wrapper';
 
 // Import the individual tab components
-import MyRequestsTab from '../requests/page'
 import ServiceCatalogTab from '../service-catalog';
 import IncidentCatalogTab from '../incident-catalog';
 // import ApprovalsTab from './approvals/ApprovalsTab';
 // Update the path below if the file exists elsewhere, for example:
-import ApprovalsTab from '../approvals/ApprovalsTab';
 // If the file does not exist, create 'ApprovalsTab.tsx' in the 'approvals' folder with a default export.
 
 interface TabItem {

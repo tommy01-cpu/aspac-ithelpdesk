@@ -11,7 +11,7 @@ import {
   sendRequestResolvedEmail,
   sendRequestResolvedCCEmail,
   sendSLAEscalationEmail,
-  sendRequestCancelledCCEmail 
+  sendRequestClosedCCEmail
 } from '@/lib/database-email-templates';
 import { processImagesForEmailAuto } from './email-image-processor-enhanced';
 import { formatStatusForDisplay } from './status-colors';
@@ -987,57 +987,6 @@ export const notifyNewApprover = async (
 
   } catch (error) {
     console.error('Error sending new approver notification:', error);
-    return false;
-  }
-};
-
-// Function to notify when a request is cancelled
-export const notifyRequestCancelled = async (
-  requestId: number,
-  requestNumber: string,
-  requestTitle: string,
-  cc_email: string[],
-  userId: number,
-  notification_summary?: string
-): Promise<boolean> => {
-  try {
-    console.log('Sending cancellation notifications for request:', requestNumber);
-
-    // Send CC email using template 29
-    if (cc_email.length > 0) {
-      await sendRequestCancelledCCEmail(cc_email, {
-        Request_ID: requestId.toString(),
-        Request_Subject: requestTitle,
-        Request_Title: requestTitle,
-        Request_Number: requestNumber
-      });
-    }
-
-    // Send in-app notifications to CC recipients
-    for (const email of cc_email) {
-      const recipient = await prisma.users.findFirst({
-        where: { emp_email: email }
-      });
-
-      if (recipient) {
-        await createNotification({
-          userId: recipient.id,
-          type: 'REQUEST_CLOSED',
-          title: 'Request Cancelled',
-          message: notification_summary || `Request ${requestNumber} - ${requestTitle} has been cancelled`,
-          data: { 
-            requestId: requestId.toString(),
-            requestSubject: requestTitle,
-            action: 'cancelled'
-          }
-        });
-      }
-    }
-
-    console.log('Cancellation notifications sent successfully');
-    return true;
-  } catch (error) {
-    console.error('Error sending cancellation notifications:', error);
     return false;
   }
 };

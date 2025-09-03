@@ -760,62 +760,6 @@ export const sendRequestClosedCCEmail = async (
   }
 };
 
-// Request cancelled email (Template ID 32 - cancellation notification)
-export const sendRequestCancelledEmail = async (
-  emails: string[], 
-  variables: Record<string, string>
-): Promise<boolean> => {
-  try {
-    console.log('📧 Sending request cancelled email using database template 32...');
-    
-    const emailContent = await sendEmailWithTemplateId(32, variables);
-    if (!emailContent) {
-      throw new Error('Failed to prepare email content from database template 32');
-    }
-    
-    const result = await sendEmail({
-      to: emails,
-      subject: emailContent.subject,
-      message: emailContent.textContent,
-      htmlMessage: emailContent.htmlContent,
-    });
-    
-    console.log('✅ Request cancelled email sent successfully');
-    return true;
-  } catch (error) {
-    console.error('❌ Error sending request cancelled email:', error);
-    return false;
-  }
-};
-
-// Request cancelled CC email (Template ID 29 - cancellation CC notification)
-export const sendRequestCancelledCCEmail = async (
-  ccEmails: string[], 
-  variables: Record<string, string>
-): Promise<boolean> => {
-  try {
-    console.log('📧 Sending request cancelled CC email using database template 29...');
-    
-    const emailContent = await sendEmailWithTemplateId(29, variables);
-    if (!emailContent) {
-      throw new Error('Failed to prepare email content from database template 29');
-    }
-    
-    const result = await sendEmail({
-      to: ccEmails,
-      subject: emailContent.subject,
-      message: emailContent.textContent,
-      htmlMessage: emailContent.htmlContent,
-    });
-    
-    console.log('✅ Request cancelled CC email sent successfully');
-    return true;
-  } catch (error) {
-    console.error('❌ Error sending request cancelled CC email:', error);
-    return false;
-  }
-};
-
 // Approval reminder email (Template ID 13 - approval-reminder)
 export const sendApprovalReminderEmail = async (
   approverEmail: string, 
@@ -868,6 +812,56 @@ export const sendClarificationReminderEmail = async (
     return true;
   } catch (error) {
     console.error('❌ Error sending clarification reminder email:', error);
+    return false;
+  }
+};
+
+// Request cancelled CC email (Template ID 29 - acknowledge-cc-cancelled)
+export const sendRequestCancelledCCEmail = async (
+  ccEmails: string[], 
+  variables: Record<string, string>
+): Promise<boolean> => {
+  try {
+    console.log('📧 Sending request cancelled CC email using database template...');
+    
+    const emailContent = await sendEmailWithTemplateId(29, variables);
+    if (!emailContent) {
+      throw new Error('Failed to prepare email content from database template 29');
+    }
+    
+    // Clean up the HTML content to remove excessive CSS custom properties that break email clients
+    let cleanHtmlContent = emailContent.htmlContent;
+    
+    // Remove all the Tailwind CSS custom properties that clutter the email
+    cleanHtmlContent = cleanHtmlContent.replace(/--tw-[^;]*;?\s*/g, '');
+    
+    // Remove excessive inline style attributes but keep essential ones
+    cleanHtmlContent = cleanHtmlContent.replace(
+      /style="[^"]*--tw[^"]*"/g, 
+      (match) => {
+        // Extract only non-Tailwind styles
+        const styleContent = match.match(/style="([^"]*)"/)?.[1] || '';
+        const cleanStyles = styleContent
+          .split(';')
+          .filter(style => style.trim() && !style.includes('--tw-'))
+          .join('; ');
+        return cleanStyles ? `style="${cleanStyles}"` : '';
+      }
+    );
+    
+    console.log('✅ Cleaned HTML content for better email client compatibility');
+    
+    const result = await sendEmail({
+      to: ccEmails,
+      subject: emailContent.subject,
+      message: emailContent.textContent,
+      htmlMessage: cleanHtmlContent,
+    });
+    
+    console.log('✅ Request cancelled CC email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error sending request cancelled CC email:', error);
     return false;
   }
 };

@@ -543,6 +543,7 @@ class SafeSLAMonitoringService {
         Technician_Name: request.formData?.assignedTechnician || 'Unassigned',
         Request_Title: this.getRequestSummary(request),
         Request_Description: this.getRequestDescription(request),
+        Request_URL: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${request.id}`,
         
         // Legacy variables (for backward compatibility)
         request_id: request.id.toString(),

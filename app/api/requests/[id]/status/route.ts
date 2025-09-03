@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { addHistory } from '@/lib/history';
 import { RequestStatus } from '@prisma/client';
-import { sendRequestClosedCCEmail, sendEmailWithTemplateId, sendEmail } from '@/lib/database-email-templates';
+import { sendRequestClosedCCEmail, sendRequestCancelledCCEmail, sendEmailWithTemplateId, sendEmail } from '@/lib/database-email-templates';
 import { formatStatusForDisplay } from '@/lib/status-colors';
 import { createNotification } from '@/lib/notifications';
 
@@ -170,29 +170,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
                 if (ccOnlyRecipients.length > 0) {
                   console.log('Found CC recipients for template 29:', ccOnlyRecipients);
                   try {
-                    const emailContent29 = await sendEmailWithTemplateId(
-                      29,
-                      emailVariables,
-                      ccOnlyRecipients[0] // Use first CC recipient as override
-                    );
+                    // Use the dedicated function for cancellation CC emails
+                    const ccEmailSent = await sendRequestCancelledCCEmail(ccOnlyRecipients, emailVariables);
                     
-                    if (emailContent29) {
-                      // Actually send the CC email to CC recipients only
-                      const ccEmailSent = await sendEmail({
-                        to: ccOnlyRecipients,
-                        cc: emailContent29.cc,
-                        subject: emailContent29.subject,
-                        message: emailContent29.textContent,
-                        htmlMessage: emailContent29.htmlContent,
-                      });
-                      
-                      if (!ccEmailSent) {
-                        console.error('Failed to send cancellation CC email notification using template 29');
-                      } else {
-                        console.log('✅ Successfully sent cancellation CC email using template 29 to:', ccOnlyRecipients);
-                      }
+                    if (!ccEmailSent) {
+                      console.error('Failed to send cancellation CC email notification using template 29');
                     } else {
-                      console.error('Failed to prepare cancellation CC email content from template 29');
+                      console.log('✅ Successfully sent cancellation CC email using template 29 to:', ccOnlyRecipients);
                     }
                   } catch (ccEmailError) {
                     console.error('Error sending cancellation CC email using template 29:', ccEmailError);
