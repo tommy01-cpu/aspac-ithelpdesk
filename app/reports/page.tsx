@@ -61,6 +61,9 @@ interface Filters {
 }
 
 const FILTER_COLUMNS = [
+  { value: 'requestId', label: 'Request ID' },
+  { value: 'subject', label: 'Subject' },
+  { value: 'description', label: 'Description' },
   { value: 'requestType', label: 'Request Type' },
   { value: 'requestStatus', label: 'Request Status' },
   { value: 'approvalStatus', label: 'Approval Status' },
@@ -128,10 +131,23 @@ export default function ReportsPage() {
   const [basicFilters, setBasicFilters] = useState({
     requestId: '',
     subject: '',
+    requestType: '',
     status: '',
-    priority: '',
+    approvalStatus: '',
+    mode: '',
+    requester: '',
     department: '',
-    requester: ''
+    priority: '',
+    technician: '',
+    serviceCategory: '',
+    template: '',
+    sla: '',
+    createdFrom: '',
+    createdTo: '',
+    dueByFrom: '',
+    dueByTo: '',
+    resolvedFrom: '',
+    resolvedTo: ''
   });
   const [omniSearch, setOmniSearch] = useState('');
   const [allRequests, setAllRequests] = useState<any[]>([]); // Store all fetched requests
@@ -870,7 +886,7 @@ export default function ReportsPage() {
                         <span className="text-primary font-medium mr-2">{condition.operator}</span>
                       )}
                       <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                        {FILTER_COLUMNS.find(col => col.value === condition.column)?.label} {condition.criteria} {condition.value}
+                        {FILTER_COLUMNS.find(col => col.value === condition.column)?.label} {condition.criteria} {capitalizeWords(String(condition.value).replace('_', ' '))}
                       </span>
                     </div>
                   ))
@@ -888,6 +904,14 @@ export default function ReportsPage() {
                       displayKey = 'technician';
                     }
                     
+                    // Capitalize the display value
+                    if (typeof displayValue === 'string') {
+                      displayValue = capitalizeWords(displayValue.replace('_', ' '));
+                    }
+                    
+                    // Capitalize the display key
+                    displayKey = capitalizeWords(displayKey.replace(/([A-Z])/g, ' $1').trim());
+                    
                     return (
                       <span key={key} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
                         {displayKey}: {displayValue}
@@ -903,85 +927,109 @@ export default function ReportsPage() {
 
       {/* Table Container - Flexible Height */}
       <div className="flex-1 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col min-h-0">
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full">
+        <div className="flex-1 overflow-auto">
+          <table className="table-auto border-collapse">
             <thead className="bg-gray-50 sticky top-0 z-10">
               <tr className="border-b border-gray-200">
-                <th className="px-4 py-4 text-left text-sm font-semibold text-gray-900">Request ID</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-gray-900">Subject</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-gray-900">Type</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-gray-900">Approval</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-gray-900">Priority</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-gray-900">Requester</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-gray-900">Department</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-gray-900">Technician</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-gray-900">Created</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-gray-900">Template</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '80px'}}>ID</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Subject</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Description</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '100px'}}>Type</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '100px'}}>Status</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '100px'}}>Approval</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '80px'}}>Mode</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Requester</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '100px'}}>Department</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Created</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Due By</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Resolved</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '80px'}}>Priority</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Technician</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Service Cat.</th>
+                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Template</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {requests.map((request) => {
                 return (
                   <tr key={request.id} className="hover:bg-gray-50 transition-colors duration-150">
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className="text-sm font-medium text-blue-600">#{request.id}</span>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '80px'}}>
+                      <span className="text-xs font-medium text-blue-600">#{request.id}</span>
                     </td>
-                    <td className="px-4 py-4">
-                      <div className="max-w-xs">
-                        <div className="text-sm font-medium text-gray-900 truncate" title={request.subject}>
-                          {request.subject}
-                        </div>
+                    <td className="px-2 py-3" style={{width: '120px'}}>
+                      <div className="text-xs font-medium text-gray-900 truncate" title={request.subject}>
+                        {request.subject}
                       </div>
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    <td className="px-2 py-3" style={{width: '120px'}}>
+                      <div className="text-xs text-gray-900 truncate" title={request.description}>
+                        {request.description || 'N/A'}
+                      </div>
+                    </td>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '100px'}}>
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 truncate">
                         {capitalizeWords(request.requestType || '')}
                       </span>
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(request.status)}`}>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '100px'}}>
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium truncate ${getStatusBadgeColor(request.status)}`}>
                         {formatStatusText(request.status || 'Unknown')}
                       </span>
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getApprovalStatusBadgeColor(request.approvalStatus)}`}>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '100px'}}>
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium truncate ${getApprovalStatusBadgeColor(request.approvalStatus)}`}>
                         {formatStatusText(request.approvalStatus || '')}
                       </span>
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityBadgeColor(request.priority)}`}>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '80px'}}>
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 truncate">
+                        {capitalizeWords(request.mode || 'Standard')}
+                      </span>
+                    </td>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
+                      <div>
+                        <div className="text-xs font-medium text-gray-900 truncate">{request.requester.name}</div>
+                        <div className="text-xs text-gray-500 truncate">{request.requester.employeeId}</div>
+                      </div>
+                    </td>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '100px'}}>
+                      <span className="text-xs text-gray-900 truncate">{capitalizeWords(request.department || '')}</span>
+                    </td>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
+                      <span className="text-xs text-gray-900">{format(new Date(request.createdAt), 'MMM dd, HH:mm')}</span>
+                    </td>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
+                      <span className="text-xs text-gray-900">
+                        {request.dueByTime ? format(new Date(request.dueByTime), 'MMM dd, HH:mm') : 'N/A'}
+                      </span>
+                    </td>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
+                      <span className="text-xs text-gray-900">
+                        {request.resolvedTime ? format(new Date(request.resolvedTime), 'MMM dd, HH:mm') : 'N/A'}
+                      </span>
+                    </td>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '80px'}}>
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium truncate ${getPriorityBadgeColor(request.priority)}`}>
                         {capitalizeWords(request.priority || '')}
                       </span>
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{request.requester.name}</div>
-                        <div className="text-sm text-gray-500">{request.requester.employeeId}</div>
-                      </div>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
+                      <span className="text-xs text-gray-900 truncate">{getTechnicianName(request.technician)}</span>
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className="text-sm text-gray-900">{capitalizeWords(request.department || '')}</span>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
+                      <span className="text-xs text-gray-900 truncate">{request.serviceCategory || 'N/A'}</span>
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className="text-sm text-gray-900">{getTechnicianName(request.technician)}</span>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className="text-sm text-gray-900">{format(new Date(request.createdAt), 'MMM dd, yyyy HH:mm')}</span>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="max-w-xs">
-                        <span className="text-sm text-gray-900 truncate" title={request.template}>
-                          {request.template}
-                        </span>
-                      </div>
+                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
+                      <span className="text-xs text-gray-900 truncate" title={request.template}>
+                        {request.template}
+                      </span>
                     </td>
                     </tr>
                   );
                 })}
                 {requests.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={11} className="px-4 py-12 text-center">
+                    <td colSpan={16} className="px-4 py-12 text-center">
                       <div className="text-gray-500">
                         <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1051,20 +1099,20 @@ export default function ReportsPage() {
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => setIsAdvancedFilter(false)}
-                    className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
-                      !isAdvancedFilter 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    className={`px-3 py-1 text-sm font-medium rounded-md ${
+                      !isAdvancedFilter
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                     }`}
                   >
                     Basic
                   </button>
                   <button
                     onClick={() => setIsAdvancedFilter(true)}
-                    className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
-                      isAdvancedFilter 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    className={`px-3 py-1 text-sm font-medium rounded-md ${
+                      isAdvancedFilter
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                     }`}
                   >
                     Advanced
@@ -1076,7 +1124,8 @@ export default function ReportsPage() {
             {/* Basic Filters */}
             {!isAdvancedFilter && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
+                  {/* Row 1 */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Request ID</label>
                     <input
@@ -1098,7 +1147,22 @@ export default function ReportsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Request Type</label>
+                    <select
+                      value={basicFilters.requestType || ''}
+                      onChange={(e) => setBasicFilters(prev => ({ ...prev, requestType: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">All Request Types</option>
+                      {filterData?.requestTypes.map(type => (
+                        <option key={type} value={type}>{capitalizeWords(type)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* Row 2 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Request Status</label>
                     <select
                       value={basicFilters.status}
                       onChange={(e) => setBasicFilters(prev => ({ ...prev, status: e.target.value }))}
@@ -1106,20 +1170,50 @@ export default function ReportsPage() {
                     >
                       <option value="">All Status</option>
                       {filterData?.requestStatuses.map(status => (
-                        <option key={status} value={status}>{status.replace('_', ' ')}</option>
+                        <option key={status} value={status}>{capitalizeWords(status.replace('_', ' '))}</option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Approval Status</label>
                     <select
-                      value={basicFilters.priority}
-                      onChange={(e) => setBasicFilters(prev => ({ ...prev, priority: e.target.value }))}
+                      value={basicFilters.approvalStatus || ''}
+                      onChange={(e) => setBasicFilters(prev => ({ ...prev, approvalStatus: e.target.value }))}
                       className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">All Priorities</option>
-                      {filterData?.priorities.map(priority => (
-                        <option key={priority} value={priority}>{priority}</option>
+                      <option value="">All Approval Status</option>
+                      {filterData?.approvalStatuses.map(status => (
+                        <option key={status} value={status}>{capitalizeWords(status.replace('_', ' '))}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mode</label>
+                    <select
+                      value={basicFilters.mode || ''}
+                      onChange={(e) => setBasicFilters(prev => ({ ...prev, mode: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">All Modes</option>
+                      {filterData?.modes.map(mode => (
+                        <option key={mode} value={mode}>{capitalizeWords(mode)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* Row 3 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Requester</label>
+                    <select
+                      value={basicFilters.requester}
+                      onChange={(e) => setBasicFilters(prev => ({ ...prev, requester: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">All Requesters</option>
+                      {filterData?.users.map(user => (
+                        <option key={user.id} value={user.id}>
+                          {user.name} ({user.employeeId}) - {user.email}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -1132,15 +1226,30 @@ export default function ReportsPage() {
                     >
                       <option value="">All Departments</option>
                       {filterData?.departments.map(dept => (
-                        <option key={dept.id} value={dept.id}>{dept.name}</option>
+                        <option key={dept.id} value={dept.id}>{capitalizeWords(dept.name)}</option>
                       ))}
                     </select>
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                    <select
+                      value={basicFilters.priority}
+                      onChange={(e) => setBasicFilters(prev => ({ ...prev, priority: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">All Priorities</option>
+                      {filterData?.priorities.map(priority => (
+                        <option key={priority} value={priority}>{capitalizeWords(priority)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* Row 4 */}
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Technician</label>
                     <select
-                      value={basicFilters.requester}
-                      onChange={(e) => setBasicFilters(prev => ({ ...prev, requester: e.target.value }))}
+                      value={basicFilters.technician || ''}
+                      onChange={(e) => setBasicFilters(prev => ({ ...prev, technician: e.target.value }))}
                       className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">All Technicians</option>
@@ -1151,6 +1260,109 @@ export default function ReportsPage() {
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Category</label>
+                    <select
+                      value={basicFilters.serviceCategory || ''}
+                      onChange={(e) => setBasicFilters(prev => ({ ...prev, serviceCategory: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">All Service Categories</option>
+                      {filterData?.serviceCategories.map(category => (
+                        <option key={category.id} value={category.id}>{capitalizeWords(category.name)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Request Template</label>
+                    <select
+                      value={basicFilters.template || ''}
+                      onChange={(e) => setBasicFilters(prev => ({ ...prev, template: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">All Templates</option>
+                      {filterData?.templates.map(template => (
+                        <option key={template.id} value={template.id}>{capitalizeWords(template.name)} ({capitalizeWords(template.type)})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                
+                {/* Date Range Filters */}
+                <div className="space-y-4 pt-4 border-t">
+                  <h4 className="text-sm font-medium text-gray-900">Date Filters</h4>
+                  <div className="grid grid-cols-3 gap-4">
+                    {/* Created Time Range */}
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">Created Time - From</label>
+                      <input
+                        type="datetime-local"
+                        value={basicFilters.createdFrom || ''}
+                        onChange={(e) => setBasicFilters(prev => ({ ...prev, createdFrom: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">Created Time - To</label>
+                      <input
+                        type="datetime-local"
+                        value={basicFilters.createdTo || ''}
+                        onChange={(e) => setBasicFilters(prev => ({ ...prev, createdTo: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">SLA</label>
+                      <input
+                        type="text"
+                        placeholder="Enter SLA name"
+                        value={basicFilters.sla || ''}
+                        onChange={(e) => setBasicFilters(prev => ({ ...prev, sla: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    
+                    {/* Due By Time Range */}
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">Due By Time - From</label>
+                      <input
+                        type="datetime-local"
+                        value={basicFilters.dueByFrom || ''}
+                        onChange={(e) => setBasicFilters(prev => ({ ...prev, dueByFrom: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">Due By Time - To</label>
+                      <input
+                        type="datetime-local"
+                        value={basicFilters.dueByTo || ''}
+                        onChange={(e) => setBasicFilters(prev => ({ ...prev, dueByTo: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div></div>
+                    
+                    {/* Resolved Time Range */}
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">Resolved Time - From</label>
+                      <input
+                        type="datetime-local"
+                        value={basicFilters.resolvedFrom || ''}
+                        onChange={(e) => setBasicFilters(prev => ({ ...prev, resolvedFrom: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">Resolved Time - To</label>
+                      <input
+                        type="datetime-local"
+                        value={basicFilters.resolvedTo || ''}
+                        onChange={(e) => setBasicFilters(prev => ({ ...prev, resolvedTo: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1283,10 +1495,23 @@ export default function ReportsPage() {
                   setBasicFilters({
                     requestId: '',
                     subject: '',
+                    requestType: '',
                     status: '',
-                    priority: '',
+                    approvalStatus: '',
+                    mode: '',
+                    requester: '',
                     department: '',
-                    requester: ''
+                    priority: '',
+                    technician: '',
+                    serviceCategory: '',
+                    template: '',
+                    sla: '',
+                    createdFrom: '',
+                    createdTo: '',
+                    dueByFrom: '',
+                    dueByTo: '',
+                    resolvedFrom: '',
+                    resolvedTo: ''
                   });
                   clearFilters();
                 }}

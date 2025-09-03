@@ -60,6 +60,8 @@ export default function EmailTemplateEditorPage() {
   const [availableVariables, setAvailableVariables] = useState<EmailVariable[]>([]);
   const [filteredVariables, setFilteredVariables] = useState<EmailVariable[]>([]);
   const [searchText, setSearchText] = useState<string>('');
+  const [isHtmlMode, setIsHtmlMode] = useState(false);
+  const [htmlContent, setHtmlContent] = useState('');
   const previewRef = useRef<HTMLDivElement>(null);
 
   // Load available variables from database
@@ -148,6 +150,7 @@ export default function EmailTemplateEditorPage() {
       const content = innerDiv ? innerDiv.innerHTML : templateData.contentHtml;
       
       previewRef.current.innerHTML = content || '<p style="color: #6b7280; font-style: italic;">Click here to start writing your email content...</p>';
+      setHtmlContent(content || '<p style="color: #6b7280; font-style: italic;">Click here to start writing your email content...</p>');
       setIsContentInitialized(true);
     }
   }, [isLoading, templateData, isContentInitialized]);
@@ -170,12 +173,50 @@ export default function EmailTemplateEditorPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showColorPicker, showVariableDropdown, showSubjectVariableDropdown]);
 
+  // Sync HTML content when visual editor content changes
+  useEffect(() => {
+    if (previewRef.current && !isHtmlMode) {
+      const updateHtmlContent = () => {
+        setHtmlContent(previewRef.current?.innerHTML || '');
+      };
+      
+      const observer = new MutationObserver(updateHtmlContent);
+      observer.observe(previewRef.current, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true
+      });
+
+      return () => observer.disconnect();
+    }
+  }, [isHtmlMode]);
+
+  // Update visual editor when switching from HTML mode
+  useEffect(() => {
+    if (!isHtmlMode && previewRef.current && htmlContent) {
+      // Add a small delay to ensure DOM is ready
+      setTimeout(() => {
+        if (previewRef.current && htmlContent) {
+          // Only update if the content is different to avoid cursor jumping
+          if (previewRef.current.innerHTML !== htmlContent) {
+            previewRef.current.innerHTML = htmlContent;
+          }
+          // If content is empty, add placeholder
+          if (!htmlContent.trim() || htmlContent === '') {
+            previewRef.current.innerHTML = '<p style="color: #6b7280; font-style: italic;">Click here to start writing your email content...</p>';
+          }
+        }
+      }, 10);
+    }
+  }, [isHtmlMode, htmlContent]);
+
   const handleSave = async () => {
     if (!templateData) return;
 
     try {
-      // Get current content from the editor
-      const currentContent = previewRef.current?.innerHTML || '';
+      // Get current content from the appropriate editor mode
+      const currentContent = isHtmlMode ? htmlContent : (previewRef.current?.innerHTML || '');
 
       const response = await fetch(`/api/admin/email-templates/${templateId}`, {
         method: 'PUT',
@@ -309,6 +350,29 @@ export default function EmailTemplateEditorPage() {
     }, 10);
     
     setCurrentFontSize(parseInt(size));
+  };
+
+  const toggleHtmlMode = () => {
+    if (isHtmlMode) {
+      // Switching from HTML to Visual mode
+      if (previewRef.current && htmlContent) {
+        previewRef.current.innerHTML = htmlContent;
+        // Force a re-render by triggering the content update
+        setTimeout(() => {
+          if (previewRef.current) {
+            previewRef.current.focus();
+          }
+        }, 100);
+      }
+    } else {
+      // Switching from Visual to HTML mode
+      if (previewRef.current) {
+        const currentContent = previewRef.current.innerHTML;
+        setHtmlContent(currentContent);
+        console.log('Switching to HTML mode, content:', currentContent); // Debug log
+      }
+    }
+    setIsHtmlMode(!isHtmlMode);
   };
 
   const changeFontFamily = (fontFamily: string) => {
@@ -666,16 +730,12 @@ export default function EmailTemplateEditorPage() {
         <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="max-w-7xl mx-auto">
             <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-lg">
-              <CardHeader className="border-b border-slate-200">
-                <CardTitle className="flex items-center gap-2 text-slate-800">
-                  <Mail className="w-5 h-5 text-indigo-600" />
-                  E-mail self-service login information to requester.
-                </CardTitle>
-              </CardHeader>
+         
               <CardContent className="p-6 space-y-6">
               {/* Subject */}
               <div className="relative subject-variable-dropdown-container">
-                <Label htmlFor="subject" className="text-sm font-medium text-slate-700 mb-2 block">
+                <Label htmlFor="subject" className="text-sm font-medium text-slate-700 mb-2 block flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-indigo-600" />
                   Subject
                 </Label>
               
@@ -962,6 +1022,31 @@ export default function EmailTemplateEditorPage() {
                           <Image className="w-4 h-4" />
                         </button>
                       </div>
+
+                      {/* HTML/Visual Toggle */}
+                      <div className="border-l border-gray-300 pl-2 ml-2">
+                        <button
+                          onClick={toggleHtmlMode}
+                          className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                            isHtmlMode 
+                              ? 'bg-blue-600 text-white' 
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                          title={isHtmlMode ? "Switch to Visual Editor" : "Edit HTML Source"}
+                        >
+                          {isHtmlMode ? (
+                            <div className="flex items-center gap-1">
+                              <Eye className="w-4 h-4" />
+                              Visual
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <Code className="w-4 h-4" />
+                              HTML
+                            </div>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -971,27 +1056,46 @@ export default function EmailTemplateEditorPage() {
                     <div className="w-full bg-white rounded-lg border border-gray-300 overflow-hidden">
                       {/* Main Content */}
                       <div className="p-6 relative variable-dropdown-container">
-                        <div 
-                          ref={previewRef}
-                          contentEditable
-                          suppressContentEditableWarning={true}
-                          className="min-h-[600px] w-full cursor-text focus:outline-none"
-                          onInput={(e) => {
-                            const cursorPosition = saveCursorPosition();
-                            syncPreviewToEditor();
-                            setTimeout(() => {
-                              restoreCursorPosition(cursorPosition);
-                            }, 0);
-                          }}
-                          onBlur={syncPreviewToEditor}
-                          onKeyDown={handleKeyDown}
-                          style={{
-                            lineHeight: '1.6',
-                            fontSize: '14px',
-                            fontFamily: 'system-ui, -apple-system, sans-serif',
-                            overflow: 'auto'
-                          }}
-                        />
+                        {isHtmlMode ? (
+                          /* HTML Source Editor */
+                          <textarea
+                            value={htmlContent || '<p>Enter your HTML content here...</p>'}
+                            onChange={(e) => setHtmlContent(e.target.value)}
+                            className="min-h-[600px] w-full p-4 border border-gray-300 rounded font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            placeholder="Enter HTML content here..."
+                            style={{
+                              fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
+                              lineHeight: '1.5',
+                              tabSize: 2,
+                              whiteSpace: 'pre-wrap'
+                            }}
+                          />
+                        ) : (
+                          /* Visual Editor */
+                          <div 
+                            key={`visual-editor-${isHtmlMode}`}
+                            ref={previewRef}
+                            contentEditable
+                            suppressContentEditableWarning={true}
+                            className="min-h-[600px] w-full cursor-text focus:outline-none border border-gray-200 rounded p-4"
+                            onInput={(e) => {
+                              const cursorPosition = saveCursorPosition();
+                              syncPreviewToEditor();
+                              setTimeout(() => {
+                                restoreCursorPosition(cursorPosition);
+                              }, 0);
+                            }}
+                            onBlur={syncPreviewToEditor}
+                            onKeyDown={handleKeyDown}
+                            style={{
+                              lineHeight: '1.6',
+                              fontSize: '14px',
+                              fontFamily: 'system-ui, -apple-system, sans-serif',
+                              overflow: 'auto',
+                              minHeight: '600px'
+                            }}
+                          />
+                        )}
                         
                         {/* Variable Dropdown */}
                         {showVariableDropdown && (
