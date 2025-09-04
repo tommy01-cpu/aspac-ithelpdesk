@@ -629,7 +629,7 @@ export default function ApprovalDetailsPage() {
         body: JSON.stringify({
           approvalId: selectedApproval.id,
           action: 'clarification',
-          comments: clarificationMessage.trim(), // Send the clarification message
+          comments: clarificationMessage.trim(),
         }),
       });
 
@@ -637,45 +637,6 @@ export default function ApprovalDetailsPage() {
         const errorData = await statusResponse.json();
         throw new Error(errorData.error || 'Failed to send clarification request');
       }
-
-      // Create a conversation message
-      const conversationResponse = await fetch(`/api/approvals/${selectedApproval.id}/conversations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: clarificationMessage.trim(),
-          type: 'approver',
-          isClarificationRequest: true
-        }),
-      });
-
-      if (!conversationResponse.ok) {
-        throw new Error('Failed to create conversation message');
-      }
-
-      const conversationData = await conversationResponse.json();
-      
-      // Update conversations state
-      setConversations(prev => ({
-        ...prev,
-        [selectedApproval.id]: [...(prev[selectedApproval.id] || []), conversationData.conversation]
-      }));
-
-      // Auto-expand the conversation to show the new message
-      setExpandedApprovals(prev => ({
-        ...prev,
-        [selectedApproval.id]: true
-      }));
-
-      // Scroll to latest message after a brief delay
-      setTimeout(() => {
-        const conversationPanel = document.querySelector(`[data-conversation-id="${selectedApproval.id}"]`);
-        if (conversationPanel) {
-          conversationPanel.scrollTop = conversationPanel.scrollHeight;
-        }
-      }, 200);
 
       toast({
         title: "Clarification Requested",
@@ -1057,7 +1018,7 @@ export default function ApprovalDetailsPage() {
 
   return (
     <SessionWrapper>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50" style={{ transform: 'scale(0.9)', transformOrigin: 'top left', width: '111.11%', height: '111.11%' }}>
         {/* Header */}
         <header className="bg-white border-b border-gray-200">
           <div className="px-6 py-4">
@@ -1085,16 +1046,16 @@ export default function ApprovalDetailsPage() {
         </header>
 
         <div className="p-6">
-          <div className="grid grid-cols-12 gap-6">
+          <div className="grid grid-cols-12 gap-6 h-[calc(100vh-140px)]">
             {/* Left Panel - Approvals List */}
             <div className="col-span-4">
-              <Card className="h-full">
-                <CardHeader className="pb-3">
+              <Card className="h-full flex flex-col mb-5">
+                <CardHeader className="pb-3 flex-shrink-0">
                   <div className="flex items-center justify-between">
-                    <div>
+                    <div className="flex items-center gap-2">
                       <CardTitle className="text-lg">REQUESTS</CardTitle>
                       {pendingApprovals.length > 0 && (
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-1">
                           <div className="w-2 h-2 bg-red-500 rounded-full"></div>
                           <span className="text-xs text-red-600 font-medium">
                             {pendingApprovals.length}
@@ -1116,8 +1077,8 @@ export default function ApprovalDetailsPage() {
                   </div>
                 </CardHeader>
                 
-                <CardContent className="p-0">
-                  <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+                <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+                  <div className="flex-1 overflow-y-auto">
                     {filteredApprovals.length === 0 ? (
                       <div className="p-6 text-center">
                         <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -1165,8 +1126,11 @@ export default function ApprovalDetailsPage() {
 
             {/* Right Panel - Request Details */}
             <div className="col-span-8">
-              {selectedApproval && requestDetails ? (
-                <div className="space-y-6">
+              <Card className="h-full flex flex-col">
+                <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+                  <div className="flex-1 overflow-y-auto p-6">
+                    {selectedApproval && requestDetails ? (
+                      <div className="space-y-6">
                   {/* Request Overview Card */}
                   <Card>
                     <CardHeader className="border-b bg-gradient-to-r from-blue-50 to-indigo-50">
@@ -1793,6 +1757,9 @@ export default function ApprovalDetailsPage() {
                   </CardContent>
                 </Card>
               )}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         </div>

@@ -4193,7 +4193,18 @@ export default function RequestViewPage() {
                       })()}
                       <Button
                         variant="outline"
-                        onClick={() => setShowChangeStatusModal(true)}
+                        onClick={() => {
+                          // Check if current status is resolved or closed
+                          if (requestData?.status === 'resolved' || requestData?.status === 'closed') {
+                            toast({
+                              title: "Status Change Not Allowed",
+                              description: "Cannot change status from resolved or closed state.",
+                              variant: "destructive"
+                            });
+                            return;
+                          }
+                          setShowChangeStatusModal(true);
+                        }}
                         className="w-full flex items-center justify-center gap-2"
                       >
                         <Settings className="h-4 w-4" />
@@ -4201,25 +4212,44 @@ export default function RequestViewPage() {
                       </Button>
                       <Button
                         variant="outline"
-                        onClick={() => setShowAssignModal(true)}
+                        onClick={() => {
+                          // Check if current status allows technician assignment
+                          const allowedStatuses = ['open', 'on_hold', 'for_approval'];
+                          if (!allowedStatuses.includes(requestData?.status)) {
+                            toast({
+                              title: "Assignment Not Allowed",
+                              description: "Technician can only be assigned when status is Open, On Hold, or For Approval.",
+                              variant: "destructive"
+                            });
+                            return;
+                          }
+                          setShowAssignModal(true);
+                        }}
                         className="w-full flex items-center justify-center gap-2"
                       >
                         <UserCheck className="h-4 w-4" />
                         Assign Technician
                       </Button>
-                      {/* Change Type button - only show for incident requests */}
-                      {(requestData?.formData?.['4']?.toLowerCase() === 'incident' || 
-                        requestData?.formData?.type?.toLowerCase() === 'incident' || 
-                        requestData?.type?.toLowerCase() === 'incident') && (
-                        <Button
-                          variant="outline"
-                          onClick={() => setShowChangeTypeModal(true)}
-                          className="w-full flex items-center justify-center gap-2"
-                        >
-                          <Tag className="h-4 w-4" />
-                          Change Type
-                        </Button>
-                      )}
+                      {/* Change Type button - with validation */}
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          // Check if current status is resolved or closed
+                          if (requestData?.status === 'resolved' || requestData?.status === 'closed') {
+                            toast({
+                              title: "Type Change Not Allowed",
+                              description: "Cannot change type from resolved or closed state.",
+                              variant: "destructive"
+                            });
+                            return;
+                          }
+                          setShowChangeTypeModal(true);
+                        }}
+                        className="w-full flex items-center justify-center gap-2"
+                      >
+                        <Tag className="h-4 w-4" />
+                        Change Type
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -4659,13 +4689,7 @@ export default function RequestViewPage() {
               </DialogHeader>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm text-gray-700">First Call Resolution (FCR)</label>
-                    <div className="mt-2 flex items-center gap-2">
-                      <input id="fcr" type="checkbox" checked={resolveFcr} onChange={e => setResolveFcr(e.target.checked)} />
-                      <label htmlFor="fcr" className="text-sm text-gray-700">Mark as FCR</label>
-                    </div>
-                  </div>
+                 
                   <div>
                     <label className="text-sm text-gray-700">Closure Code</label>
                     <select
@@ -4683,7 +4707,7 @@ export default function RequestViewPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm text-gray-700">Request Closure Comments</label>
+                  <label className="text-sm text-gray-700">Resolution Comments</label>
                   <Textarea
                     value={resolveComments}
                     onChange={e => setResolveComments(e.target.value)}
@@ -5536,130 +5560,6 @@ export default function RequestViewPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Notes Modal */}
-        {showNotesModal && (
-          <Dialog open={showNotesModal} onOpenChange={setShowNotesModal}>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Add Notes</DialogTitle>
-                <DialogDescription>
-                  Add a note to this request. This will be visible to all users who have access to this request.
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">
-                    Note Content
-                  </label>
-                  <RichTextEditor
-                    value={newNote}
-                    onChange={setNewNote}
-                    placeholder="Enter your note here..."
-                    className="min-h-[200px]"
-                  />
-                </div>
-                
-                {/* File Upload Area */}
-                <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">
-                    Attachments (Optional)
-                  </label>
-                  <div
-                    className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-                      dragActive 
-                        ? 'border-blue-400 bg-blue-50' 
-                        : 'border-gray-300 hover:border-gray-400'
-                    }`}
-                    onDragOver={handleNoteDragOver}
-                    onDragLeave={handleNoteDragLeave}
-                    onDrop={handleNoteDrop}
-                    onClick={() => noteFileInputRef.current?.click()}
-                  >
-                    <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-gray-600 mb-1">
-                      Drag and drop files here, or click to browse
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Maximum file size: 20MB
-                    </p>
-                    <input
-                      ref={noteFileInputRef}
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={(e) => {
-                        if (e.target.files) {
-                          handleNoteFiles(Array.from(e.target.files));
-                        }
-                      }}
-                    />
-                  </div>
-                  
-                  {/* File List */}
-                  {noteAttachments.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      <p className="text-sm font-medium text-gray-700">
-                        Selected Files ({noteAttachments.length})
-                      </p>
-                      {noteAttachments.map((file, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
-                          <div className="flex items-center gap-2">
-                            <Paperclip className="h-4 w-4 text-gray-400" />
-                            <span className="text-sm text-gray-700 truncate">
-                              {file.name}
-                            </span>
-                            <span className="text-xs text-gray-500">
-                              ({formatFileSize(file.size)})
-                            </span>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeNoteFile(index)}
-                            className="h-6 w-6 p-0 text-gray-400 hover:text-red-600"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <DialogFooter>
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setShowNotesModal(false);
-                    setNewNote('');
-                    setNoteAttachments([]);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={addNote}
-                  disabled={!newNote.trim() || addingNote}
-                >
-                  {addingNote ? (
-                    <div className="flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-                      Adding Note...
-                    </div>
-                  ) : (
-                    <>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Note
-                    </>
-                  )}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
       </div>
     </SessionWrapper>
   );

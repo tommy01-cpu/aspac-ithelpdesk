@@ -270,6 +270,30 @@ export default function Home() {
     }
   };
 
+  const navigateToFirstApproval = async () => {
+    try {
+      const response = await fetch('/api/approvals/pending');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.approvals && data.approvals.length > 0) {
+          const firstApproval = data.approvals[0];
+          const requestId = firstApproval.requestId;
+          router.push(`/requests/approvals/${requestId}`);
+        } else {
+          // Fallback to general approvals page if no pending approvals
+          router.push('/requests/approvals');
+        }
+      } else {
+        // Fallback to general approvals page on error
+        router.push('/requests/approvals');
+      }
+    } catch (error) {
+      console.error('Error fetching first approval:', error);
+      // Fallback to general approvals page on error
+      router.push('/requests/approvals');
+    }
+  };
+
   const baseQuickActions = [
     {
       title: 'Request Incident',
@@ -302,7 +326,7 @@ export default function Home() {
           color: 'from-amber-500 to-amber-600',
           bgColor: 'bg-amber-500/10 hover:bg-amber-500/20',
           iconColor: 'text-amber-600',
-          action: () => router.push('/requests/approvals'),
+          action: navigateToFirstApproval,
           badge: approvalCount
         }
       ]
@@ -504,7 +528,7 @@ export default function Home() {
               {approvalCount > 0 && (
                 <Card 
                   className="bg-slate-800/80 backdrop-blur-lg border-slate-700 hover:bg-slate-800/90 transition-all duration-200 cursor-pointer group relative"
-                  onClick={() => router.push('/requests/approvals')}
+                  onClick={navigateToFirstApproval}
                 >
                   <CardContent className="p-4 flex items-center space-x-3">
                     <div className="w-10 h-10 bg-orange-500/20 rounded-lg flex items-center justify-center">

@@ -41,6 +41,31 @@ export default function AppHeader() {
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
   const pathname = usePathname();
 
+  // Function to navigate to first approval
+  const navigateToFirstApproval = async () => {
+    try {
+      const response = await fetch('/api/approvals/pending');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.approvals && data.approvals.length > 0) {
+          const firstApproval = data.approvals[0];
+          const requestId = firstApproval.requestId;
+          window.location.href = `/requests/approvals/${requestId}`;
+        } else {
+          // Fallback to general approvals page if no pending approvals
+          window.location.href = '/requests/approvals';
+        }
+      } else {
+        // Fallback to general approvals page on error
+        window.location.href = '/requests/approvals';
+      }
+    } catch (error) {
+      console.error('Error fetching first approval:', error);
+      // Fallback to general approvals page on error
+      window.location.href = '/requests/approvals';
+    }
+  };
+
   // Fetch pending approvals count
   useEffect(() => {
     const fetchPendingApprovals = async () => {
@@ -219,17 +244,16 @@ export default function AppHeader() {
 
               {/* Approvals tab - only show if there are pending approvals */}
               {pendingApprovalsCount > 0 && (
-                <Link href="/requests/approvals">
-                  <Button 
-                    variant="ghost" 
-                    className={cn(
-                      "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
-                      pathname?.startsWith("/requests/approvals") ? "bg-black/20 text-white" : "hover:bg-black/10"
-                    )}
-                  >
-                    Approvals
-                  </Button>
-                </Link>
+                <Button 
+                  variant="ghost" 
+                  className={cn(
+                    "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                    pathname?.startsWith("/requests/approvals") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                  )}
+                  onClick={navigateToFirstApproval}
+                >
+                  Approvals
+                </Button>
               )}
               
               {/* Only show Reports if user is admin, technician, or has elevated privileges */}
