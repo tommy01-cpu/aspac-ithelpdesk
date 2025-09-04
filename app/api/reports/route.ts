@@ -453,6 +453,9 @@ export async function GET(request: NextRequest) {
       // Extract subject from formData field 8, fallback to template description or name
       const subject = formData?.['8'] || formData?.subject || template?.description || template?.name || `Request #${request.id}`;
       
+      // Extract description from formData field 9
+      const description = formData?.['9'] || formData?.description || formData?.details || formData?.issueDescription || '';
+      
       // Extract type from template
       const requestType = template?.type || 'Unknown';
       
@@ -477,8 +480,22 @@ export async function GET(request: NextRequest) {
         }
       }
       
-      // Extract priority from formData
-      const priority = formData.priority || 'Medium';
+      // Extract priority from formData field 2 (based on field mapping)
+      let priority = 'Medium'; // Default value
+      if (formData['2']) {
+        priority = formData['2'];
+      } else if (formData.priority) {
+        priority = formData.priority;
+      } else {
+        // Try to find priority in any field that might contain it
+        const priorityFields = Object.keys(formData).filter(key => 
+          key.toLowerCase().includes('priority') ||
+          String(formData[key]).toLowerCase().match(/^(low|medium|high|critical)$/i)
+        );
+        if (priorityFields.length > 0) {
+          priority = formData[priorityFields[0]];
+        }
+      }
       
       // Requester information
       const requester = {
@@ -497,6 +514,7 @@ export async function GET(request: NextRequest) {
       return {
         id: request.id,
         subject,
+        description,
         requestType,
         status,
         approvalStatus,

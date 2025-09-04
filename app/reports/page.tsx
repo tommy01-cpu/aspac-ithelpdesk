@@ -791,9 +791,9 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-background flex flex-col">{/* Subtract header height */}
+    <div className="min-h-[calc(100vh-4rem)] bg-background px-6">{/* Subtract header height and add horizontal padding */}
       {/* Header Banner - Fixed Height */}
-      <div className="bg-card border-b border-border flex-shrink-0">
+      <div className="bg-card border-b border-border flex-shrink-0 -mx-6 mb-6">
         <div className="w-full px-6 py-4">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -817,6 +817,7 @@ export default function ReportsPage() {
                   )}
                   Excel
                 </Button>
+                
                 <Button
                   onClick={handleExportPDF}
                   variant="outline"
@@ -840,7 +841,7 @@ export default function ReportsPage() {
                 className="flex items-center gap-2"
               >
                 <Filter className="h-4 w-4" />
-                Add Filters
+                Custom Filter
                 
               </Button>
               
@@ -925,138 +926,25 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Table Container - Flexible Height */}
-      <div className="flex-1 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col min-h-0">
-        <div className="flex-1 overflow-auto">
-          <table className="table-auto border-collapse">
-            <thead className="bg-gray-50 sticky top-0 z-10">
-              <tr className="border-b border-gray-200">
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '80px'}}>ID</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Subject</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Description</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '100px'}}>Type</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '100px'}}>Status</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '100px'}}>Approval</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '80px'}}>Mode</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Requester</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '100px'}}>Department</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Created</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Due By</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Resolved</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '80px'}}>Priority</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Technician</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Service Cat.</th>
-                <th className="px-2 py-3 text-left text-xs font-semibold text-gray-900" style={{width: '120px'}}>Template</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {requests.map((request) => {
-                return (
-                  <tr key={request.id} className="hover:bg-gray-50 transition-colors duration-150">
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '80px'}}>
-                      <span className="text-xs font-medium text-blue-600">#{request.id}</span>
-                    </td>
-                    <td className="px-2 py-3" style={{width: '120px'}}>
-                      <div className="text-xs font-medium text-gray-900 truncate" title={request.subject}>
-                        {request.subject}
-                      </div>
-                    </td>
-                    <td className="px-2 py-3" style={{width: '120px'}}>
-                      <div className="text-xs text-gray-900 truncate" title={request.description}>
-                        {request.description || 'N/A'}
-                      </div>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '100px'}}>
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 truncate">
-                        {capitalizeWords(request.requestType || '')}
-                      </span>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '100px'}}>
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium truncate ${getStatusBadgeColor(request.status)}`}>
-                        {formatStatusText(request.status || 'Unknown')}
-                      </span>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '100px'}}>
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium truncate ${getApprovalStatusBadgeColor(request.approvalStatus)}`}>
-                        {formatStatusText(request.approvalStatus || '')}
-                      </span>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '80px'}}>
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 truncate">
-                        {capitalizeWords(request.mode || 'Standard')}
-                      </span>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
-                      <div>
-                        <div className="text-xs font-medium text-gray-900 truncate">{request.requester.name}</div>
-                        <div className="text-xs text-gray-500 truncate">{request.requester.employeeId}</div>
-                      </div>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '100px'}}>
-                      <span className="text-xs text-gray-900 truncate">{capitalizeWords(request.department || '')}</span>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
-                      <span className="text-xs text-gray-900">{format(new Date(request.createdAt), 'MMM dd, HH:mm')}</span>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
-                      <span className="text-xs text-gray-900">
-                        {request.dueByTime ? format(new Date(request.dueByTime), 'MMM dd, HH:mm') : 'N/A'}
-                      </span>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
-                      <span className="text-xs text-gray-900">
-                        {request.resolvedTime ? format(new Date(request.resolvedTime), 'MMM dd, HH:mm') : 'N/A'}
-                      </span>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '80px'}}>
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium truncate ${getPriorityBadgeColor(request.priority)}`}>
-                        {capitalizeWords(request.priority || '')}
-                      </span>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
-                      <span className="text-xs text-gray-900 truncate">{getTechnicianName(request.technician)}</span>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
-                      <span className="text-xs text-gray-900 truncate">{request.serviceCategory || 'N/A'}</span>
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap" style={{width: '120px'}}>
-                      <span className="text-xs text-gray-900 truncate" title={request.template}>
-                        {request.template}
-                      </span>
-                    </td>
-                    </tr>
-                  );
-                })}
-                {requests.length === 0 && !loading && (
-                  <tr>
-                    <td colSpan={16} className="px-4 py-12 text-center">
-                      <div className="text-gray-500">
-                        <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <p className="text-sm font-medium">No requests found</p>
-                        <p className="text-xs">Try adjusting your filters or search criteria.</p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-                {loading && (
-                  <tr>
-                    <td colSpan={11} className="px-4 py-12 text-center">
-                      <div className="flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                        <span className="ml-3 text-sm text-gray-600">Loading requests...</span>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+      {/* Excel-Style Report Container */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mx-2 mb-6">
+        {/* Report Header */}
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">IT Helpdesk Export Report</h3>
+              <p className="text-sm text-gray-600">Page {pagination.page} of {pagination.totalPages} | Total Records: {pagination.totalCount}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-gray-600">Generated: {new Date().toLocaleDateString()}</p>
+              <p className="text-sm text-gray-600">Time: {new Date().toLocaleTimeString()}</p>
+            </div>
+          </div>
         </div>
 
-        {/* Pagination - Fixed at bottom */}
+        {/* Pagination - Fixed at top */}
         {pagination.totalPages > 1 && (
-          <div className="px-6 py-4 border-t border-border flex items-center justify-between bg-card flex-shrink-0">
+          <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card flex-shrink-0">
             <div className="text-sm text-muted-foreground">
               Page {pagination.page} of {pagination.totalPages} 
               <span className="ml-2">({pagination.totalCount} total)</span>
@@ -1079,6 +967,111 @@ export default function ReportsPage() {
             </div>
           </div>
         )}
+        
+        <div className="w-full overflow-auto reports-table-scroll">
+          <table className="w-full border-collapse bg-white" style={{fontSize: '12px'}}>
+            <thead className="bg-blue-50 border-b-2 border-blue-200 sticky top-0 z-10">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Request ID</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Subject</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Description</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Request Type</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Request Status</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Approval Status</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Mode</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Requester</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Department</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Created At</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Due By</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Resolved Time</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Priority</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Technician</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Service Category</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider">Template</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white">
+              {requests.length === 0 ? (
+                <tr>
+                  <td colSpan={16} className="px-6 py-8 text-center text-gray-500">
+                    <div className="flex flex-col items-center">
+                      <svg className="h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p className="text-lg font-medium">No reports found</p>
+                      <p className="text-sm">Try adjusting your filters or search criteria</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                requests.map((request, index) => {
+                  // Alternating row colors like Excel
+                  const isEvenRow = index % 2 === 0;
+                  const rowClass = isEvenRow ? 'bg-white' : 'bg-gray-50';
+                  
+                  return (
+                    <tr key={request.id} className={`${rowClass} border-b border-gray-200`}>
+                      <td className="px-3 py-2 border-r border-gray-200 text-blue-600 font-medium">
+                        {request.id}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-blue-600 underline cursor-pointer">
+                        {request.subject}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-700 leading-relaxed">
+                        {request.description ? 
+                          request.description.replace(/<[^>]*>/g, '').substring(0, 300)
+                          : 'N/A'
+                        }
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
+                        {capitalizeWords(request.requestType || '')}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
+                        {formatStatusText(request.status || 'Unknown')}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
+                        {formatStatusText(request.approvalStatus || '')}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
+                        {capitalizeWords(request.mode || 'Standard')}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
+                        <div>
+                          <div className="font-medium">{request.requester.name}</div>
+                          <div className="text-xs text-gray-500">{request.requester.employeeId}</div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
+                        {capitalizeWords(request.department || '')}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
+                        {format(new Date(request.createdAt), 'MMM dd, HH:mm')}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
+                        {request.dueByTime ? format(new Date(request.dueByTime), 'MMM dd, HH:mm') : 'N/A'}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
+                        {request.resolvedTime ? format(new Date(request.resolvedTime), 'MMM dd, HH:mm') : 'N/A'}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
+                        {capitalizeWords(request.priority || '')}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
+                        {getTechnicianName(request.technician)}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
+                        {request.serviceCategory || 'N/A'}
+                      </td>
+                      <td className="px-3 py-2 text-gray-900">
+                        {request.template}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+            </table>
+        </div>
       </div>
 
       {/* Filter Modal */}

@@ -108,3 +108,14 @@ model Technician {
 ---
 
 *Generated on: July 18, 2025*
+
+## 📚 Documentation
+
+For detailed system documentation, configuration guides, and reference materials, see the **[docs/](./docs/)** folder:
+
+- **[docs/README.md](./docs/README.md)** - Main documentation index
+- **[docs/FIELD_MAPPINGS.md](./docs/FIELD_MAPPINGS.md)** - FormData field mappings reference
+- **[docs/SLA_MONITORING_SYSTEM.md](./docs/SLA_MONITORING_SYSTEM.md)** - SLA monitoring system
+- **[docs/LOAD_BALANCING_STATUS.md](./docs/LOAD_BALANCING_STATUS.md)** - Load balancing configuration
+
+The documentation includes system architecture, data structure references, and configuration guides for developers and administrators.
