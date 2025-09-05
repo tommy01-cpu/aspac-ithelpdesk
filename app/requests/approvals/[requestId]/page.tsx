@@ -645,8 +645,8 @@ export default function ApprovalDetailsPage() {
         className: "border-green-200 bg-green-50 text-green-800",
       });
 
-      // Navigate back to the approvals list to avoid intermediate re-renders
-      router.replace('/requests/approvals');
+      // Navigate to the first pending approval or back to approvals list if none
+      await redirectToFirstPendingApproval();
       return;
       
     } catch (error) {
@@ -658,6 +658,31 @@ export default function ApprovalDetailsPage() {
       });
     } finally {
       if (isMounted.current) setActionLoading(null);
+    }
+  };
+
+  // Helper function to redirect to the first pending approval or approvals list
+  const redirectToFirstPendingApproval = async () => {
+    try {
+      const response = await fetch('/api/approvals/pending');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.approvals && data.approvals.length > 0) {
+          // Get the first pending approval's request ID
+          const firstRequestId = data.approvals[0].requestId;
+          router.replace(`/requests/approvals/${firstRequestId}`);
+        } else {
+          // No pending approvals, go to the general approvals page
+          router.replace('/requests/approvals');
+        }
+      } else {
+        // Fallback to general approvals page if API call fails
+        router.replace('/requests/approvals');
+      }
+    } catch (error) {
+      console.error('Error fetching pending approvals for redirect:', error);
+      // Fallback to general approvals page
+      router.replace('/requests/approvals');
     }
   };
 
@@ -717,8 +742,8 @@ export default function ApprovalDetailsPage() {
         description: `Request ${actionText} successfully`,
       });
 
-      // Navigate immediately to approvals list to avoid transient UI churn
-      router.replace('/requests/approvals');
+      // Navigate to the first pending approval or back to approvals list if none
+      await redirectToFirstPendingApproval();
       return;
       
     } catch (error) {
@@ -767,8 +792,8 @@ export default function ApprovalDetailsPage() {
         description: "Request acknowledged successfully",
       });
 
-      // Navigate immediately to approvals list
-      router.replace('/requests/approvals');
+      // Navigate to the first pending approval or back to approvals list if none
+      await redirectToFirstPendingApproval();
       return;
       
     } catch (error) {
@@ -1018,25 +1043,34 @@ export default function ApprovalDetailsPage() {
 
   return (
     <SessionWrapper>
-      <div className="min-h-screen bg-gray-50" style={{ transform: 'scale(0.9)', transformOrigin: 'top left', width: '111.11%', height: '111.11%' }}>
+      <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <header className="bg-white border-b border-gray-200">
-          <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
+          <div className="px-4 sm:px-6 py-3 sm:py-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <Button 
                   variant="ghost" 
                   size="sm"
-                  onClick={() => router.push('/requests/approvals')}
-                  className="text-gray-600 hover:text-gray-900"
+                  onClick={() => {
+                    // Check if there's history to go back to
+                    if (window.history.length > 1) {
+                      router.back();
+                    } else {
+                      // Fallback to home page if no history
+                      router.push('/');
+                    }
+                  }}
+                  className="text-gray-600 hover:text-gray-900 px-2 sm:px-3"
                 >
                   <ArrowLeft className="h-4 w-4 mr-1" />
-                  Back to Approvals
+                  <span className="inline">Back</span>
+                  
                 </Button>
-                <div className="h-6 w-px bg-gray-300"></div>
+                <div className="hidden sm:block h-6 w-px bg-gray-300"></div>
                 <div>
-                  <h1 className="text-2xl font-semibold text-gray-900">Request Approval</h1>
-                  <p className="text-sm text-gray-500 mt-1">
+                  <h1 className="text-lg sm:text-2xl font-semibold text-gray-900">Request Approval</h1>
+                  <p className="text-xs sm:text-sm text-gray-500 mt-1">
                     {pendingApprovals.length} pending approval{pendingApprovals.length !== 1 ? 's' : ''}
                   </p>
                 </div>
@@ -1045,15 +1079,15 @@ export default function ApprovalDetailsPage() {
           </div>
         </header>
 
-        <div className="p-6">
-          <div className="grid grid-cols-12 gap-6 h-[calc(100vh-140px)]">
+        <div className="p-3 sm:p-6">
+          <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:gap-6 min-h-[calc(100vh-120px)] sm:min-h-[calc(100vh-140px)]">
             {/* Left Panel - Approvals List */}
-            <div className="col-span-4">
-              <Card className="h-full flex flex-col mb-5">
+            <div className="lg:col-span-4 order-1 lg:order-1">
+              <Card className="lg:h-full flex flex-col mb-4 lg:mb-5">
                 <CardHeader className="pb-3 flex-shrink-0">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <CardTitle className="text-lg">REQUESTS</CardTitle>
+                      <CardTitle className="text-base lg:text-lg">REQUESTS</CardTitle>
                       {pendingApprovals.length > 0 && (
                         <div className="flex items-center gap-1">
                           <div className="w-2 h-2 bg-red-500 rounded-full"></div>
@@ -1072,17 +1106,17 @@ export default function ApprovalDetailsPage() {
                       placeholder="Search..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10"
+                      className="pl-10 text-sm"
                     />
                   </div>
                 </CardHeader>
                 
                 <CardContent className="p-0 flex-1 flex flex-col min-h-0">
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="flex-1 overflow-y-auto max-h-[300px] lg:max-h-none">
                     {filteredApprovals.length === 0 ? (
-                      <div className="p-6 text-center">
-                        <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-500">
+                      <div className="p-4 lg:p-6 text-center">
+                        <AlertCircle className="h-8 w-8 lg:h-12 lg:w-12 text-gray-400 mx-auto mb-3 lg:mb-4" />
+                        <p className="text-sm lg:text-base text-gray-500">
                           {pendingApprovals.length === 0 ? 'No pending approvals' : 'No approvals match your search'}
                         </p>
                       </div>
@@ -1091,14 +1125,14 @@ export default function ApprovalDetailsPage() {
                         {filteredApprovals.map((approval) => (
                           <div
                             key={approval.id}
-                            className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${
+                            className={`p-3 lg:p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${
                               selectedApproval?.id === approval.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
                             }`}
                             onClick={() => handleRequestSelect(approval)}
                           >
-                            <div className="flex items-start gap-3">
-                              <div className="w-6 h-6 bg-blue-100 rounded flex items-center justify-center flex-shrink-0 mt-1">
-                                <ShoppingCart className="h-3 w-3 text-blue-600" />
+                            <div className="flex items-start gap-2 lg:gap-3">
+                              <div className="w-5 h-5 lg:w-6 lg:h-6 bg-blue-100 rounded flex items-center justify-center flex-shrink-0 mt-0.5 lg:mt-1">
+                                <ShoppingCart className="h-2.5 w-2.5 lg:h-3 lg:w-3 text-blue-600" />
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between">
@@ -1112,7 +1146,6 @@ export default function ApprovalDetailsPage() {
                                 <p className="text-xs text-gray-600 mt-1">
                                   by {approval.requesterName} on {formatDbTimestampDisplay(approval.createdDate, { shortFormat: true })}
                                 </p>
-
                               </div>
                             </div>
                           </div>
@@ -1125,57 +1158,57 @@ export default function ApprovalDetailsPage() {
             </div>
 
             {/* Right Panel - Request Details */}
-            <div className="col-span-8">
-              <Card className="h-full flex flex-col">
+            <div className="lg:col-span-8 order-2 lg:order-2">
+              <Card className="lg:h-full flex flex-col">
                 <CardContent className="p-0 flex-1 flex flex-col min-h-0">
-                  <div className="flex-1 overflow-y-auto p-6">
+                  <div className="flex-1 overflow-y-auto p-4 sm:p-6">
                     {selectedApproval && requestDetails ? (
-                      <div className="space-y-6">
+                      <div className="space-y-4 sm:space-y-6">
                   {/* Request Overview Card */}
                   <Card>
-                    <CardHeader className="border-b bg-gradient-to-r from-blue-50 to-indigo-50">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <ShoppingCart className="h-5 w-5 text-blue-600" />
+                    <CardHeader className="border-b bg-gradient-to-r from-blue-50 to-indigo-50 p-4 sm:p-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
+                        <div className="flex items-start sm:items-center gap-3">
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <ShoppingCart className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
                           </div>
-                          <div>
-                            <CardTitle className="text-xl font-semibold text-gray-900">
+                          <div className="min-w-0 flex-1">
+                            <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900 break-words">
                               #{requestDetails.id} {requestDetails.formData?.['8'] || requestDetails.templateName}
                             </CardTitle>
-                            <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs sm:text-sm text-gray-600 mt-1">
                               <span className="flex items-center gap-1">
-                                <User className="h-4 w-4" />
-                                {requestDetails.user.emp_fname} {requestDetails.user.emp_lname}
+                                <User className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                                <span className="truncate">{requestDetails.user.emp_fname} {requestDetails.user.emp_lname}</span>
                               </span>
                               <span className="flex items-center gap-1">
-                                <Calendar className="h-4 w-4" />
-                                {formatDate(requestDetails.createdAt)}
+                                <Calendar className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                                <span className="truncate">{formatDate(requestDetails.createdAt)}</span>
                               </span>
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <Badge className={getApprovalStatusDisplay().color}>
-                            <Clock className="h-3 w-3 mr-1" />
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
+                          <Badge className={`${getApprovalStatusDisplay().color} text-xs whitespace-nowrap`}>
+                            <Clock className="h-3 w-3 mr-1 flex-shrink-0" />
                             {getApprovalStatusDisplay().text}
                           </Badge>
-                          <Badge className={getPriorityColor(requestDetails.formData?.['2'] || requestDetails.priority || 'medium')}>
+                          <Badge className={`${getPriorityColor(requestDetails.formData?.['2'] || requestDetails.priority || 'medium')} text-xs whitespace-nowrap`}>
                             {(requestDetails.formData?.['2'] || requestDetails.priority || 'medium').charAt(0).toUpperCase() + (requestDetails.formData?.['2'] || requestDetails.priority || 'medium').slice(1)} Priority
                           </Badge>
                         </div>
                       </div>
                     </CardHeader>
                     
-                    <CardContent className="p-6">
-                      <div className="space-y-6">
+                    <CardContent className="p-4 sm:p-6">
+                      <div className="space-y-4 sm:space-y-6">
                         {/* Description */}
                         <div>
-                          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                            <div className="w-1 h-5 bg-blue-600 rounded"></div>
+                          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2 text-sm sm:text-base">
+                            <div className="w-1 h-4 sm:h-5 bg-blue-600 rounded"></div>
                             Description
                           </h3>
-                          <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
+                          <div className="bg-gray-50 border border-gray-200 p-3 sm:p-4 rounded-lg">
                             <div className="prose prose-sm max-w-none">
                               {(() => {
                                 // Try to find description from multiple possible field names and numbered fields
@@ -1220,20 +1253,20 @@ export default function ApprovalDetailsPage() {
                                   if (/<[^>]*>/g.test(description)) {
                                     return (
                                       <div 
-                                        className="text-gray-700 leading-relaxed"
+                                        className="text-gray-700 leading-relaxed text-sm sm:text-base break-words"
                                         dangerouslySetInnerHTML={{ __html: description }}
                                       />
                                     );
                                   } else {
                                     return (
-                                      <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
+                                      <p className="text-gray-700 leading-relaxed whitespace-pre-wrap text-sm sm:text-base break-words">
                                         {description}
                                       </p>
                                     );
                                   }
                                 }
                                 
-                                return <p className="text-gray-500 italic">No description provided.</p>;
+                                return <p className="text-gray-500 italic text-sm sm:text-base">No description provided.</p>;
                               })()}
                             </div>
                           </div>
@@ -1242,11 +1275,11 @@ export default function ApprovalDetailsPage() {
                         {/* Attachments - as separate section */}
                         {attachments.length > 0 && (
                           <div>
-                            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                              <div className="w-1 h-5 bg-blue-600 rounded"></div>
+                            <h3 className="font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
+                              <div className="w-1 h-4 sm:h-5 bg-blue-600 rounded"></div>
                               Attachments
                             </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 gap-3">
                               {attachments.map((attachment) => (
                                 <div 
                                   key={attachment.id} 
@@ -1380,40 +1413,40 @@ export default function ApprovalDetailsPage() {
 
                         {/* Request Details Grid */}
                         <div>
-                          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <div className="w-1 h-5 bg-blue-600 rounded"></div>
+                          <h3 className="font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
+                            <div className="w-1 h-4 sm:h-5 bg-blue-600 rounded"></div>
                             Request Details
                           </h3>
-                          <div className="grid grid-cols-2 gap-8">
-                            <div className="space-y-5">
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-gray-700">Request Status</span>
-                                <Badge className={getStatusColor(requestDetails.status)} variant="outline">
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8">
+                            <div className="space-y-3 sm:space-y-4 lg:space-y-5">
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
+                                <span className="text-xs sm:text-sm font-medium text-gray-700">Request Status</span>
+                                <Badge className={`${getStatusColor(requestDetails.status)} w-fit`} variant="outline">
                                   {requestDetails.status === 'for_approval' 
                                     ? 'For Approval' 
                                     : requestDetails.status.charAt(0).toUpperCase() + requestDetails.status.slice(1)}
                                 </Badge>
                               </div>
                              
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-gray-700">Mode</span>
-                                <span className="text-sm text-gray-600">Self-Service Portal</span>
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
+                                <span className="text-xs sm:text-sm font-medium text-gray-700">Mode</span>
+                                <span className="text-xs sm:text-sm text-gray-600">Self-Service Portal</span>
                               </div>
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-gray-700">Request Type</span>
-                                <span className="text-sm text-gray-600 capitalize">{requestDetails.formData?.['4'] || requestDetails.formData?.type || 'Request'}</span>
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
+                                <span className="text-xs sm:text-sm font-medium text-gray-700">Request Type</span>
+                                <span className="text-xs sm:text-sm text-gray-600 capitalize">{requestDetails.formData?.['4'] || requestDetails.formData?.type || 'Request'}</span>
                               </div>
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-gray-700">Service Category</span>
-                                <span className="text-sm text-gray-600">{requestDetails.formData?.['6'] || '-'}</span>
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
+                                <span className="text-xs sm:text-sm font-medium text-gray-700">Service Category</span>
+                                <span className="text-xs sm:text-sm text-gray-600 break-words">{requestDetails.formData?.['6'] || '-'}</span>
                               </div>
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-gray-700">Template</span>
-                                <span className="text-sm text-gray-600">{templateData?.name || requestDetails.templateName || '-'}</span>
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
+                                <span className="text-xs sm:text-sm font-medium text-gray-700">Template</span>
+                                <span className="text-xs sm:text-sm text-gray-600 break-words">{templateData?.name || requestDetails.templateName || '-'}</span>
                               </div>
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-gray-700">SLA</span>
-                                <span className="text-sm text-gray-600">
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
+                                <span className="text-xs sm:text-sm font-medium text-gray-700">SLA</span>
+                                <span className="text-xs sm:text-sm text-gray-600 break-words">
                                   {requestDetails.formData?.slaName
                                     ? String(requestDetails.formData.slaName)
                                     : templateData?.slaService?.name || '-'}
@@ -1421,30 +1454,30 @@ export default function ApprovalDetailsPage() {
                               </div>  
                             </div>
                             
-                            <div className="space-y-5">
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-gray-700">Priority</span>
-                                <Badge className={getPriorityColor(requestDetails.formData?.['2'] || requestDetails.formData?.priority || 'medium')}>
+                            <div className="space-y-3 sm:space-y-4 lg:space-y-5">
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
+                                <span className="text-xs sm:text-sm font-medium text-gray-700">Priority</span>
+                                <Badge className={`${getPriorityColor(requestDetails.formData?.['2'] || requestDetails.formData?.priority || 'medium')} w-fit`}>
                                   {(requestDetails.formData?.['2'] || requestDetails.formData?.priority || 'medium').charAt(0).toUpperCase() + (requestDetails.formData?.['2'] || requestDetails.formData?.priority || 'medium').slice(1)}
                                 </Badge>
                               </div>
                             
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-gray-700">Created By</span>
-                                <span className="text-sm text-gray-600">{requestDetails.user.emp_fname} {requestDetails.user.emp_lname}</span>
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
+                                <span className="text-xs sm:text-sm font-medium text-gray-700">Created By</span>
+                                <span className="text-xs sm:text-sm text-gray-600 break-words">{requestDetails.user.emp_fname} {requestDetails.user.emp_lname}</span>
                               </div>
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-gray-700">Department</span>
-                                <span className="text-sm text-gray-600">{requestDetails.user.department || '-'}</span>
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
+                                <span className="text-xs sm:text-sm font-medium text-gray-700">Department</span>
+                                <span className="text-xs sm:text-sm text-gray-600 break-words">{requestDetails.user.department || '-'}</span>
                               </div>
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-gray-700">Created Date</span>
-                                <span className="text-sm text-gray-600">{formatDate(requestDetails.createdAt)}</span>
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
+                                <span className="text-xs sm:text-sm font-medium text-gray-700">Created Date</span>
+                                <span className="text-xs sm:text-sm text-gray-600">{formatDate(requestDetails.createdAt)}</span>
                               </div>
                               
-                              <div className="flex justify-between items-start">
-                                <span className="text-sm font-medium text-gray-700 flex-shrink-0">E-mail Id(s) To Notify</span>
-                                <span className="text-sm text-gray-600 text-right ml-4 break-words">
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 sm:gap-4">
+                                <span className="text-xs sm:text-sm font-medium text-gray-700 flex-shrink-0">E-mail Id(s) To Notify</span>
+                                <span className="text-xs sm:text-sm text-gray-600 sm:text-right break-words">
                                   {(() => {
                                     const emailsToNotify = requestDetails.formData?.['10'];
                                     if (Array.isArray(emailsToNotify) && emailsToNotify.length > 0) {
@@ -1470,13 +1503,13 @@ export default function ApprovalDetailsPage() {
                   ) && (
                     <Card>
                       <CardHeader>
-                        <CardTitle className="text-lg flex items-center gap-2">
-                          <MessageSquare className="h-5 w-5 text-blue-600" />
+                        <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                          <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
                           Approver Conversations
                         </CardTitle>
                       </CardHeader>
                     <CardContent>
-                      <div className="space-y-4">
+                      <div className="space-y-3 sm:space-y-4">
                         {approvals.length > 0 ? (
                           approvals
                             .filter((approval) => {
@@ -1489,22 +1522,22 @@ export default function ApprovalDetailsPage() {
                               return session?.user?.email && approval.approverEmail === session.user.email;
                             })
                             .map((approval) => (
-                            <div key={approval.id} className="border rounded-lg p-4">
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
+                            <div key={approval.id} className="border rounded-lg p-3 sm:p-4">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                                <div className="flex items-center gap-2 sm:gap-3">
+                                  <div className="w-5 h-5 sm:w-6 sm:h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                                     <span className="text-xs font-medium text-blue-600">{approval.level}</span>
                                   </div>
-                                  <div>
-                                    <h4 className="text-sm font-medium text-gray-900">{approval.levelName}</h4>
-                                    <p className="text-xs text-gray-500">{approval.approverName}</p>
+                                  <div className="min-w-0">
+                                    <h4 className="text-sm font-medium text-gray-900 truncate">{approval.levelName}</h4>
+                                    <p className="text-xs text-gray-500 truncate">{approval.approverName}</p>
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
                                   {(() => {
                                     const norm = normalizeStatus(approval.status);
                                     return (
-                                      <Badge className={getApprovalStatusColor(norm)}>
+                                      <Badge className={`${getApprovalStatusColor(norm)} whitespace-nowrap`}>
                                         {titleCaseStatus(norm)}
                                       </Badge>
                                     );
@@ -1522,7 +1555,7 @@ export default function ApprovalDetailsPage() {
                                       
                                       return hasRequesterMessages && isUnviewed ? (
                                         <div className="flex items-center gap-2">
-                                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs whitespace-nowrap">
                                             {requesterMessages.length} unread message{requesterMessages.length !== 1 ? 's' : ''}
                                           </Badge>
                                         </div>
@@ -1534,14 +1567,14 @@ export default function ApprovalDetailsPage() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => toggleConversation(approval.id)}
-                                    className="h-8 w-8 p-0 relative"
+                                    className="h-7 w-7 sm:h-8 sm:w-8 p-0 relative flex-shrink-0"
                                   >
-                                    <MessageSquare className="h-4 w-4" />
+                                    <MessageSquare className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                     {/* Only show blue dot for unread messages from requester that haven't been viewed */}
                                     {conversations[approval.id] && 
                                      conversations[approval.id].some((conv: any) => conv.type === 'requester' || conv.type === 'user') && 
                                      !viewedConversations[approval.id] && (
-                                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full"></span>
+                                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-blue-500 rounded-full"></span>
                                     )}
                                   </Button>
                                 </div>
@@ -1549,19 +1582,19 @@ export default function ApprovalDetailsPage() {
                               
                               {/* Conversation Panel */}
                               {expandedApprovals[approval.id] && (
-                                <div className="mt-4 space-y-3">
+                                <div className="mt-3 sm:mt-4 space-y-3">
                                   {/* Conversation Messages */}
                                   <div 
-                                    className="bg-gray-50 rounded-lg p-3 max-h-64 overflow-y-auto"
+                                    className="bg-gray-50 rounded-lg p-2.5 sm:p-3 max-h-48 sm:max-h-64 overflow-y-auto"
                                     data-conversation-id={approval.id}
                                   >
                                     {conversationLoading[approval.id] ? (
-                                      <div className="text-center py-4">
-                                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
-                                        <p className="text-sm text-gray-500 mt-2">Loading conversation...</p>
+                                      <div className="text-center py-3 sm:py-4">
+                                        <div className="animate-spin rounded-full h-5 w-5 sm:h-6 sm:w-6 border-b-2 border-blue-600 mx-auto"></div>
+                                        <p className="text-xs sm:text-sm text-gray-500 mt-2">Loading conversation...</p>
                                       </div>
                                     ) : conversations[approval.id] && conversations[approval.id].length > 0 ? (
-                                      <div className="space-y-3">
+                                      <div className="space-y-2.5 sm:space-y-3">
                                         {conversations[approval.id].map((conv: any, index: number) => (
                                           <div
                                             key={index}
@@ -1572,13 +1605,13 @@ export default function ApprovalDetailsPage() {
                                             }`}
                                           >
                                             <div
-                                              className={`p-3 rounded-lg max-w-xs ${
+                                              className={`p-2.5 sm:p-3 rounded-lg max-w-[280px] sm:max-w-xs ${
                                                 conv.type === 'requester' || conv.type === 'user'
                                                   ? 'bg-gray-200 text-gray-800 text-left' // Requester: gray, left-aligned
                                                   : 'bg-blue-500 text-white text-right' // Approver: blue, right-aligned
                                               }`}
                                             >
-                                              <div className="flex items-center justify-between mb-1">
+                                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-1 gap-1 sm:gap-2">
                                                 <span className={`text-xs font-medium ${
                                                   conv.type === 'requester' || conv.type === 'user'
                                                     ? 'text-gray-900' // Dark text for gray background
@@ -1586,7 +1619,7 @@ export default function ApprovalDetailsPage() {
                                                 }`}>
                                                   {conv.author}
                                                 </span>
-                                                <span className={`text-xs ml-2 ${
+                                                <span className={`text-xs ${
                                                   conv.type === 'requester' || conv.type === 'user'
                                                     ? 'text-gray-500' // Gray text for gray background
                                                     : 'text-blue-100' // Light blue text for blue background
@@ -1594,7 +1627,7 @@ export default function ApprovalDetailsPage() {
                                                   {formatDbTimestampDisplay(conv.timestamp, { shortFormat: true })}
                                                 </span>
                                               </div>
-                                              <p className={`text-sm ${
+                                              <p className={`text-xs sm:text-sm break-words ${
                                                 conv.type === 'requester' || conv.type === 'user'
                                                   ? 'text-gray-700' // Dark text for gray background
                                                   : 'text-white' // White text for blue background
@@ -1604,14 +1637,14 @@ export default function ApprovalDetailsPage() {
                                         ))}
                                       </div>
                                     ) : (
-                                      <div className="text-center py-6">
-                                        <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                                        <p className="text-sm text-gray-500 mb-3">No conversation yet</p>
+                                      <div className="text-center py-4 sm:py-6">
+                                        <MessageSquare className="h-6 w-6 sm:h-8 sm:w-8 text-gray-400 mx-auto mb-2" />
+                                        <p className="text-xs sm:text-sm text-gray-500 mb-3">No conversation yet</p>
                                         {(() => {
                                           const st = normalizeStatus(approval.status);
                                           return st === 'for clarification' || st === 'pending clarification';
                                         })() ? (
-                                          <div className="text-sm text-orange-600 mb-3 font-medium">
+                                          <div className="text-xs sm:text-sm text-orange-600 mb-3 font-medium">
                                             ⚠️ Clarification Requested
                                           </div>
                                         ) : null}
@@ -1626,7 +1659,7 @@ export default function ApprovalDetailsPage() {
                                               textarea.placeholder = 'Start a new clarification conversation...';
                                             }
                                           }}
-                                          className="border-dashed border-blue-300 text-blue-600 hover:bg-blue-50"
+                                          className="border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 text-xs sm:text-sm"
                                         >
                                           + New Clarification
                                         </Button>
@@ -1662,14 +1695,14 @@ export default function ApprovalDetailsPage() {
 
                   {/* Action Buttons */}
                   <Card>
-                    <CardContent className="pt-6">
+                    <CardContent className="pt-4 sm:pt-6">
                       {hasAnyRejectedApproval() || (requestDetails && requestDetails.status === 'cancelled') ? (
                         /* Show acknowledge button when any approval is rejected OR request is cancelled */
-                        <div className="space-y-4">
-                          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                            <div className="flex items-start gap-3">
-                              <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
-                              <div className="text-sm text-red-800">
+                        <div className="space-y-3 sm:space-y-4">
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
+                            <div className="flex items-start gap-2 sm:gap-3">
+                              <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                              <div className="text-xs sm:text-sm text-red-800">
                                 <p className="font-medium">
                                   {requestDetails && requestDetails.status === 'cancelled' 
                                     ? 'This request has been cancelled.' 
@@ -1680,28 +1713,28 @@ export default function ApprovalDetailsPage() {
                               </div>
                             </div>
                           </div>
-                          <div className="flex justify-start">
+                          <div className="flex justify-center sm:justify-start">
                             <Button
                               onClick={() => setShowAcknowledgeModal(true)}
                               disabled={actionLoading !== null}
-                              className="bg-orange-600 hover:bg-orange-700 text-white px-8 py-3 text-base font-medium shadow-lg hover:shadow-xl transition-all duration-200"
+                              className="bg-orange-600 hover:bg-orange-700 text-white px-6 sm:px-8 py-2.5 sm:py-3 text-sm sm:text-base font-medium shadow-lg hover:shadow-xl transition-all duration-200 w-full sm:w-auto"
                               size="lg"
                             >
-                              <UserCheck className="h-5 w-5 mr-2" />
+                              <UserCheck className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
                               Acknowledge
                             </Button>
                           </div>
                         </div>
                       ) : (
                         /* Show normal action buttons */
-                        <div className="flex gap-4">
+                        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                           <Button
                             onClick={() => setShowApprovalModal(true)}
                             disabled={actionLoading !== null}
-                            className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 text-base font-medium shadow-lg hover:shadow-xl transition-all duration-200"
+                            className="bg-green-600 hover:bg-green-700 text-white px-6 sm:px-8 py-2.5 sm:py-3 text-sm sm:text-base font-medium shadow-lg hover:shadow-xl transition-all duration-200 flex-1 sm:flex-none"
                             size="lg"
                           >
-                            <CheckCircle className="h-5 w-5 mr-2" />
+                            <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
                             Approve Request
                           </Button>
                           
@@ -1709,10 +1742,10 @@ export default function ApprovalDetailsPage() {
                             variant="destructive"
                             onClick={() => setShowRejectModal(true)}
                             disabled={actionLoading !== null}
-                            className="px-8 py-3 text-base font-medium shadow-lg hover:shadow-xl transition-all duration-200"
+                            className="px-6 sm:px-8 py-2.5 sm:py-3 text-sm sm:text-base font-medium shadow-lg hover:shadow-xl transition-all duration-200 flex-1 sm:flex-none"
                             size="lg"
                           >
-                            <X className="h-5 w-5 mr-2" />
+                            <X className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
                             Reject Request
                           </Button>
                           
@@ -1726,11 +1759,12 @@ export default function ApprovalDetailsPage() {
                               variant="outline"
                               onClick={() => setShowClarificationModal(true)}
                               disabled={actionLoading !== null}
-                              className="px-8 py-3 text-base font-medium border-2 border-sky-600 text-sky-600 hover:bg-sky-50 shadow-lg hover:shadow-xl transition-all duration-200"
+                              className="px-6 sm:px-8 py-2.5 sm:py-3 text-sm sm:text-base font-medium border-2 border-sky-600 text-sky-600 hover:bg-sky-50 shadow-lg hover:shadow-xl transition-all duration-200 flex-1 sm:flex-none"
                               size="lg"
                             >
-                              <AlertCircle className="h-5 w-5 mr-2" />
-                              Need Clarification
+                              <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                              <span className="sm:hidden">Clarification</span>
+                              <span className="hidden sm:inline">Need Clarification</span>
                             </Button>
                           )}
                         </div>
@@ -1739,18 +1773,18 @@ export default function ApprovalDetailsPage() {
                   </Card>
                 </div>
               ) : (
-                <Card className="h-full">
-                  <CardContent className="flex items-center justify-center h-full">
+                <Card className="lg:h-full">
+                  <CardContent className="flex items-center justify-center lg:h-full py-12 lg:py-0">
                     <div className="text-center">
                       {loading ? (
                         <>
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                          <p className="text-gray-500">Loading request details...</p>
+                          <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto mb-3 sm:mb-4"></div>
+                          <p className="text-sm sm:text-base text-gray-500">Loading request details...</p>
                         </>
                       ) : (
                         <>
-                          <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                          <p className="text-gray-500">Select a request to take action</p>
+                          <AlertCircle className="h-8 w-8 sm:h-12 sm:w-12 text-gray-400 mx-auto mb-3 sm:mb-4" />
+                          <p className="text-sm sm:text-base text-gray-500">Select a request to take action</p>
                         </>
                       )}
                     </div>
@@ -1768,11 +1802,11 @@ export default function ApprovalDetailsPage() {
         <Dialog open={showClarificationModal} onOpenChange={setShowClarificationModal}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <AlertCircle className="h-5 w-5 text-sky-500" />
+              <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 text-sky-500" />
                 Request Clarification
               </DialogTitle>
-              <DialogDescription>
+              <DialogDescription className="text-sm">
                 Send a clarification request to the requester. This message will be added to the conversation.
               </DialogDescription>
             </DialogHeader>
@@ -1786,7 +1820,7 @@ export default function ApprovalDetailsPage() {
                   placeholder="What additional information do you need from the requester?"
                   value={clarificationMessage}
                   onChange={(e) => setClarificationMessage(e.target.value)}
-                  className="min-h-[100px] text-sm resize-none"
+                  className="min-h-[80px] sm:min-h-[100px] text-sm resize-none"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                       e.preventDefault();
@@ -1815,20 +1849,21 @@ export default function ApprovalDetailsPage() {
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
               <Button
                 variant="outline"
                 onClick={() => {
                   setShowClarificationModal(false);
                   setClarificationMessage('');
                 }}
+                className="w-full sm:w-auto order-2 sm:order-1"
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleClarificationRequest}
                 disabled={!clarificationMessage.trim() || actionLoading === 'clarification'}
-                className="bg-sky-600 hover:bg-sky-700"
+                className="bg-sky-600 hover:bg-sky-700 w-full sm:w-auto order-1 sm:order-2"
               >
                 {actionLoading === 'clarification' ? (
                   <>
@@ -1838,7 +1873,8 @@ export default function ApprovalDetailsPage() {
                 ) : (
                   <>
                     <AlertCircle className="h-4 w-4 mr-2" />
-                    Send Clarification Request
+                    <span className="sm:hidden">Send Request</span>
+                    <span className="hidden sm:inline">Send Clarification Request</span>
                   </>
                 )}
               </Button>
@@ -1850,11 +1886,11 @@ export default function ApprovalDetailsPage() {
         <Dialog open={showApprovalModal} onOpenChange={setShowApprovalModal}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-green-500" />
+              <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-500" />
                 Approve Request
               </DialogTitle>
-              <DialogDescription>
+              <DialogDescription className="text-sm">
                 You are about to approve this request. Comments are optional.
               </DialogDescription>
             </DialogHeader>
@@ -1868,7 +1904,7 @@ export default function ApprovalDetailsPage() {
                   placeholder="Add any comments about this approval..."
                   value={approvalComment}
                   onChange={(e) => setApprovalComment(e.target.value)}
-                  className="min-h-[100px] text-sm resize-none"
+                  className="min-h-[80px] sm:min-h-[100px] text-sm resize-none"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                       e.preventDefault();
@@ -1894,20 +1930,21 @@ export default function ApprovalDetailsPage() {
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
               <Button
                 variant="outline"
                 onClick={() => {
                   setShowApprovalModal(false);
                   setApprovalComment('');
                 }}
+                className="w-full sm:w-auto order-2 sm:order-1"
               >
                 Cancel
               </Button>
               <Button
                 onClick={() => handleApprovalAction('approve')}
                 disabled={actionLoading === 'approve'}
-                className="bg-green-600 hover:bg-green-700"
+                className="bg-green-600 hover:bg-green-700 w-full sm:w-auto order-1 sm:order-2"
               >
                 {actionLoading === 'approve' ? (
                   <>
@@ -1929,11 +1966,11 @@ export default function ApprovalDetailsPage() {
         <Dialog open={showRejectModal} onOpenChange={setShowRejectModal}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <X className="h-5 w-5 text-red-500" />
+              <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <X className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
                 Reject Request
               </DialogTitle>
-              <DialogDescription>
+              <DialogDescription className="text-sm">
                 You are about to reject this request. Please provide a reason for rejection.
               </DialogDescription>
             </DialogHeader>
@@ -1947,7 +1984,7 @@ export default function ApprovalDetailsPage() {
                   placeholder="Please explain why you are rejecting this request..."
                   value={approvalComment}
                   onChange={(e) => setApprovalComment(e.target.value)}
-                  className="min-h-[100px] text-sm resize-none"
+                  className="min-h-[80px] sm:min-h-[100px] text-sm resize-none"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                       e.preventDefault();
@@ -1975,13 +2012,14 @@ export default function ApprovalDetailsPage() {
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
               <Button
                 variant="outline"
                 onClick={() => {
                   setShowRejectModal(false);
                   setApprovalComment('');
                 }}
+                className="w-full sm:w-auto order-2 sm:order-1"
               >
                 Cancel
               </Button>
@@ -1989,6 +2027,7 @@ export default function ApprovalDetailsPage() {
                 variant="destructive"
                 onClick={() => handleApprovalAction('reject')}
                 disabled={!approvalComment.trim() || actionLoading === 'reject'}
+                className="w-full sm:w-auto order-1 sm:order-2"
               >
                 {actionLoading === 'reject' ? (
                   <>
@@ -2010,14 +2049,14 @@ export default function ApprovalDetailsPage() {
         <Dialog open={showAcknowledgeModal} onOpenChange={setShowAcknowledgeModal}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <UserCheck className="h-5 w-5 text-orange-500" />
+              <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <UserCheck className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
                 {requestDetails && requestDetails.status === 'cancelled' 
                   ? 'Acknowledge Cancellation' 
                   : 'Acknowledge Rejection'
                 }
               </DialogTitle>
-              <DialogDescription>
+              <DialogDescription className="text-sm">
                 {requestDetails && requestDetails.status === 'cancelled'
                   ? 'You are about to acknowledge that this request has been cancelled.'
                   : 'You are about to acknowledge that this request has been rejected by another approver.'
@@ -2051,17 +2090,18 @@ export default function ApprovalDetailsPage() {
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
               <Button
                 variant="outline"
                 onClick={() => setShowAcknowledgeModal(false)}
+                className="w-full sm:w-auto order-2 sm:order-1"
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleAcknowledgeAction}
                 disabled={actionLoading === 'acknowledge'}
-                className="bg-orange-600 hover:bg-orange-700"
+                className="bg-orange-600 hover:bg-orange-700 w-full sm:w-auto order-1 sm:order-2"
               >
                 {actionLoading === 'acknowledge' ? (
                   <>

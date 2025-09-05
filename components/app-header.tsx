@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Search, Bell, Settings, User, LogOut, KeyRound, ChevronDown, Clock, FileText } from "lucide-react";
+import { Search, Bell, Settings, User, LogOut, KeyRound, ChevronDown, Clock, FileText, Menu, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import NotificationDropdown from "@/components/NotificationDropdown";
 import { useNotificationPanel } from "@/contexts/notification-context";
@@ -31,6 +31,7 @@ export default function AppHeader() {
   const { openNotificationPanel } = useNotificationPanel();
   const [imgError, setImgError] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
@@ -212,18 +213,20 @@ export default function AppHeader() {
                 className="w-12 h-12 object-contain mr-3"
               />
               <div>
-                <h1 className="text-lg font-semibold text-white">IT Help Desk</h1>
+                <h1 className="text-base sm:text-lg font-semibold text-white">IT Help Desk</h1>
               </div>
             </div>
           </div>
+
+          {/* Desktop Navigation */}
           <nav className="hidden md:block">
             <div className="flex items-center space-x-6">
                 <Link href="/">
                 <Button 
                   variant="ghost" 
                   className={cn(
-                    "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
-                    pathname === "/" ? "bg-black/20 text-white" : "hover:bg-black/10"
+                    "text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                    pathname === "/" ? "bg-black/20 text-white hover:text-amber-900" : "hover:text-white hover:bg-black/10"
                   )}
                 >
                   Home
@@ -234,8 +237,8 @@ export default function AppHeader() {
                 <Button 
                   variant="ghost" 
                   className={cn(
-                    "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
-                    pathname?.startsWith("/requests") && !pathname?.startsWith("/requests/approvals") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                    "text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                    pathname?.startsWith("/requests") && !pathname?.startsWith("/requests/approvals") ? "bg-black/20 text-white hover:text-amber-900" : "hover:text-white hover:bg-black/10"
                   )}
                 >
                   Requests
@@ -247,8 +250,8 @@ export default function AppHeader() {
                 <Button 
                   variant="ghost" 
                   className={cn(
-                    "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
-                    pathname?.startsWith("/requests/approvals") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                    "text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                    pathname?.startsWith("/requests/approvals") ? "bg-black/20 text-white hover:text-amber-900" : "hover:text-white hover:bg-black/10"
                   )}
                   onClick={navigateToFirstApproval}
                 >
@@ -262,8 +265,8 @@ export default function AppHeader() {
                   <Button 
                     variant="ghost" 
                     className={cn(
-                      "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
-                      pathname?.startsWith("/reports") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                      "text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                      pathname?.startsWith("/reports") ? "bg-black/20 text-white hover:text-amber-900" : "hover:text-white hover:bg-black/10"
                     )}
                   >
                     Reports
@@ -278,8 +281,8 @@ export default function AppHeader() {
                     <Button 
                       variant="ghost" 
                       className={cn(
-                        "text-white hover:text-white font-medium flex items-center gap-1 px-3 py-2 rounded-sm transition-all duration-200 text-sm",
-                        pathname?.startsWith("/technician") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                        "text-white font-medium flex items-center gap-1 px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                        pathname?.startsWith("/technician") ? "bg-black/20 text-white hover:text-amber-900" : "hover:text-white hover:bg-black/10"
                       )}
                     >
                       Technician View
@@ -312,8 +315,8 @@ export default function AppHeader() {
                   <Button 
                     variant="ghost" 
                     className={cn(
-                      "text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
-                      pathname?.startsWith("/admin") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                      "text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                      pathname?.startsWith("/admin") ? "bg-black/20 text-white hover:text-amber-900" : "hover:text-white hover:bg-black/10"
                     )}
                   >
                     Admin View
@@ -323,85 +326,277 @@ export default function AppHeader() {
             
             </div>
           </nav>
-          <div className="flex items-center space-x-3">
-            {/* <Button variant="ghost" size="icon" className="text-white hover:text-white hover:bg-black/10 transition-all duration-200">
-              <Search className="h-4 w-4" />
-            </Button> */}
-            <NotificationDropdown 
-              className="text-white hover:text-white hover:bg-black/10 transition-all duration-200" 
-              onViewAllClick={openNotificationPanel}
-            />
-            {/* Only show Settings icon if user is an admin */}
-            {session?.user?.isAdmin && (
-              <Link href="/admin/settings">
-                <Button variant="ghost" size="icon" className="text-white hover:text-white hover:bg-black/10 transition-all duration-200">
-                  <Settings className="h-4 w-4" />
-                </Button>
-              </Link>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center space-x-2 text-white hover:text-white hover:bg-black/10 transition-all duration-200 px-3 py-2 rounded-sm">
-                  <div className="w-7 h-7 rounded-full overflow-hidden bg-amber-600 flex items-center justify-center">
-                    {session?.user?.profile_image && !imgError ? (
-                      <img
-                        src={`/uploads/${session.user.profile_image}`}
-                        alt="Profile Photo"
-                        className="w-full h-full object-cover"
-                        onError={() => setImgError(true)}
-                      />
-                    ) : (
-                      <User className="h-4 w-4 text-white" />
-                    )}
-                  </div>
-                  <span className="hidden md:block font-medium text-sm">
-                    {session?.user?.name}
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56" style={{ backgroundColor: '#7d6b3f', borderColor: 'rgba(109, 91, 43, 0.8)' }}>
-                <DropdownMenuLabel>
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium text-white">
+
+          {/* Mobile Menu Button and Right Side Icons */}
+          <div className="flex items-center space-x-2">
+            {/* Mobile menu button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden text-white hover:text-white hover:bg-black/10 transition-all duration-200"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            >
+              {isMobileMenuOpen ? (
+                <X className="h-5 w-5" />
+              ) : (
+                <Menu className="h-5 w-5" />
+              )}
+            </Button>
+
+            {/* Desktop right side icons */}
+            <div className="hidden md:flex items-center space-x-3">
+              <NotificationDropdown 
+                className="text-white hover:text-white hover:bg-black/10 transition-all duration-200" 
+                onViewAllClick={openNotificationPanel}
+              />
+              {/* Only show Settings icon if user is an admin */}
+              {session?.user?.isAdmin && (
+                <Link href="/admin/settings">
+                  <Button variant="ghost" size="icon" className="text-white hover:text-white hover:bg-black/10 transition-all duration-200">
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                </Link>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="flex items-center space-x-2 text-white hover:text-white hover:bg-black/10 transition-all duration-200 px-3 py-2 rounded-sm">
+                    <div className="w-7 h-7 rounded-full overflow-hidden bg-amber-600 flex items-center justify-center">
+                      {session?.user?.profile_image && !imgError ? (
+                        <img
+                          src={`/uploads/${session.user.profile_image}`}
+                          alt="Profile Photo"
+                          className="w-full h-full object-cover"
+                          onError={() => setImgError(true)}
+                        />
+                      ) : (
+                        <User className="h-4 w-4 text-white" />
+                      )}
+                    </div>
+                    <span className="hidden lg:block font-medium text-sm">
                       {session?.user?.name}
-                      {session?.user?.suffix}
-                    </p>
-                    <p className="text-xs text-white/70">
-                      {session?.user?.employee_id}
-                    </p>
-                    <p className="text-xs text-white/70">
-                      {session?.user?.job_title}
-                    </p>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator style={{ backgroundColor: 'rgba(109, 91, 43, 0.5)' }} />
-                <DropdownMenuItem 
-                  onClick={() => {
-                    window.open('/IT%20Helpdesk%20System%20Quick%20Reference%20Guide.pdf', '_blank');
-                  }}
-                  className="text-white hover:text-white hover:bg-black/20"
-                >
-                  <FileText className="mr-2 h-4 w-4" />
-                  <span>Reference Guide</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => {
-                    resetPasswordModal();
-                    setIsChangePasswordOpen(true);
-                  }}
-                  className="text-white hover:text-white hover:bg-black/20"
-                >
-                  <KeyRound className="mr-2 h-4 w-4" />
-                  <span>Change Password</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleSignOut} className="text-white hover:text-white hover:bg-black/20">
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Sign out</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56" style={{ backgroundColor: '#7d6b3f', borderColor: 'rgba(109, 91, 43, 0.8)' }}>
+                  <DropdownMenuLabel>
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium text-white">
+                        {session?.user?.name}
+                        {session?.user?.suffix}
+                      </p>
+                      <p className="text-xs text-white/70">
+                        {session?.user?.employee_id}
+                      </p>
+                      <p className="text-xs text-white/70">
+                        {session?.user?.job_title}
+                      </p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator style={{ backgroundColor: 'rgba(109, 91, 43, 0.5)' }} />
+                  <DropdownMenuItem 
+                    onClick={() => {
+                      window.open('/IT%20Helpdesk%20System%20Quick%20Reference%20Guide.pdf', '_blank');
+                    }}
+                    className="text-white hover:text-white hover:bg-black/20"
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    <span>Reference Guide</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => {
+                      resetPasswordModal();
+                      setIsChangePasswordOpen(true);
+                    }}
+                    className="text-white hover:text-white hover:bg-black/20"
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    <span>Change Password</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleSignOut} className="text-white hover:text-white hover:bg-black/20">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Sign out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            {/* Mobile right side icons */}
+            <div className="md:hidden flex items-center space-x-2">
+              <NotificationDropdown 
+                className="text-white hover:text-white hover:bg-black/10 transition-all duration-200" 
+                onViewAllClick={openNotificationPanel}
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="text-white hover:text-white hover:bg-black/10 transition-all duration-200">
+                    <div className="w-6 h-6 rounded-full overflow-hidden bg-amber-600 flex items-center justify-center">
+                      {session?.user?.profile_image && !imgError ? (
+                        <img
+                          src={`/uploads/${session.user.profile_image}`}
+                          alt="Profile Photo"
+                          className="w-full h-full object-cover"
+                          onError={() => setImgError(true)}
+                        />
+                      ) : (
+                        <User className="h-3 w-3 text-white" />
+                      )}
+                    </div>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56" style={{ backgroundColor: '#7d6b3f', borderColor: 'rgba(109, 91, 43, 0.8)' }}>
+                  <DropdownMenuLabel>
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium text-white">
+                        {session?.user?.name}
+                        {session?.user?.suffix}
+                      </p>
+                      <p className="text-xs text-white/70">
+                        {session?.user?.employee_id}
+                      </p>
+                      <p className="text-xs text-white/70">
+                        {session?.user?.job_title}
+                      </p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator style={{ backgroundColor: 'rgba(109, 91, 43, 0.5)' }} />
+                  {session?.user?.isAdmin && (
+                    <>
+                      <DropdownMenuItem asChild>
+                        <Link href="/admin/settings" className="w-full text-white hover:text-white hover:bg-black/20">
+                          <Settings className="mr-2 h-4 w-4" />
+                          <span>Admin Settings</span>
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator style={{ backgroundColor: 'rgba(109, 91, 43, 0.5)' }} />
+                    </>
+                  )}
+                  <DropdownMenuItem 
+                    onClick={() => {
+                      window.open('/IT%20Helpdesk%20System%20Quick%20Reference%20Guide.pdf', '_blank');
+                    }}
+                    className="text-white hover:text-white hover:bg-black/20"
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    <span>Reference Guide</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => {
+                      resetPasswordModal();
+                      setIsChangePasswordOpen(true);
+                    }}
+                    className="text-white hover:text-white hover:bg-black/20"
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    <span>Change Password</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleSignOut} className="text-white hover:text-white hover:bg-black/20">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Sign out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
+
+        {/* Mobile Navigation Menu */}
+        {isMobileMenuOpen && (
+          <div className="md:hidden border-t border-black/20">
+            <div className="px-2 pt-2 pb-3 space-y-1">
+              <Link href="/" onClick={() => setIsMobileMenuOpen(false)}>
+                <Button 
+                  variant="ghost" 
+                  className={cn(
+                    "w-full justify-start text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                    pathname === "/" ? "bg-black/20 text-white hover:text-amber-900" : "hover:text-white hover:bg-black/10"
+                  )}
+                >
+                  Home
+                </Button>
+              </Link>
+              
+              <Link href="/requests/view" onClick={() => setIsMobileMenuOpen(false)}>
+                <Button 
+                  variant="ghost" 
+                  className={cn(
+                    "w-full justify-start text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                    pathname?.startsWith("/requests") && !pathname?.startsWith("/requests/approvals") ? "bg-black/20 text-white hover:text-amber-900" : "hover:text-white hover:bg-black/10"
+                  )}
+                >
+                  Requests
+                </Button>
+              </Link>
+
+              {/* Approvals tab - only show if there are pending approvals */}
+              {pendingApprovalsCount > 0 && (
+                <Button 
+                  variant="ghost" 
+                  className={cn(
+                    "w-full justify-start text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                    pathname?.startsWith("/requests/approvals") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                  )}
+                  onClick={() => {
+                    navigateToFirstApproval();
+                    setIsMobileMenuOpen(false);
+                  }}
+                >
+                  Approvals
+                  {pendingApprovalsCount > 0 && (
+                    <span className="ml-2 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                      {pendingApprovalsCount}
+                    </span>
+                  )}
+                </Button>
+              )}
+              
+              {/* Only show Technician View if user is a technician */}
+              {session?.user?.isTechnician && (
+                <div className="space-y-1">
+                  <div className="px-3 py-2 text-white text-sm font-medium border-b border-black/20">
+                    Technician View
+                  </div>
+                  <Link href="/technician/dashboard" onClick={() => setIsMobileMenuOpen(false)}>
+                    <Button 
+                      variant="ghost" 
+                      className={cn(
+                        "w-full justify-start text-white hover:text-white font-medium px-6 py-2 rounded-sm transition-all duration-200 text-sm",
+                        pathname === "/technician/dashboard" ? "bg-black/20 text-white" : "hover:bg-black/10"
+                      )}
+                    >
+                      Dashboard
+                    </Button>
+                  </Link>
+                  <Link href="/technician/requests" onClick={() => setIsMobileMenuOpen(false)}>
+                    <Button 
+                      variant="ghost" 
+                      className={cn(
+                        "w-full justify-start text-white hover:text-white font-medium px-6 py-2 rounded-sm transition-all duration-200 text-sm",
+                        pathname === "/technician/requests" ? "bg-black/20 text-white" : "hover:bg-black/10"
+                      )}
+                    >
+                      Requests
+                    </Button>
+                  </Link>
+                </div>
+              )}
+              
+              {/* Only show Admin View if user is an admin */}
+              {session?.user?.isAdmin && (
+                <Link href="/admin/settings" onClick={() => setIsMobileMenuOpen(false)}>
+                  <Button 
+                    variant="ghost" 
+                    className={cn(
+                      "w-full justify-start text-white hover:text-white font-medium px-3 py-2 rounded-sm transition-all duration-200 text-sm",
+                      pathname?.startsWith("/admin") ? "bg-black/20 text-white" : "hover:bg-black/10"
+                    )}
+                  >
+                    Admin View
+                  </Button>
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Change Password Modal */}
