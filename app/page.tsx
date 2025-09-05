@@ -355,8 +355,8 @@ export default function Home() {
         filterParam = '';
     }
     
-    const baseUrl = process.env.API_BASE_URL || process.env.NEXTAUTH_URL;
-    router.push(`${baseUrl}/requests/view${filterParam}`);
+    // Use window.location.origin for client-side navigation
+    router.push(`/requests/view${filterParam}`);
   };
 
   // Fetch notifications when panel opens
