@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
       Requester_Email: requestData.user.emp_email || '',
       Request_Title: requestSubject,
       Emails_To_Notify: emailsToNotify.join(', '),
-      Approval_Link: 'http://192.168.1.85:3000/requests/approvals'
+      Approval_Link: `${process.env.API_BASE_URL || process.env.NEXTAUTH_URL}/requests/approvals`
     };
     
     console.log('✅ Email variables prepared:', Object.keys(emailVariables));

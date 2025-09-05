@@ -355,7 +355,7 @@ export default function Home() {
         filterParam = '';
     }
     
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000';
+    const baseUrl = process.env.API_BASE_URL || process.env.NEXTAUTH_URL;
     router.push(`${baseUrl}/requests/view${filterParam}`);
   };
 

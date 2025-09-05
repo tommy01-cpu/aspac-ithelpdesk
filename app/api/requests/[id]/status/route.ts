@@ -119,7 +119,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
               Requester_Email: requestWithUser.user.emp_email || '',
               Request_Title: requestSubject,
               Emails_To_Notify: ccEmailRecipients.join(', '),
-              Request_URL: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${requestId}`
+              Request_URL: `${process.env.API_BASE_URL || process.env.NEXTAUTH_URL}/requests/view/${requestId}`
             };
 
             // Handle different email templates

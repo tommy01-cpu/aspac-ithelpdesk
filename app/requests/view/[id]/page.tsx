@@ -2903,7 +2903,7 @@ export default function RequestViewPage() {
                                       // Redirect to resolution tab if this was a new resolution
                                       if (resStatus === 'resolved' && !isAlreadyResolved) {
                                         setTimeout(() => {
-                                          window.location.href = `http://192.168.1.85:3000/requests/view/${requestId}?tab=resolution`;
+                                          window.location.href = `${window.location.origin}/requests/view/${requestId}?tab=resolution`;
                                         }, 1000);
                                       }
                                     } catch (e) {

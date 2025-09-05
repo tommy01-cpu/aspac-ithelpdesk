@@ -239,7 +239,11 @@ export const getTemplateIdByType = (templateType: TemplateType): number | null =
 
 // Get base URL from environment
 const getBaseUrl = () => {
-  return process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000';
+  const baseUrl = process.env.API_BASE_URL || process.env.NEXTAUTH_URL;
+  if (!baseUrl) {
+    throw new Error('API_BASE_URL or NEXTAUTH_URL environment variable is required');
+  }
+  return baseUrl;
 };
 
 // Email configuration

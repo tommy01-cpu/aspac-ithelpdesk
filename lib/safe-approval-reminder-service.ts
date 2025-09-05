@@ -71,7 +71,7 @@ class SafeApprovalReminderService {
       console.log('📧 Calling approval reminders API...');
       
       // Call the actual scheduled task API that handles all approval reminders
-      const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/api/scheduled-tasks/approval-reminders`, {
+      const response = await fetch(`${process.env.API_BASE_URL || process.env.NEXTAUTH_URL}/api/scheduled-tasks/approval-reminders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})

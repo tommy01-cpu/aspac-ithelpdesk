@@ -178,7 +178,7 @@ export async function POST(
                 Request_Status: formatStatusForDisplay(approval.request.status),
                 Request_Subject: formData?.subject || formData?.title || formData?.['8'] || `Request #${approval.request.id}`,
                 Request_Description: formData?.description || formData?.details || formData?.['9'] || 'No description provided',
-                Request_Link: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`
+                Request_Link: `${process.env.API_BASE_URL || process.env.NEXTAUTH_URL}/requests/view/${approval.request.id}`
               };
             } else {
               // Approver posted regular message, use template 15 for clarification messages
@@ -193,10 +193,10 @@ export async function POST(
                 Request_Subject: formData?.subject || formData?.title || formData?.['8'] || `Request #${approval.request.id}`,
                 Request_Description: formData?.description || formData?.details || formData?.['9'] || 'No description provided',
                 Clarification: message.trim(),
-                Request_URL: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`,
-                Request_Link: `${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`,
-                Base_URL: process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000',
-                Encoded_Request_URL: encodeURIComponent(`${process.env.NEXTAUTH_URL || 'http://192.168.1.85:3000'}/requests/view/${approval.request.id}`)
+                Request_URL: `${process.env.API_BASE_URL || process.env.NEXTAUTH_URL}/requests/view/${approval.request.id}`,
+                Request_Link: `${process.env.API_BASE_URL || process.env.NEXTAUTH_URL}/requests/view/${approval.request.id}`,
+                Base_URL: process.env.API_BASE_URL || process.env.NEXTAUTH_URL,
+                Encoded_Request_URL: encodeURIComponent(`${process.env.API_BASE_URL || process.env.NEXTAUTH_URL}/requests/view/${approval.request.id}`)
               };
             }
 
