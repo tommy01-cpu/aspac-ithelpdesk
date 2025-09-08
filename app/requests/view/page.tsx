@@ -494,22 +494,24 @@ export default function MyRequestsPage() {
 
   if (loading) {
     return (
-      <div className="p-6">
-        <div style={{ zoom: '0.9' }}>
-          <div className="flex flex-col gap-6">
-            <div className="flex items-center justify-between">
-              <Skeleton className="h-8 w-48" />
-              <Skeleton className="h-10 w-32" />
+      <div className="p-3 sm:p-4 lg:p-6">
+        <div className="lg:zoom-90">
+          <div className="flex flex-col gap-4 sm:gap-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <Skeleton className="h-6 sm:h-8 w-32 sm:w-48" />
+              <Skeleton className="h-8 sm:h-10 w-20 sm:w-32" />
             </div>
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
               <Skeleton className="h-10 flex-1" />
-              <Skeleton className="h-10 w-32" />
-              <Skeleton className="h-10 w-32" />
-              <Skeleton className="h-10 w-40" />
+              <div className="grid grid-cols-2 sm:flex gap-2">
+                <Skeleton className="h-10 w-full sm:w-32" />
+                <Skeleton className="h-10 w-full sm:w-32" />
+                <Skeleton className="h-10 col-span-2 sm:col-span-1 sm:w-40" />
+              </div>
             </div>
-            <div className="space-y-1" style={{ height: 'calc(99vh - 300px)' }}>
+            <div className="space-y-2 sm:space-y-1" style={{ height: 'calc(100vh - 250px)' }}>
               {[1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-16 w-full" />
+                <Skeleton key={i} className="h-12 sm:h-16 w-full" />
               ))}
             </div>
           </div>
@@ -520,13 +522,13 @@ export default function MyRequestsPage() {
 
   return (
     <SessionWrapper>
-      <div className="p-6">
-        <div style={{ zoom: '0.9' }}>
-          <div className="flex flex-col gap-6">
+      <div className="p-3 sm:p-4 lg:p-6">
+        <div className="lg:zoom-90">
+          <div className="flex flex-col gap-4 sm:gap-6">
             {/* Page Title and Actions */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
                   My Requests
                 </h1>
                 <p className="text-sm text-slate-600">View and manage your requests</p>
@@ -534,36 +536,40 @@ export default function MyRequestsPage() {
               <div className="flex items-center gap-2">
                 <Button
                   onClick={() => router.push('/requests/template?tab=service')}
-                  className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
+                  className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white text-sm"
+                  size="sm"
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  New Request
+                  <span className="hidden sm:inline">New Request</span>
+                  <span className="sm:hidden">New</span>
                 </Button>
               </div>
             </div>
               {/* Filters - Fixed height */}
               <div className="flex-shrink-0">
                 {/* Standard Filters */}
-                <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex flex-col gap-3">
                   {/* Department Head Filters + Search Row */}
-                  <div className="flex gap-2 items-center flex-1">
-                    {/* Department Head Filters - Inline */}
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    {/* Department Head Filters - Responsive */}
                     {isDepartmentHead && (
-                      <>
-                        <Filter className="h-4 w-4 text-gray-500" />
-                        <Select value={viewMode} onValueChange={(value: 'own' | 'department') => setViewMode(value)}>
-                          <SelectTrigger className="w-80 bg-white/50">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="own">My Requests</SelectItem>
-                            <SelectItem value="department">My Department Requests</SelectItem>
-                          </SelectContent>
-                        </Select>
+                      <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                        <div className="flex items-center gap-2">
+                          <Filter className="h-4 w-4 text-gray-500" />
+                          <Select value={viewMode} onValueChange={(value: 'own' | 'department') => setViewMode(value)}>
+                            <SelectTrigger className="w-full sm:w-48 bg-white/50">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="own">My Requests</SelectItem>
+                              <SelectItem value="department">My Department Requests</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                         
                         {viewMode === 'department' && (
                           <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                            <SelectTrigger className="w-80 bg-white/50">
+                            <SelectTrigger className="w-full sm:w-48 bg-white/50">
                               <SelectValue placeholder="Department" />
                             </SelectTrigger>
                             <SelectContent>
@@ -575,8 +581,8 @@ export default function MyRequestsPage() {
                           </Select>
                         )}
                         
-                        <div className="w-px h-6 bg-gray-300 mx-1"></div>
-                      </>
+                        <div className="hidden sm:block w-px h-6 bg-gray-300 mx-1"></div>
+                      </div>
                     )}
                     
                     {/* Search Input */}
@@ -591,10 +597,10 @@ export default function MyRequestsPage() {
                     </div>
                   </div>
                   
-                  {/* Other Filters */}
-                  <div className="flex gap-2">
+                  {/* Other Filters - Mobile Responsive */}
+                  <div className="grid grid-cols-2 sm:flex gap-2">
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="w-32 bg-white/50">
+                      <SelectTrigger className="bg-white/50 text-sm">
                         <SelectValue placeholder="Status" />
                       </SelectTrigger>
                       <SelectContent>
@@ -609,7 +615,7 @@ export default function MyRequestsPage() {
                     </Select>
 
                     <Select value={typeFilter} onValueChange={setTypeFilter}>
-                      <SelectTrigger className="w-32 bg-white/50">
+                      <SelectTrigger className="bg-white/50 text-sm">
                         <SelectValue placeholder="Type" />
                       </SelectTrigger>
                       <SelectContent>
@@ -619,9 +625,8 @@ export default function MyRequestsPage() {
                       </SelectContent>
                     </Select>
                     
-
                     <Select value={approvalStatusFilter} onValueChange={setApprovalStatusFilter}>
-                      <SelectTrigger className="w-40 bg-white/50">
+                      <SelectTrigger className="col-span-2 sm:col-span-1 bg-white/50 text-sm">
                         <SelectValue placeholder="Approval Status" />
                       </SelectTrigger>
                       <SelectContent>
@@ -637,16 +642,16 @@ export default function MyRequestsPage() {
                 </div>
               </div>
 
-              {/* Requests Table - Dynamic height with at least 1% bottom margin */}
+              {/* Requests Table - Dynamic height with responsive layout */}
               <div className="bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg overflow-hidden" 
-                   style={{ height: 'calc(100vh - 190px)' }}>
+                   style={{ height: 'calc(100vh - 230px)' }}>
                 <div className="h-full flex flex-col">
                   {filteredRequests.length === 0 ? (
-                    <div className="flex-1 flex items-center justify-center p-12">
+                    <div className="flex-1 flex items-center justify-center p-6 sm:p-12">
                       <div className="text-center">
-                        <FileText className="h-12 w-12 mx-auto text-slate-400 mb-4" />
-                        <p className="text-slate-600 mb-2">No requests found</p>
-                        <p className="text-sm text-slate-500">
+                        <FileText className="h-8 w-8 sm:h-12 sm:w-12 mx-auto text-slate-400 mb-4" />
+                        <p className="text-slate-600 mb-2 text-sm sm:text-base">No requests found</p>
+                        <p className="text-xs sm:text-sm text-slate-500">
                           {searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || approvalStatusFilter !== 'ALL'
                             ? 'Try adjusting your filters or search terms'
                             : 'Create your first request to get started'
@@ -656,30 +661,191 @@ export default function MyRequestsPage() {
                     </div>
                   ) : (
                     <>
-                      {/* Fixed Header */}
-                      <div className="bg-slate-50 border-b border-slate-200 flex-shrink-0">
-                        <div
-                          className="grid gap-2 px-3 py-3 text-sm font-medium text-slate-700"
-                          style={{
-                            gridTemplateColumns:
-                              "60px 2fr 1.5fr 1fr 1fr 1fr 1.5fr 1.5fr 1.5fr",
-                          }}
-                        >
-                          <div>ID</div>
-                          <div>Subject</div>
-                          <div>Requester</div>
-                          <div>Approval Status</div>
-                          <div>Request Status</div>
-                          <div>Priority</div>
-                          <div>DueBy Date</div>
-                          <div>Created Date</div>
-                          <div>Assigned To</div>
+                      {/* Desktop Table View - Hidden on mobile */}
+                      <div className="hidden lg:block h-full flex-col">
+                        {/* Fixed Header */}
+                        <div className="bg-slate-50 border-b border-slate-200 flex-shrink-0">
+                          <div
+                            className="grid gap-2 px-3 py-3 text-sm font-medium text-slate-700"
+                            style={{
+                              gridTemplateColumns:
+                                "60px 2fr 1.5fr 1fr 1fr 1fr 1.5fr 1.5fr 1.5fr",
+                            }}
+                          >
+                            <div>ID</div>
+                            <div>Subject</div>
+                            <div>Requester</div>
+                            <div>Approval Status</div>
+                            <div>Request Status</div>
+                            <div>Priority</div>
+                            <div>DueBy Date</div>
+                            <div>Created Date</div>
+                            <div>Assigned To</div>
+                          </div>
+                        </div>
+
+                        {/* Scrollable Content */}
+                        <div className="flex-1 overflow-y-auto">
+                          <div className="divide-y divide-slate-200">
+                            {filteredRequests.map((request) => {
+                              const { status: currentApprovalStatus } =
+                                getCurrentApprovalStatus(request.approvals);
+                              const showApprovalStatus = shouldShowApprovalStatus(
+                                request.status,
+                                request.approvals
+                              );
+
+                              return (
+                                <TooltipProvider key={request.id}>
+                                  <div
+                                    className={`grid gap-2 px-3 py-3 transition-all duration-200 cursor-pointer border-l-4 border-transparent hover:border-blue-400 ${getRowBackgroundColor(
+                                      request.status
+                                    )}`}
+                                    style={{
+                                      gridTemplateColumns:
+                                        "60px 2fr 1.5fr 1fr 1fr 1fr 1.5fr 1.5fr 1.5fr",
+                                    }}
+                                    onClick={() =>
+                                      router.push(`/requests/view/${request.id}`)
+                                    }
+                                    title="Click to view request details"
+                                  >
+                                    {/* Desktop table content remains the same */}
+                                    {/* ID */}
+                                    <div className="flex items-center gap-2">
+                                      {(() => {
+                                        const requestType = request.formData?.['4']?.toLowerCase() || request.type?.toLowerCase() || 'unknown';
+                                        
+                                        if (requestType === 'service') {
+                                          return <ShoppingCart className="h-4 w-4 text-blue-600" />;
+                                        } else if (requestType === 'incident') {
+                                          return <Ticket className="h-4 w-4 text-red-600" />;
+                                        } else {
+                                          return <FileText className="h-4 w-4 text-gray-500" />;
+                                        }
+                                      })()}
+                                      <span className="text-sm font-mono font-medium">
+                                        #{request.id}
+                                      </span>
+                                    </div>
+
+                                    {/* Subject */}
+                                    <div className="flex items-center">
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <p className="font-medium text-sm break-words cursor-help">
+                                            {request.formData?.["8"] ||
+                                              request.subject ||
+                                              request.templateName ||
+                                              "-"}
+                                          </p>
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-md p-3">
+                                          <div className="text-sm whitespace-pre-line">
+                                            {getTemplateTooltip(request)}
+                                          </div>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </div>
+
+                                    {/* Requester */}
+                                    <div>
+                                      <p className="font-medium text-sm break-words">
+                                        {request.user ? 
+                                          `${request.user.emp_fname} ${request.user.emp_lname}` :
+                                          request.formData?.["1"] ||
+                                          "-"}
+                                      </p>
+                                      <p className="text-xs text-gray-500 break-words">
+                                        {request.user?.department || "-"}
+                                      </p>
+                                    </div>
+
+                                    {/* Approval Status */}
+                                    <div className="flex items-center">
+                                      {showApprovalStatus ? (
+                                        <Badge
+                                          className={`${getApprovalStatusColor(
+                                            currentApprovalStatus
+                                          )} border-0 text-xs px-1.5 py-0.5`}
+                                        >
+                                          {capitalizeWords(currentApprovalStatus)}
+                                        </Badge>
+                                      ) : (
+                                        <span className="text-gray-400 text-xs">N/A</span>
+                                      )}
+                                    </div>
+
+                                    {/* Request Status */}
+                                    <div className="flex items-center">
+                                      <Badge
+                                        className={`${getStatusColor(
+                                          request.status
+                                        )} border-0 text-xs px-1.5 py-0.5`}
+                                      >
+                                        <span className="flex items-center gap-1">
+                                          {getStatusIcon(request.status)}
+                                          {capitalizeWords(request.status)}
+                                        </span>
+                                      </Badge>
+                                    </div>
+
+                                    {/* Priority */}
+                                    <div className="flex items-center">
+                                      <Badge
+                                        className={`${getPriorityColor(
+                                          request.formData?.["2"] ||
+                                            request.priority ||
+                                            "Medium"
+                                        )} border-0 text-xs px-1.5 py-0.5`}
+                                      >
+                                        {capitalizeWords(
+                                          request.formData?.["2"] ||
+                                            request.priority ||
+                                            "-"
+                                        )}
+                                      </Badge>
+                                    </div>
+
+                                    {/* DueBy Date */}
+                                    <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
+                                      <Calendar className="h-3 w-3 flex-shrink-0" />
+                                      <span className="text-sm break-words">
+                                        {request.formData?.slaDueDate
+                                          ? formatDate(request.formData.slaDueDate)
+                                          : "-"}
+                                      </span>
+                                    </div>
+
+                                    {/* Created Date */}
+                                    <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
+                                      <Calendar className="h-3 w-3 flex-shrink-0" />
+                                      <span className="text-sm break-words">
+                                        {formatDate(new Date(new Date(request.createdAt).getTime() - 8 * 60 * 60 * 1000).toISOString())}
+                                      </span>
+                                    </div>
+
+                                    {/* Assigned To */}
+                                    <div className="flex items-center gap-1 leading-tight">
+                                      <User className="h-3 w-3 text-gray-500 flex-shrink-0" />
+                                      <span className="text-sm break-words">
+                                        {request.assignedTechnician?.displayName ||
+                                          request.assignedTechnician?.fullName ||
+                                          request.formData?.assignedTechnician ||
+                                          "-"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </TooltipProvider>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
 
-                      {/* Scrollable Content */}
-                      <div className="flex-1 overflow-y-auto">
-                        <div className="divide-y divide-slate-200">
+                      {/* Mobile Card View - Visible on mobile and tablet */}
+                      <div className="lg:hidden flex-1 overflow-y-auto">
+                        <div className="p-2 space-y-3">
                           {filteredRequests.map((request) => {
                             const { status: currentApprovalStatus } =
                               getCurrentApprovalStatus(request.approvals);
@@ -689,30 +855,18 @@ export default function MyRequestsPage() {
                             );
 
                             return (
-                              <TooltipProvider key={request.id}>
-                                <div
-                                  className={`grid gap-2 px-3 py-3 transition-all duration-200 cursor-pointer border-l-4 border-transparent hover:border-blue-400 ${getRowBackgroundColor(
-                                    request.status
-                                  )}`}
-                                  style={{
-                                    gridTemplateColumns:
-                                      "60px 2fr 1.5fr 1fr 1fr 1fr 1.5fr 1.5fr 1.5fr",
-                                  }}
-                                  onClick={() =>
-                                    router.push(`/requests/view/${request.id}`)
-                                  }
-                                  title="Click to view request details"
-                                >
-                                  {/* ID */}
+                              <div
+                                key={request.id}
+                                className={`bg-white rounded-lg border border-slate-200 p-4 cursor-pointer transition-all duration-200 hover:shadow-md ${getRowBackgroundColor(
+                                  request.status
+                                ).replace('hover:bg-', 'hover:shadow-lg ')}`}
+                                onClick={() => router.push(`/requests/view/${request.id}`)}
+                              >
+                                {/* Mobile Card Header */}
+                                <div className="flex items-start justify-between mb-3">
                                   <div className="flex items-center gap-2">
-                                    {/* Type Icon - Get type from formData[4] */}
                                     {(() => {
                                       const requestType = request.formData?.['4']?.toLowerCase() || request.type?.toLowerCase() || 'unknown';
-                                      
-                                      // Debug logging for first few requests
-                                      if (requests.indexOf(request) < 3) {
-                                        console.log(`Request ${request.id}: formData[4]="${request.formData?.['4']}", type="${request.type}", using="${requestType}"`);
-                                      }
                                       
                                       if (requestType === 'service') {
                                         return <ShoppingCart className="h-4 w-4 text-blue-600" />;
@@ -722,64 +876,15 @@ export default function MyRequestsPage() {
                                         return <FileText className="h-4 w-4 text-gray-500" />;
                                       }
                                     })()}
-                                    <span className="text-sm font-mono font-medium">
+                                    <span className="text-sm font-mono font-bold text-slate-700">
                                       #{request.id}
                                     </span>
                                   </div>
-
-                                  {/* Subject */}
-                                  <div className="flex items-center">
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <p className="font-medium text-sm break-words cursor-help">
-                                          {request.formData?.["8"] ||
-                                            request.subject ||
-                                            request.templateName ||
-                                            "-"}
-                                        </p>
-                                      </TooltipTrigger>
-                                      <TooltipContent className="max-w-md p-3">
-                                        <div className="text-sm whitespace-pre-line">
-                                          {getTemplateTooltip(request)}
-                                        </div>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </div>
-
-                                  {/* Requester */}
-                                  <div>
-                                    <p className="font-medium text-sm break-words">
-                                      {request.user ? 
-                                        `${request.user.emp_fname} ${request.user.emp_lname}` :
-                                        request.formData?.["1"] ||
-                                        "-"}
-                                    </p>
-                                    <p className="text-xs text-gray-500 break-words">
-                                      {request.user?.department || "-"}
-                                    </p>
-                                  </div>
-
-                                  {/* Approval Status */}
-                                  <div className="flex items-center">
-                                    {showApprovalStatus ? (
-                                      <Badge
-                                        className={`${getApprovalStatusColor(
-                                          currentApprovalStatus
-                                        )} border-0 text-xs px-1.5 py-0.5`}
-                                      >
-                                        {capitalizeWords(currentApprovalStatus)}
-                                      </Badge>
-                                    ) : (
-                                      <span className="text-gray-400 text-xs">N/A</span>
-                                    )}
-                                  </div>
-
-                                  {/* Request Status */}
-                                  <div className="flex items-center">
+                                  <div className="flex items-center gap-2">
                                     <Badge
                                       className={`${getStatusColor(
                                         request.status
-                                      )} border-0 text-xs px-1.5 py-0.5`}
+                                      )} border-0 text-xs px-2 py-1`}
                                     >
                                       <span className="flex items-center gap-1">
                                         {getStatusIcon(request.status)}
@@ -787,55 +892,100 @@ export default function MyRequestsPage() {
                                       </span>
                                     </Badge>
                                   </div>
+                                </div>
+
+                                {/* Subject */}
+                                <div className="mb-3">
+                                  <h3 className="font-medium text-sm text-slate-900 line-clamp-2 leading-relaxed">
+                                    {request.formData?.["8"] ||
+                                      request.subject ||
+                                      request.templateName ||
+                                      "No subject"}
+                                  </h3>
+                                </div>
+
+                                {/* Mobile Card Details Grid */}
+                                <div className="grid grid-cols-2 gap-3 text-xs">
+                                  {/* Requester */}
+                                  <div>
+                                    <p className="text-gray-500 mb-1">Requester</p>
+                                    <p className="font-medium text-slate-700 truncate">
+                                      {request.user ? 
+                                        `${request.user.emp_fname} ${request.user.emp_lname}` :
+                                        request.formData?.["1"] || "-"}
+                                    </p>
+                                  </div>
 
                                   {/* Priority */}
-                                  <div className="flex items-center">
+                                  <div>
+                                    <p className="text-gray-500 mb-1">Priority</p>
                                     <Badge
                                       className={`${getPriorityColor(
                                         request.formData?.["2"] ||
                                           request.priority ||
                                           "Medium"
-                                      )} border-0 text-xs px-1.5 py-0.5`}
+                                      )} border-0 text-xs px-2 py-0.5`}
                                     >
                                       {capitalizeWords(
                                         request.formData?.["2"] ||
                                           request.priority ||
-                                          "-"
+                                          "Medium"
                                       )}
                                     </Badge>
                                   </div>
 
-                                  {/* DueBy Date */}
-                                  <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
-                                    <Calendar className="h-3 w-3 flex-shrink-0" />
-                                    <span className="text-sm break-words">
-                                      {request.formData?.slaDueDate
-                                        ? formatDate(request.formData.slaDueDate)
-                                        : "-"}
-                                    </span>
-                                  </div>
-
                                   {/* Created Date */}
-                                  <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
-                                    <Calendar className="h-3 w-3 flex-shrink-0" />
-                                    <span className="text-sm break-words">
+                                  <div>
+                                    <p className="text-gray-500 mb-1">Created</p>
+                                    <p className="text-slate-600 text-xs">
                                       {formatDate(new Date(new Date(request.createdAt).getTime() - 8 * 60 * 60 * 1000).toISOString())}
-                                    </span>
-                                        
+                                    </p>
                                   </div>
 
-                                  {/* Assigned To */}
-                                  <div className="flex items-center gap-1 leading-tight">
-                                    <User className="h-3 w-3 text-gray-500 flex-shrink-0" />
-                                    <span className="text-sm break-words">
-                                      {request.assignedTechnician?.displayName ||
-                                        request.assignedTechnician?.fullName ||
-                                        request.formData?.assignedTechnician ||
-                                        "-"}
-                                    </span>
+                                  {/* Approval Status */}
+                                  <div>
+                                    <p className="text-gray-500 mb-1">Approval</p>
+                                    {showApprovalStatus ? (
+                                      <Badge
+                                        className={`${getApprovalStatusColor(
+                                          currentApprovalStatus
+                                        )} border-0 text-xs px-2 py-0.5`}
+                                      >
+                                        {capitalizeWords(currentApprovalStatus)}
+                                      </Badge>
+                                    ) : (
+                                      <span className="text-gray-400 text-xs">N/A</span>
+                                    )}
                                   </div>
                                 </div>
-                              </TooltipProvider>
+
+                                {/* Due Date and Assigned To - Full width on mobile */}
+                                <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-1 gap-2 text-xs">
+                                  {request.formData?.slaDueDate && (
+                                    <div className="flex items-center gap-2">
+                                      <Calendar className="h-3 w-3 text-gray-500" />
+                                      <span className="text-gray-500">Due:</span>
+                                      <span className="text-slate-600">
+                                        {formatDate(request.formData.slaDueDate)}
+                                      </span>
+                                    </div>
+                                  )}
+                                  
+                                  {(request.assignedTechnician?.displayName || 
+                                    request.assignedTechnician?.fullName || 
+                                    request.formData?.assignedTechnician) && (
+                                    <div className="flex items-center gap-2">
+                                      <User className="h-3 w-3 text-gray-500" />
+                                      <span className="text-gray-500">Assigned:</span>
+                                      <span className="text-slate-600 truncate">
+                                        {request.assignedTechnician?.displayName ||
+                                          request.assignedTechnician?.fullName ||
+                                          request.formData?.assignedTechnician}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             );
                           })}
                         </div>
@@ -845,32 +995,33 @@ export default function MyRequestsPage() {
                 </div>
               </div>
 
-              {/* Pagination - Fixed at bottom */}
+              {/* Pagination - Fixed at bottom, mobile responsive */}
               {pagination.pages > 1 && (
-                <div className="flex-shrink-0 bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-slate-600">
+                <div className="flex-shrink-0 bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg p-3 sm:p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <p className="text-xs sm:text-sm text-slate-600 text-center sm:text-left">
                       Showing {((currentPage - 1) * 100) + 1} to {Math.min(currentPage * 100, pagination.total)} of {pagination.total} requests
                     </p>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center sm:justify-end gap-2">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handlePageChange(currentPage - 1)}
                         disabled={currentPage <= 1}
-                        className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                        className="border-slate-300 text-slate-700 hover:bg-slate-50 text-xs sm:text-sm px-2 sm:px-3"
                       >
-                        Previous
+                        <span className="hidden sm:inline">Previous</span>
+                        <span className="sm:hidden">Prev</span>
                       </Button>
-                      <span className="text-sm text-slate-600">
-                        Page {currentPage} of {pagination.pages}
+                      <span className="text-xs sm:text-sm text-slate-600 px-2">
+                        {currentPage} of {pagination.pages}
                       </span>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handlePageChange(currentPage + 1)}
                         disabled={currentPage >= pagination.pages}
-                        className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                        className="border-slate-300 text-slate-700 hover:bg-slate-50 text-xs sm:text-sm px-2 sm:px-3"
                       >
                         Next
                       </Button>

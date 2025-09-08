@@ -6,7 +6,7 @@ import {
   getTemplateIdByType, 
   type TemplateType 
 } from '@/lib/database-email-templates';
-import { processImagesForEmailAuto } from '@/lib/email-image-processor-enhanced';
+// import { processImagesForEmailAuto } from '@/lib/email-image-processor-enhanced'; // DISABLED: Keep base64 images in emails
 
 export async function POST(request: NextRequest) {
   try {
@@ -121,8 +121,8 @@ export async function POST(request: NextRequest) {
     console.log('👤 Requester:', requesterName);
     console.log('📑 Request subject:', requestSubject);
     
-    // Process images in the description for email compatibility
-    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, parseInt(requestId));
+    // Keep images as base64 in emails - no file processing
+    const requestDescription = rawRequestDescription;
 
     const emailVariables = {
       Request_ID: requestId.toString(),

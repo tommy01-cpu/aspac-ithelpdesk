@@ -1,7 +1,66 @@
 import { prisma } from '@/lib/prisma';
 import nodemailer from 'nodemailer';
 import { getEmailConfigForService } from './email-config';
-import { processImagesForEmailAuto } from './email-image-processor-enhanced';
+import { convertBase64ImagesForEmail } from './email-base64-memory-converter';
+
+/**
+ * Add responsive CSS styles to email HTML for better display
+ */
+function addEmailResponsiveStyles(htmlContent: string): string {
+  // CSS styles for responsive email images and layout
+  const emailStyles = `
+    <style type="text/css">
+      /* Responsive images for email clients */
+      img {
+        max-width: 100% !important;
+        height: auto !important;
+        display: block;
+        margin: 10px 0;
+        border-radius: 4px;
+      }
+      
+      /* Fix for Outlook */
+      table img {
+        max-width: 100% !important;
+        height: auto !important;
+      }
+      
+      /* General email responsiveness */
+      .email-content {
+        max-width: 600px;
+        margin: 0 auto;
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+      }
+      
+      /* Mobile responsiveness */
+      @media screen and (max-width: 600px) {
+        .email-content {
+          width: 100% !important;
+          padding: 10px !important;
+        }
+        
+        img {
+          max-width: 100% !important;
+          height: auto !important;
+        }
+      }
+    </style>
+  `;
+  
+  // If HTML already has head section, add styles there
+  if (htmlContent.includes('<head>')) {
+    return htmlContent.replace('<head>', `<head>${emailStyles}`);
+  }
+  
+  // If HTML has html tag, add head section
+  if (htmlContent.includes('<html>')) {
+    return htmlContent.replace('<html>', `<html><head>${emailStyles}</head>`);
+  }
+  
+  // Otherwise, just add styles at the beginning
+  return `${emailStyles}${htmlContent}`;
+}
 
 // Database email template mapping - maps function names to template ID values
 const TEMPLATE_ID_MAPPING = {
@@ -351,12 +410,24 @@ export const sendEmail = async (emailData: EmailData): Promise<boolean> => {
 
     // Set content - prioritize HTML if available, otherwise use text
     if (htmlMessage) {
-      mailOptions.html = htmlMessage;
+      // Add responsive CSS styles for better email display
+      const styledHtmlMessage = addEmailResponsiveStyles(htmlMessage);
+      
+      // Use simple CID method (confirmed working for this system)
+      const processedEmail = convertBase64ImagesForEmail(styledHtmlMessage);
+      
+      mailOptions.html = processedEmail.html;
+      mailOptions.attachments = processedEmail.attachments;
+      
       // If we have HTML but no text, create a simple text version
       if (!message) {
         mailOptions.text = htmlMessage.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
       } else {
         mailOptions.text = message;
+      }
+      
+      if (processedEmail.attachments.length > 0) {
+        console.log(`📧 Email prepared with ${processedEmail.attachments.length} CID attachments (simple method that works)`);
       }
     } else if (message) {
       mailOptions.text = message;

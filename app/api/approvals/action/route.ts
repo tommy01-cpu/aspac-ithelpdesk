@@ -809,9 +809,13 @@ export async function POST(request: NextRequest) {
               
               console.log(`Triggering SLA and assignment for request ${approval.requestId}, template ${templateId}`);
               
+              // Use environment variable for API base URL
+              const baseUrl = process.env.API_BASE_URL ;
+                
+              console.log('🔧 Using SLA assignment base URL:', baseUrl);
+              
               // Call the SLA and assignment API
-              const origin = new URL(request.url).origin;
-              const response = await fetch(`${origin}/api/requests/${approval.requestId}/sla-assignment`, {
+              const response = await fetch(`${baseUrl}/api/requests/${approval.requestId}/sla-assignment`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -819,7 +823,9 @@ export async function POST(request: NextRequest) {
                 body: JSON.stringify({
                   requestId: approval.requestId,
                   templateId: templateId
-                })
+                }),
+                // Add timeout to prevent hanging
+                signal: AbortSignal.timeout(30000) // 30 second timeout
               });
 
               if (response.ok) {
