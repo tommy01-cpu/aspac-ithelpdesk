@@ -47,7 +47,7 @@ Based on the system's JSON structure, here are the field mappings:
 
 ### Field 2 - Priority Level
 - **Type**: String
-- **Values**: "Low", "Medium", "High", "Critical"
+- **Values**: "Low", "Medium", "High", "Top"
 - **Purpose**: Request priority level
 - **Example**: "Low"
 

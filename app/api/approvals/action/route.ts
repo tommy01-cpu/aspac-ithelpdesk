@@ -651,7 +651,15 @@ export async function POST(request: NextRequest) {
                       lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
                       await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
 
-                      // 📧 Send technician assignment notifications after full approval
+                      // 🎯 FIRST: Send approval notification to requester
+                      try {
+                        await sendApprovalOutcomeNotification(approval.requestId, 'approved', comments);
+                        console.log('✅ Approval notification sent to requester FIRST');
+                      } catch (emailError) {
+                        console.error('❌ Failed to send approval notification:', emailError);
+                      }
+
+                      // 📧 SECOND: Send technician assignment notifications after approval notification
                       console.log('🔍 DEBUG: Checking for technician assignment notification...');
                       console.log('🔍 DEBUG: slaResult?.results?.assignment:', JSON.stringify(slaResult?.results?.assignment, null, 2));
                       console.log('🔍 DEBUG: Assignment success:', slaResult?.results?.assignment?.success);
@@ -751,13 +759,7 @@ export async function POST(request: NextRequest) {
                     console.error('Finalize after auto-approval failed (SLA/Updated path):', e3);
                   }
 
-                  // Send approval notification after successful finalization
-                  try {
-                    await sendApprovalOutcomeNotification(approval.requestId, 'approved', comments);
-                    console.log('✅ Final approval notification sent to requester');
-                  } catch (emailError) {
-                    console.error('❌ Failed to send final approval notification:', emailError);
-                  }
+                  // Note: Approval notification now sent BEFORE technician assignment (above)
                 }
               }
             }
@@ -871,7 +873,15 @@ export async function POST(request: NextRequest) {
                     details: lines.join('\n'),
                   });
 
-                  // 📧 Send technician assignment notifications after full approval
+                  // 🎯 FIRST: Send approval notification to requester (main success path)
+                  try {
+                    await sendApprovalOutcomeNotification(approval.requestId, 'approved', comments);
+                    console.log('✅ Approval notification sent to requester FIRST (main success path)');
+                  } catch (emailError) {
+                    console.error('❌ Failed to send approval notification (main success path):', emailError);
+                  }
+
+                  // 📧 SECOND: Send technician assignment notifications after approval notification
                   if (slaResult?.results?.assignment?.success && slaResult?.results?.assignment?.technician?.id) {
                     try {
                       const { notifyRequestAssigned } = require('@/lib/notifications');
@@ -906,9 +916,9 @@ export async function POST(request: NextRequest) {
                       });
 
                       if (assignedTechnicianData && requestWithUserAndTemplate && templateData) {
-                        console.log('📧 Sending technician assignment notifications after approval...');
+                        console.log('📧 Sending technician assignment notifications SECOND (main success path)...');
                         await notifyRequestAssigned(requestWithUserAndTemplate, templateData, assignedTechnicianData);
-                        console.log('✅ Technician assignment notifications sent successfully');
+                        console.log('✅ Technician assignment notifications sent successfully (main success path)');
                       }
                     } catch (notificationError) {
                       console.error('Error sending technician assignment notifications:', notificationError);
@@ -1119,7 +1129,15 @@ export async function POST(request: NextRequest) {
                   }
                 } catch {}
 
-                // 📧 For services: Send technician assignment notifications after full approval
+                // 🎯 FIRST: Send approval notification to requester (fallback path)
+                try {
+                  await sendApprovalOutcomeNotification(approval.requestId, 'approved', comments);
+                  console.log('✅ Approval notification sent to requester FIRST (fallback path)');
+                } catch (emailError) {
+                  console.error('❌ Failed to send approval notification (fallback path):', emailError);
+                }
+
+                // 📧 SECOND: Send technician assignment notifications after approval notification
                 if (assignedTechnicianData) {
                   try {
                     const { notifyRequestAssigned } = require('@/lib/notifications');
@@ -1144,12 +1162,12 @@ export async function POST(request: NextRequest) {
                     });
 
                     if (requestWithUserAndTemplate && templateData) {
-                      console.log('📧 Sending service technician assignment notifications after approval...');
+                      console.log('📧 Sending service technician assignment notifications SECOND (fallback path)...');
                       await notifyRequestAssigned(requestWithUserAndTemplate, templateData, assignedTechnicianData);
-                      console.log('✅ Service technician assignment notifications sent successfully');
+                      console.log('✅ Service technician assignment notifications sent successfully (fallback path)');
                     }
                   } catch (notificationError) {
-                    console.error('Error sending service technician assignment notifications:', notificationError);
+                    console.error('Error sending service technician assignment notifications (fallback path):', notificationError);
                     // Don't fail the approval process if notifications fail
                   }
                 }
@@ -1184,13 +1202,7 @@ export async function POST(request: NextRequest) {
                 console.warn('Fallback SLA/assignment (exception path) failed to create Image 1 entries:', fallbackErr);
               }
 
-              // Send approval notification after successful finalization
-              try {
-                await sendApprovalOutcomeNotification(approval.requestId, 'approved', comments);
-                console.log('✅ Final approval notification sent to requester (fallback path)');
-              } catch (emailError) {
-                console.error('❌ Failed to send final approval notification:', emailError);
-              }
+              // Note: Approval notification now sent BEFORE technician assignment (above)
             }
           }
         }

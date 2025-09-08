@@ -14,7 +14,7 @@ interface ServiceSLA {
   id: number;
   name: string;
   description: string;
-  priority: 'low' | 'medium' | 'high' | 'critical';
+  priority: 'low' | 'medium' | 'high' | 'top';
   responseTime: number;
   resolutionTime: number;
   operationalHours: boolean;
@@ -51,7 +51,7 @@ export const SLAServiceComponent = () => {
   const [newSLA, setNewSLA] = useState({
     name: '',
     description: '',
-    priority: 'medium' as 'low' | 'medium' | 'high' | 'critical',
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'top',
     responseTime: 2,
     resolutionTime: 24,
     operationalHours: false,
@@ -60,47 +60,10 @@ export const SLAServiceComponent = () => {
     status: 'active' as 'active' | 'inactive',
   });
 
-  // Mock data
-  const mockSLAs: ServiceSLA[] = [
-    {
-      id: 1,
-      name: 'Critical Service SLA',
-      description: 'SLA for critical business services',
-      priority: 'critical',
-      responseTime: 1,
-      resolutionTime: 4,
-      operationalHours: false,
-      autoEscalate: true,
-      escalationTime: 2,
-      status: 'active',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 2,
-      name: 'Standard Service SLA',
-      description: 'Standard SLA for regular services',
-      priority: 'medium',
-      responseTime: 4,
-      resolutionTime: 24,
-      operationalHours: true,
-      autoEscalate: true,
-      escalationTime: 8,
-      status: 'active',
-      createdAt: new Date().toISOString(),
-    },
-  ];
-
   useEffect(() => {
-    setTimeout(() => {
-      setSLAs(mockSLAs);
-      setPagination({
-        page: 1,
-        limit: 25,
-        total: mockSLAs.length,
-        pages: 1
-      });
-      setLoading(false);
-    }, 1000);
+    // TODO: Replace with actual API call to fetch SLAs
+    // For now, just set loading to false
+    setLoading(false);
   }, []);
 
   const handleAddSLA = async () => {
@@ -205,7 +168,7 @@ export const SLAServiceComponent = () => {
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'critical': return 'bg-red-100 text-red-800';
+      case 'top': return 'bg-red-100 text-red-800';
       case 'high': return 'bg-orange-100 text-orange-800';
       case 'medium': return 'bg-blue-100 text-blue-800';
       case 'low': return 'bg-gray-100 text-gray-800';
@@ -263,7 +226,7 @@ export const SLAServiceComponent = () => {
                     </div>
                     <div>
                       <Label htmlFor="priority">Priority *</Label>
-                      <Select value={newSLA.priority} onValueChange={(value: 'low' | 'medium' | 'high' | 'critical') => setNewSLA(prev => ({ ...prev, priority: value }))}>
+                      <Select value={newSLA.priority} onValueChange={(value: 'low' | 'medium' | 'high' | 'top') => setNewSLA(prev => ({ ...prev, priority: value }))}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
@@ -271,7 +234,7 @@ export const SLAServiceComponent = () => {
                           <SelectItem value="low">Low</SelectItem>
                           <SelectItem value="medium">Medium</SelectItem>
                           <SelectItem value="high">High</SelectItem>
-                          <SelectItem value="critical">Critical</SelectItem>
+                          <SelectItem value="top">Top</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -384,7 +347,7 @@ export const SLAServiceComponent = () => {
                     </div>
                     <div>
                       <Label htmlFor="editPriority">Priority *</Label>
-                      <Select value={newSLA.priority} onValueChange={(value: 'low' | 'medium' | 'high' | 'critical') => setNewSLA(prev => ({ ...prev, priority: value }))}>
+                      <Select value={newSLA.priority} onValueChange={(value: 'low' | 'medium' | 'high' | 'top') => setNewSLA(prev => ({ ...prev, priority: value }))}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
@@ -392,7 +355,7 @@ export const SLAServiceComponent = () => {
                           <SelectItem value="low">Low</SelectItem>
                           <SelectItem value="medium">Medium</SelectItem>
                           <SelectItem value="high">High</SelectItem>
-                          <SelectItem value="critical">Critical</SelectItem>
+                          <SelectItem value="top">Top</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

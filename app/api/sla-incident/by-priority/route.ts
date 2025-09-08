@@ -6,7 +6,6 @@ const PRIORITY_MAPPING: Record<string, string> = {
   'low': 'Low',
   'medium': 'Medium', 
   'high': 'High',
-  'critical': 'Top',
   'top': 'Top'
 };
 
@@ -53,7 +52,6 @@ export async function GET(request: NextRequest) {
           'low': 24,
           'medium': 8, 
           'high': 4,
-          'critical': 1,
           'top': 1
         };
         return defaults[priority] || 8;
@@ -64,7 +62,6 @@ export async function GET(request: NextRequest) {
           'low': 72,
           'medium': 24,
           'high': 8, 
-          'critical': 4,
           'top': 2
         };
         return defaults[priority] || 24;
@@ -75,7 +72,6 @@ export async function GET(request: NextRequest) {
           'low': 3,
           'medium': 1,
           'high': 1,
-          'critical': 1, 
           'top': 1
         };
         return defaults[priority] || 1;

@@ -5342,9 +5342,9 @@ export default function RequestViewPage() {
                   onChange={(e) => setSelectedStatus(e.target.value)}
                 >
                   <option value="">Select Status</option>
-                  <option value="on_hold">On Hold</option>
+                  {/* <option value="on_hold">On Hold</option> */}
                   <option value="cancelled">Cancelled</option>
-                  <option value="open">Open</option>
+                  {/* <option value="open">Open</option> */}
                 </select>
               </div>
             </div>

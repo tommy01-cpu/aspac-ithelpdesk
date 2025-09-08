@@ -1937,25 +1937,25 @@ export default function RequestPage() {
        
         {/* Header */}
         <header className="bg-white/80 backdrop-blur-xl border-b border-slate-200/60 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-16">
-              <div className="flex items-center gap-4">
-                <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-slate-600 hover:text-slate-900 hover:bg-slate-100">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-14 sm:h-16">
+              <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+                <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 p-1 sm:p-2">
+                  <ArrowLeft className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Back</span>
                 </Button>
-                <div>
-                  <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base sm:text-xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent truncate">
                     {templateData.name}
                   </h1>
-                  <p className="text-xs text-slate-500 mt-1">{templateData.description}</p>
+                  <p className="text-xs text-slate-500 mt-1 truncate hidden sm:block">{templateData.description}</p>
                 </div>
               </div>
             </div>
           </div>
         </header>
 
-        <div className="container mx-auto p-6">
+        <div className="container mx-auto p-3 sm:p-6 max-w-4xl">
           
 
           {/* Template Info Alert - Display for Service templates with SLA or Incident templates with priority-based SLA */}
@@ -2004,7 +2004,7 @@ export default function RequestPage() {
                   {requestType === 'incident' ? 'Incident Request Details' : 'Service Request Details'}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6 p-6">
+              <CardContent className="space-y-4 sm:space-y-6 p-4 sm:p-6">
                 {Array.isArray(templateData.fields) ? templateData.fields
                   .filter((field) => !field.label.toLowerCase().includes('resolution') && field.type !== 'resolution')
                   .map((field) => (

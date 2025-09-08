@@ -252,15 +252,34 @@ export async function POST(request: Request) {
       
       console.log('🔥 Incident request - Status: open, Priority:', requestPriority);
       
-      // Fetch SLA based on priority for incidents
+      // Fetch SLA based on priority for incidents (direct database query to avoid SSL issues)
       try {
-        const slaResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/sla-incident/by-priority?priority=${encodeURIComponent(requestPriority)}`);
-        if (slaResponse.ok) {
-          const slaResult = await slaResponse.json();
-          if (slaResult.success && slaResult.data) {
-            slaData = slaResult.data;
-            console.log('📋 Applied SLA for incident:', slaData.name);
+        // Priority mapping to enum values (same as API route)
+        const PRIORITY_MAPPING: Record<string, string> = {
+          'low': 'Low',
+          'medium': 'Medium', 
+          'high': 'High',
+          'top': 'Top'
+        };
+
+        // Map the priority value
+        const mappedPriority = PRIORITY_MAPPING[requestPriority.toLowerCase()] || requestPriority;
+        
+        slaData = await prisma.sLAIncident.findFirst({
+          where: {
+            priority: mappedPriority as any,
+            status: 'active'
+          },
+          orderBy: {
+            createdAt: 'desc'
           }
+        });
+        
+        if (slaData) {
+          console.log('📋 Applied SLA for incident:', slaData.name);
+        } else {
+          console.log('⚠️ No active SLA found for priority:', requestPriority, '(mapped to:', mappedPriority, ')');
+          // You could implement default SLA logic here if needed
         }
       } catch (slaError) {
         console.error('Error fetching incident SLA:', slaError);
@@ -1294,7 +1313,34 @@ export async function GET(request: Request) {
     // If no userId and user is technician and myRequests is not true, show all requests (no userId filter)
 
     if (status) {
-      whereClause.status = status;
+      if (status === 'overdue') {
+        // Handle overdue filtering - open requests that have passed their due date
+        const now = new Date();
+        
+        whereClause.AND = [
+          {
+            // Only open requests
+            status: REQUEST_STATUS.OPEN
+          },
+          {
+            // Must have an SLA due date
+            formData: {
+              path: ['slaDueDate'],
+              not: Prisma.AnyNull
+            }
+          },
+          {
+            // Due date must be in the past
+            formData: {
+              path: ['slaDueDate'],
+              lt: now.toISOString()
+            }
+          }
+        ];
+        console.log('Filtering overdue requests (open status only) with due date before:', now.toISOString());
+      } else {
+        whereClause.status = status;
+      }
     }
 
     if (type) {

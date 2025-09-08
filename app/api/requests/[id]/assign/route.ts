@@ -91,7 +91,7 @@ export async function POST(
       actorType: "user"
     });
 
-    // Send email notifications to both requester and technician
+    // 📧 Send technician assignment notification (assignment indicates status change)
     try {
       // Get the updated request with user data for notifications
       const requestWithUser = await prisma.request.findUnique({
@@ -123,7 +123,9 @@ export async function POST(
       }
 
       if (requestWithUser) {
+        console.log('📧 Sending technician assignment notification...');
         await notifyRequestAssigned(requestWithUser, templateData, technician);
+        console.log('✅ Technician assignment notification sent successfully');
       }
     } catch (notificationError) {
       console.error('Error sending assignment notifications:', notificationError);

@@ -317,7 +317,50 @@ export async function GET(
       }
     });
 
-    console.log(`📊 API: Found ${approvals.length} approvals and ${history.length} history entries for request ${requestId}`);
+    // Fetch clarification messages from approval conversations
+    let clarificationMessages: any[] = [];
+    try {
+      const requestApprovals = await prisma.requestApproval.findMany({
+        where: { requestId: requestId },
+        select: { id: true }
+      });
+
+      if (requestApprovals.length > 0) {
+        const approvalIds = requestApprovals.map(approval => approval.id);
+        
+        clarificationMessages = await prisma.approvalConversation.findMany({
+          where: {
+            approvalId: {
+              in: approvalIds
+            }
+          },
+          include: {
+            author: {
+              select: {
+                id: true,
+                emp_fname: true,
+                emp_lname: true,
+                emp_email: true,
+              }
+            },
+            approval: {
+              select: {
+                level: true,
+                name: true
+              }
+            }
+          },
+          orderBy: {
+            createdAt: 'desc'
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching clarification messages:', error);
+      // Continue without clarification messages if there's an error
+    }
+
+    console.log(`📊 API: Found ${approvals.length} approvals, ${history.length} history entries, and ${clarificationMessages.length} clarification messages for request ${requestId}`);
     
     // Format approvals for frontend (include approverId for client-side filtering)
     const formattedApprovals = approvals.map((approval: any) => ({
@@ -332,6 +375,45 @@ export async function GET(
       sentOn: approval.sentOn ? formatStoredPhilippineTime(approval.sentOn) : null,
       actedOn: approval.actedOn ? formatStoredPhilippineTime(approval.actedOn) : null,
       comments: approval.comments,
+    }));
+
+    // Format clarification messages as history entries
+    const formattedClarificationMessages = await Promise.all(clarificationMessages.map(async (message: any) => {
+      let currentActorName = 'Unknown';
+      
+      if (message.author) {
+        currentActorName = `${message.author.emp_fname} ${message.author.emp_lname}`;
+      } else if (message.authorId) {
+        try {
+          const currentUser = await prisma.users.findUnique({
+            where: { id: message.authorId },
+            select: { 
+              emp_fname: true, 
+              emp_lname: true,
+              emp_email: true 
+            }
+          });
+          
+          if (currentUser) {
+            currentActorName = `${currentUser.emp_fname} ${currentUser.emp_lname}`;
+          }
+        } catch (error) {
+          console.error('Error fetching user info for clarification message:', error);
+        }
+      }
+
+      const approvalLevelInfo = message.approval ? ` (Level ${message.approval.level}: ${message.approval.name})` : '';
+      
+      return {
+        id: `clarification_${message.id}`,
+        action: 'Clarification Message',
+        details: `${message.message}${approvalLevelInfo}`,
+        timestamp: formatStoredPhilippineTime(message.createdAt),
+        actor: currentActorName,
+        actorName: currentActorName,
+        actorType: message.type || 'user',
+        actorId: message.authorId,
+      };
     }));
 
     // Format history for frontend with current user info lookup
@@ -371,6 +453,14 @@ export async function GET(
       };
     }));
 
+    // Merge and sort all history entries by timestamp (most recent first)
+    const allHistoryEntries = [...formattedHistory, ...formattedClarificationMessages];
+    allHistoryEntries.sort((a, b) => {
+      const timeA = new Date(a.timestamp || 0).getTime();
+      const timeB = new Date(b.timestamp || 0).getTime();
+      return timeB - timeA; // Descending order (most recent first)
+    });
+
     // Extract conversations from formData
     const formData = requestData.formData as any;
     const conversations = formData?.conversations || [];
@@ -395,7 +485,7 @@ export async function GET(
       template: templateDetails,
       conversations: conversations,
       approvals: formattedApprovals,
-      history: formattedHistory,
+      history: allHistoryEntries,
     });
 
   } catch (error) {

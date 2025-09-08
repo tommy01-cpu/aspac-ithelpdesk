@@ -19,6 +19,14 @@ const nunitoSans = Nunito_Sans({
 export const metadata: Metadata = {
   title: 'IT Help Desk - ASPAC Philippines',
   description: 'IT Support Portal for ASPAC Philippines',
+  icons: {
+    icon: [
+      { url: '/aspac-logo.png' },
+      { url: '/favicon.ico' },
+    ],
+    shortcut: '/favicon.ico',
+    apple: '/aspac-logo.png',
+  },
 };
 
 export default function RootLayout({
@@ -28,6 +36,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="icon" type="image/png" href="/aspac-logo.png" />
+        <link rel="apple-touch-icon" href="/aspac-logo.png" />
+      </head>
       <body className={`${inter.className} ${nunitoSans.variable}`}>
         <SessionProvider>
           <NotificationProvider>

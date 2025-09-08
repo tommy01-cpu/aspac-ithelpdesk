@@ -45,11 +45,29 @@ export async function GET(request: Request) {
       resolved: 0,
       closed: 0,
       onHold: 0,
+      overdue: 0,
       total: allUserRequests.length
     };
 
+    // Get current time for overdue calculation
+    const now = new Date();
+
     // Process each request and categorize it
     allUserRequests.forEach((request) => {
+      // Check if request is overdue (has SLA due date and it's past, and status is open)
+      let isOverdue = false;
+      if (request.formData && typeof request.formData === 'object' && request.status === 'open') {
+        const formData = request.formData as any;
+        if (formData.slaDueDate) {
+          try {
+            const dueDate = new Date(formData.slaDueDate);
+            isOverdue = dueDate < now;
+          } catch (error) {
+            console.log(`Could not parse due date for request ${request.id}:`, formData.slaDueDate);
+          }
+        }
+      }
+
       // First check if request has any approval with 'for_clarification' status
       const hasForClarification = request.approvals && request.approvals.some(
         approval => approval.status === 'for_clarification'
@@ -59,6 +77,10 @@ export async function GET(request: Request) {
         // If it has for_clarification, it goes in For Clarification category ONLY
         counts.forClarification++;
         console.log(`📝 Request ${request.id} -> For Clarification (has approval with for_clarification status)`);
+      } else if (isOverdue) {
+        // If overdue, count in overdue category
+        counts.overdue++;
+        console.log(`📝 Request ${request.id} -> Overdue (past due date)`);
       } else {
         // Otherwise, categorize by request status
         switch (request.status) {

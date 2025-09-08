@@ -114,7 +114,7 @@ export default function SLAAssignment({ templateType, selectedSLAId, onSLAChange
             <p>Configure priority-based SLA mappings in the admin settings to automatically assign SLAs based on incident priority levels.</p>
             <div className="mt-3 p-3 bg-blue-100 rounded-lg">
               <p className="text-xs text-blue-700">
-                <strong>How it works:</strong> When an incident is created with a specific priority (Low, Medium, High, Critical), 
+                <strong>How it works:</strong> When an incident is created with a specific priority (Low, Medium, High, Top), 
                 the system automatically assigns the corresponding SLA incident configuration.
               </p>
             </div>
