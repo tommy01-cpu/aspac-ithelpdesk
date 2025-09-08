@@ -6,7 +6,6 @@ import {
   getTemplateIdByType, 
   type TemplateType 
 } from '@/lib/database-email-templates';
-// import { processImagesForEmailAuto } from '@/lib/email-image-processor-enhanced'; // DISABLED: Keep base64 images in emails
 
 export async function POST(request: NextRequest) {
   try {
