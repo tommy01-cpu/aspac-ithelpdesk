@@ -13,7 +13,6 @@ import {
   sendSLAEscalationEmail,
   sendRequestClosedCCEmail
 } from '@/lib/database-email-templates';
-// import { processImagesForEmailAuto } from './email-image-processor-enhanced'; // DISABLED: Keep base64 images in emails
 import { formatStatusForDisplay } from './status-colors';
 
 // Helper function to format timestamp for notifications
