@@ -10,7 +10,7 @@
 ```
 
 ## Priority Values
-- `Low` | `Medium` | `High` | `Critical`
+- `Low` | `Medium` | `High` | `Top`
 
 ## Request Types  
 - `Service` | `Incident` | `Change` | `Problem`

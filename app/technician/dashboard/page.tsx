@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
+import { SessionWrapper } from '@/components/session-wrapper';
 import {
   Tabs,
   TabsContent,
@@ -105,7 +106,7 @@ interface QuickAssignRequest {
 }
 
 export default function DashboardPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const { toast } = useToast();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [technicianStats, setTechnicianStats] = useState<TechnicianStats[]>([]);
@@ -379,18 +380,37 @@ export default function DashboardPage() {
     }
   };
 
-  if (!session) {
-    return <div>Please log in to view the dashboard.</div>;
+  if (status === "loading" || loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <p className="text-sm text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "unauthenticated" || !session) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">Authentication Required</h2>
+          <p className="text-sm text-gray-600">Please log in to view the dashboard.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="p-4 space-y-4">
-      {/* Enhanced Header with Quick Actions */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-gray-900">Dashboard</h1>
-          <p className="text-xs text-gray-600">Welcome back, {session.user.name}</p>
-        </div>
+    <SessionWrapper>
+      <div className="p-4 space-y-4">
+        {/* Enhanced Header with Quick Actions */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">Dashboard</h1>
+            <p className="text-xs text-gray-600">Welcome back, {session.user.name}</p>
+          </div>
         <div className="flex items-center gap-2">
           {/* Auto-refresh toggle */}
           <Button
@@ -914,5 +934,6 @@ export default function DashboardPage() {
         </TabsContent>
       </Tabs>
     </div>
+    </SessionWrapper>
   );
 }

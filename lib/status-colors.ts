@@ -36,8 +36,7 @@ export type Priority =
   | 'low' 
   | 'medium' 
   | 'high' 
-  | 'top' 
-  | 'critical';
+  | 'top';
 
 /**
  * Get standardized status colors based on your requirements:
@@ -132,7 +131,6 @@ export const getApprovalStatusColor = (status: string): string => {
 export const getPriorityColor = (priority: string): string => {
   switch (priority?.toLowerCase().trim()) {
     case 'top':
-    case 'critical':
       return 'bg-red-100 text-red-800 border-red-200 status-badge';
     
     case 'high':
@@ -238,7 +236,7 @@ export const isValidApprovalStatus = (status: string): boolean => {
 };
 
 export const isValidPriority = (priority: string): boolean => {
-  const validPriorities: Priority[] = ['low', 'medium', 'high', 'top', 'critical'];
+  const validPriorities: Priority[] = ['low', 'medium', 'high', 'top'];
   return validPriorities.includes(priority.toLowerCase().trim() as Priority);
 };
 

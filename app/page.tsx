@@ -375,37 +375,42 @@ export default function Home() {
         }
         .search-container {
           position: relative;
-          z-index: 50;
+          z-index: 10;
         }
         .search-dropdown {
-          z-index: 9999 !important;
+          z-index: 20 !important;
         }
       `}</style>
-      <div className="bg-white w-full">
+      <div className="bg-white w-full min-h-screen">
         {/* Hero Section */}
-        <section className="relative h-[60vh] sm:h-[60vh] md:h-[70vh] overflow-hidden">
+        <section className="relative h-[35vh] sm:h-[40vh] md:h-[45vh]">
+          {/* Gradient Background as fallback */}
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-700 to-slate-900"></div>
+          
           <div 
-            className="absolute inset-0 bg-cover bg-center"
+            className="absolute inset-0 bg-cover bg-center opacity-60"
             style={{ 
               backgroundImage: "url('/ssp-aspac.png')",
-              backgroundSize: 'contain',
-              backgroundPosition: 'top',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center center',
               backgroundRepeat: 'no-repeat'
             }}
           />
+          {/* Dark overlay to make text more readable */}
+          <div className="absolute inset-0 bg-black/30"></div>
       
           
-          <div className="relative h-full flex flex-col">
-            {/* Title and Search - Moved upward for better centering */}
-            <div className="flex-1 flex flex-col mt-8 sm:mt-16 items-center px-4 sm:px-6">
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white mb-4 sm:mb-6 text-center tracking-tight">
+          <div className="relative h-full flex flex-col z-10">
+            {/* Title and Search - Perfectly centered */}
+            <div className="flex-1 flex flex-col justify-center items-center px-4 sm:px-6">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white mb-2 sm:mb-4 text-center tracking-tight drop-shadow-lg">
                 How can we
                 <span className="text-orange-400"> help </span>
                 you?
               </h1>
               
               {/* Search Bar */}
-              <div className="w-full max-w-2xl relative mb-8 sm:mb-12 search-container">
+              <div className="w-full max-w-2xl relative mb-6 sm:mb-6 search-container z-50">
                 <form onSubmit={handleSearchSubmit} className="relative">
                   <Input
                     type="text"
@@ -428,7 +433,7 @@ export default function Home() {
 
                 {/* Search Results Dropdown */}
                 {showSearchResults && (searchResults.length > 0 || searchLoading) && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-2xl border border-gray-200 max-h-64 sm:max-h-80 overflow-y-auto z-50">
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-2xl border border-gray-200 z-[9999]">
                     {searchLoading ? (
                       <div className="p-3 sm:p-4 text-center">
                         <div className="animate-spin rounded-full h-5 w-5 sm:h-6 sm:w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
@@ -436,11 +441,13 @@ export default function Home() {
                       </div>
                     ) : (
                       <>
-                        <div className="p-2 sm:p-3 border-b border-gray-100 bg-gray-50">
+                        {/* Header - Always visible */}
+                        <div className="p-2 sm:p-3 border-b border-gray-100 bg-gray-50 rounded-t-lg">
                           <p className="text-xs sm:text-sm font-medium text-gray-700">
                             Found {searchResults.length} template{searchResults.length !== 1 ? 's' : ''}
                           </p>
                         </div>
+                        {/* Scrollable Results List */}
                         <div className="max-h-48 sm:max-h-64 overflow-y-auto">
                           {searchResults.map((result) => (
                             <div
@@ -480,7 +487,8 @@ export default function Home() {
                             </div>
                           ))}
                         </div>
-                        <div className="p-2 sm:p-3 bg-blue-50 text-center border-t border-blue-100">
+                        {/* Footer - Always visible */}
+                        <div className="p-2 sm:p-3 bg-blue-50 text-center border-t border-blue-100 rounded-b-lg">
                           <p className="text-xs text-blue-600 font-medium">
                             💡 Click on a template to create a request
                           </p>
@@ -493,7 +501,7 @@ export default function Home() {
             </div>
 
             {/* Action Cards - Repositioned for mobile */}
-            <div className="hidden sm:block absolute left-8 top-1/3 transform -translate-y-1/2 space-y-3 w-64">
+            <div className="hidden sm:block absolute left-8 top-1/2 transform -translate-y-1/2 space-y-3 w-64">
               {/* Report an Issue */}
               <Card 
                 className="bg-slate-800/80 backdrop-blur-lg border-slate-700 hover:bg-slate-800/90 transition-all duration-200 cursor-pointer group"
@@ -545,71 +553,75 @@ export default function Home() {
                 </Card>
               )}
             </div>
+          </div>
+        </section>
 
-            {/* Mobile Action Cards - Show below search on mobile */}
-            <div className="sm:hidden px-4 pb-4 space-y-2">
-              {/* Report an Issue */}
+        {/* Mobile Action Cards Section - Below hero, above dashboard */}
+        <section className="sm:hidden bg-gradient-to-br from-slate-800 via-slate-700 to-slate-900 py-6">
+          <div className="px-4 space-y-3">
+            {/* Report an Issue */}
+            <Card 
+              className="bg-slate-800/80 backdrop-blur-lg border-slate-700 hover:bg-slate-800/90 transition-all duration-200 cursor-pointer group"
+              onClick={() => router.push('/requests/template?tab=incident')}
+            >
+              <CardContent className="p-4 flex items-center space-x-3">
+                <div className="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center">
+                  <AlertCircle className="h-5 w-5 text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-white font-semibold text-sm">Report an Issue</h3>
+                  <p className="text-slate-300 text-xs">Submit a technical problem or bug report</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Request a Service */}
+            <Card 
+              className="bg-slate-800/80 backdrop-blur-lg border-slate-700 hover:bg-slate-800/90 transition-all duration-200 cursor-pointer group"
+              onClick={() => router.push('/requests/template?tab=service')}
+            >
+              <CardContent className="p-4 flex items-center space-x-3">
+                <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                  <Plus className="h-5 w-5 text-blue-400" />
+                </div>
+                <div>
+                  <h3 className="text-white font-semibold text-sm">Request a Service</h3>
+                  <p className="text-slate-300 text-xs">Request new software, hardware, or access</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* For Approvals - only shown when there are pending approvals */}
+            {approvalCount > 0 && (
               <Card 
-                className="bg-slate-800/80 backdrop-blur-lg border-slate-700 hover:bg-slate-800/90 transition-all duration-200 cursor-pointer group"
-                onClick={() => router.push('/requests/template?tab=incident')}
+                className="bg-slate-800/80 backdrop-blur-lg border-slate-700 hover:bg-slate-800/90 transition-all duration-200 cursor-pointer group relative"
+                onClick={navigateToFirstApproval}
               >
-                <CardContent className="p-3 flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-red-500/20 rounded-lg flex items-center justify-center">
-                    <AlertCircle className="h-4 w-4 text-red-400" />
+                <CardContent className="p-4 flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-orange-500/20 rounded-lg flex items-center justify-center">
+                    <CheckSquare className="h-5 w-5 text-orange-400" />
                   </div>
                   <div>
-                    <h3 className="text-white font-semibold text-sm">Report an Issue</h3>
+                    <h3 className="text-white font-semibold text-sm">For Approvals</h3>
+                    <p className="text-slate-300 text-xs">Review {approvalCount} request{approvalCount !== 1 ? 's' : ''}</p>
                   </div>
+                  <Badge className="absolute -top-2 -right-2 bg-red-500 text-white text-xs">
+                    {approvalCount}
+                  </Badge>
                 </CardContent>
               </Card>
-
-              {/* Request a Service */}
-              <Card 
-                className="bg-slate-800/80 backdrop-blur-lg border-slate-700 hover:bg-slate-800/90 transition-all duration-200 cursor-pointer group"
-                onClick={() => router.push('/requests/template?tab=service')}
-              >
-                <CardContent className="p-3 flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                    <Plus className="h-4 w-4 text-blue-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-white font-semibold text-sm">Request a Service</h3>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* For Approvals - only shown when there are pending approvals */}
-              {approvalCount > 0 && (
-                <Card 
-                  className="bg-slate-800/80 backdrop-blur-lg border-slate-700 hover:bg-slate-800/90 transition-all duration-200 cursor-pointer group relative"
-                  onClick={navigateToFirstApproval}
-                >
-                  <CardContent className="p-3 flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-orange-500/20 rounded-lg flex items-center justify-center">
-                      <CheckSquare className="h-4 w-4 text-orange-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-white font-semibold text-sm">For Approvals</h3>
-                      <p className="text-slate-300 text-xs">Review {approvalCount} request{approvalCount !== 1 ? 's' : ''}</p>
-                    </div>
-                    <Badge className="absolute -top-1 -right-1 bg-red-500 text-white text-xs">
-                      {approvalCount}
-                    </Badge>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
+            )}
           </div>
         </section>
 
         {/* Dashboard Section - Now in its own white background section */}
-        <section className="bg-white pt-4 pb-12">
+        <section className="bg-white pt-12">
           <div className="w-full px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 sm:gap-4 lg:gap-6">
               
               {/* My Request Summary */}
-              <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100">
-                <div className="text-center mb-3 sm:mb-4">
+              <div className="bg-white rounded-2xl p-3 sm:p-5 shadow-lg border border-gray-100">
+                <div className="text-center mb-2 sm:mb-4">
                   <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-1">My Request Summary</h2>
                   <p className="text-slate-600 text-xs">Overview of your current requests</p>
                 </div>
@@ -635,34 +647,34 @@ export default function Home() {
               </div>
 
               {/* Announcements */}
-              <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100">
-                <div className="text-center mb-3 sm:mb-4">
+              <div className="bg-white rounded-2xl p-3 sm:p-5 shadow-lg border border-gray-100">
+                <div className="text-center mb-2 sm:mb-4">
                   <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-1">
                     Announcements
                   </h2>
                 </div>
-                <div className="text-center py-4">
+                <div className="text-center py-1">
                   <p className="text-slate-600 text-sm">There are no new announcements today.</p>
                 </div>
               </div>
 
               {/* Bible Verse of the Day */}
-              <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100">
-                <div className="text-center mb-3 sm:mb-4">
+              <div className="bg-white rounded-2xl p-3 sm:p-5 shadow-lg border border-gray-100">
+                <div className="text-center mb-2 sm:mb-4">
                   <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-1">Today's Inspiration</h2>
                 </div>
                 <div className="text-center">
                   {verseOfTheDay.loading ? (
-                    <div className="py-6 sm:py-8">
+                    <div className="py-3 sm:py-6">
                       <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
                       <p className="text-slate-600 text-xs sm:text-sm">Loading verse...</p>
                     </div>
                   ) : (
                     <>
-                      <blockquote className="text-slate-700 text-xs sm:text-sm mb-3 sm:mb-4 leading-relaxed italic">
+                      <blockquote className="text-slate-700 text-xs sm:text-sm mb-2 sm:mb-3 leading-relaxed italic">
                         "{verseOfTheDay.text}"
                       </blockquote>
-                      <cite className="text-xs font-semibold text-slate-600 mb-3 sm:mb-4 block">
+                      <cite className="text-xs font-semibold text-slate-600 mb-1 sm:mb-3 block">
                         {verseOfTheDay.reference}
                       </cite>
                      

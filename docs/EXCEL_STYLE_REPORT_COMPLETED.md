@@ -57,7 +57,7 @@ The table now displays the exact columns from your reference image:
 | Request Type | request.requestType | Service, Incident, etc. |
 | Approval Status | request.approvalStatus | Approval workflow status |
 | Request Status | request.status | Current request status |
-| Priority | request.priority | Low, Medium, High, Critical |
+| Priority | request.priority | Low, Medium, High, Top |
 | Subject | request.subject | Request title/subject |
 | Description | request.description | Full request details |
 | Service Category | request.serviceCategory | IT service category |

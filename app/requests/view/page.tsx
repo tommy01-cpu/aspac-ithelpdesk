@@ -522,16 +522,16 @@ export default function MyRequestsPage() {
 
   return (
     <SessionWrapper>
-      <div className="p-3 sm:p-4 lg:p-6">
+      <div className="p-2 sm:p-4 lg:p-6">
         <div className="lg:zoom-90">
-          <div className="flex flex-col gap-4 sm:gap-6">
+          <div className="flex flex-col gap-3 sm:gap-6">
             {/* Page Title and Actions */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
               <div>
-                <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                <h1 className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
                   My Requests
                 </h1>
-                <p className="text-sm text-slate-600">View and manage your requests</p>
+                <p className="text-xs sm:text-sm text-slate-600">View and manage your requests</p>
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -548,7 +548,7 @@ export default function MyRequestsPage() {
               {/* Filters - Fixed height */}
               <div className="flex-shrink-0">
                 {/* Standard Filters */}
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2">
                   {/* Department Head Filters + Search Row */}
                   <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                     {/* Department Head Filters - Responsive */}
@@ -642,9 +642,9 @@ export default function MyRequestsPage() {
                 </div>
               </div>
 
-              {/* Requests Table - Dynamic height with responsive layout */}
+              {/* Requests Table - Fixed height to ensure scrolling */}
               <div className="bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg overflow-hidden" 
-                   style={{ height: 'calc(100vh - 230px)' }}>
+                   style={{ height: '500px', minHeight: '400px', maxHeight: '500px' }}>
                 <div className="h-full flex flex-col">
                   {filteredRequests.length === 0 ? (
                     <div className="flex-1 flex items-center justify-center p-6 sm:p-12">
@@ -662,7 +662,7 @@ export default function MyRequestsPage() {
                   ) : (
                     <>
                       {/* Desktop Table View - Hidden on mobile */}
-                      <div className="hidden lg:block h-full flex-col">
+                      <div className="hidden lg:flex lg:flex-col h-full">
                         {/* Fixed Header */}
                         <div className="bg-slate-50 border-b border-slate-200 flex-shrink-0">
                           <div
@@ -685,7 +685,7 @@ export default function MyRequestsPage() {
                         </div>
 
                         {/* Scrollable Content */}
-                        <div className="flex-1 overflow-y-auto">
+                        <div className="flex-1 overflow-y-auto reports-table-scroll">
                           <div className="divide-y divide-slate-200">
                             {filteredRequests.map((request) => {
                               const { status: currentApprovalStatus } =
@@ -844,7 +844,7 @@ export default function MyRequestsPage() {
                       </div>
 
                       {/* Mobile Card View - Visible on mobile and tablet */}
-                      <div className="lg:hidden flex-1 overflow-y-auto">
+                      <div className="lg:hidden flex-1 overflow-y-auto reports-table-scroll p-2 space-y-2">
                         <div className="p-2 space-y-3">
                           {filteredRequests.map((request) => {
                             const { status: currentApprovalStatus } =

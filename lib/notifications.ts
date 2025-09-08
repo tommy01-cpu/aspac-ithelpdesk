@@ -741,7 +741,7 @@ export const sendApprovalOutcomeNotification = async (
     // Email variables - Include comments for both approved and rejected requests
     const emailVariables: RequestEmailVariables = {
       Request_ID: requestId.toString(),
-      Request_Status: formatStatusForDisplay(action === 'approved' ? 'approved' : 'rejected'),
+      Request_Status: formatStatusForDisplay(action === 'approved' ? 'approved' : 'closed'), // Show 'closed' instead of 'rejected' in email
       Request_Subject: requestSubject,
       Request_Description: requestDescription,
       Requester_Name: requesterName,
@@ -750,7 +750,7 @@ export const sendApprovalOutcomeNotification = async (
       Approver_Name: '', // TODO: Add approver name if available
       Approver_Email: '', // TODO: Add approver email if available
       Approval_Comments: comments || '',
-      Request_Approval_Status: action === 'approved' ? 'Approved' : 'Rejected', // Added for template compatibility
+      Request_Approval_Status: action === 'approved' ? 'Approved' : 'Rejected', // Keep this as approval-specific status
       Request_Approval_Comment: comments || '', // Include comments for both approved and rejected requests
       Clarification: '', // Not applicable for approval outcome
       Request_URL: requestUrl,
