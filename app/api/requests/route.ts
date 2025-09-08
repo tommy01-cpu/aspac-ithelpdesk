@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { getDatabaseTimestamp } from '@/lib/server-time-utils';
 import { addHistory } from '@/lib/history';
