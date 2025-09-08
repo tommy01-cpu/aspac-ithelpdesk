@@ -13,7 +13,7 @@ import {
   sendSLAEscalationEmail,
   sendRequestClosedCCEmail
 } from '@/lib/database-email-templates';
-import { processImagesForEmailAuto } from './email-image-processor-enhanced';
+// import { processImagesForEmailAuto } from './email-image-processor-enhanced'; // DISABLED: Keep base64 images in emails
 import { formatStatusForDisplay } from './status-colors';
 
 // Helper function to format timestamp for notifications
@@ -203,7 +203,7 @@ export const notifyRequestCreated = async (requestData: any, templateData: any) 
     const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
-    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    const requestDescription = rawRequestDescription; // Keep base64 images in emails
     
     const emailsToNotify = (() => {
       // Use field ID '10' as the primary source for email notifications
@@ -298,7 +298,7 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
     const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
-    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    const requestDescription = rawRequestDescription; // Keep base64 images in emails
     
     const approverEmail = approverData.emp_email;
     const approverName = `${approverData.emp_fname} ${approverData.emp_lname}`.trim();
@@ -375,7 +375,7 @@ export const notifyRequestApprovedRejected = async (
     const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
-    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    const requestDescription = rawRequestDescription; // Keep base64 images in emails
 
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();
@@ -437,7 +437,7 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
     const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
-    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    const requestDescription = rawRequestDescription; // Keep base64 images in emails
     
     const technicianName = `${technicianData.emp_fname} ${technicianData.emp_lname}`.trim();
     const technicianEmail = technicianData.emp_email;
@@ -537,7 +537,7 @@ export const notifyRequestResolved = async (
     const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
-    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    const requestDescription = rawRequestDescription; // Keep base64 images in emails
     
     const emailsToNotify = (() => {
       // Check multiple possible field names for email notifications
@@ -628,7 +628,7 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
     const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
     
     // Process images in the description for email compatibility
-    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    const requestDescription = rawRequestDescription; // Keep base64 images in emails
     
     const technicianName = `${technicianData.emp_fname} ${technicianData.emp_lname}`.trim();
     const technicianEmail = technicianData.emp_email;
@@ -732,7 +732,7 @@ export const sendApprovalOutcomeNotification = async (
 
     // Process request description
     const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
-    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    const requestDescription = rawRequestDescription; // Keep base64 images in emails
 
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();
@@ -838,7 +838,7 @@ export const sendClarificationRequestNotification = async (
     
     // Process request description
     const rawRequestDescription = (requestData.formData as any)?.description || (requestData.formData as any)?.details || (requestData.formData as any)?.['9'] || 'No description provided';
-    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    const requestDescription = rawRequestDescription; // Keep base64 images in emails
 
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();
@@ -934,7 +934,7 @@ export const notifyNewApprover = async (
     // Extract request details
     const requestSubject = (requestData.formData as any)?.['8'] || `Request #${requestId}`;
     const rawRequestDescription = (requestData.formData as any)?.['9'] || 'No description provided';
-    const { processedHtml: requestDescription } = await processImagesForEmailAuto(rawRequestDescription, requestId);
+    const requestDescription = rawRequestDescription; // Keep base64 images in emails
 
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
@@ -119,27 +119,104 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
     setEditorKey(prev => prev + 1);
   }, [placeholder]);
 
-  // Enhanced modules with more formatting options and font size controls
-  const modules = {
-    toolbar: [
-      [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
-      [{ 'font': [] }],
-      [{ 'size': ['small', false, 'large', 'huge'] }],
-      ['bold', 'italic', 'underline', 'strike'],
-      [{ 'color': [] }, { 'background': [] }],
-      [{ 'script': 'sub'}, { 'script': 'super' }],
-      [{ 'align': [] }],
-      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-      [{ 'indent': '-1'}, { 'indent': '+1' }],
-      ['blockquote', 'code-block'],
-      ['link', 'image', 'video'],
-      [{ 'direction': 'rtl' }],
-      ['clean']
-    ],
+  // Custom image handler for ReactQuill - converts to base64 for storage in attachments table
+  const imageHandler = useCallback(() => {
+    const input = document.createElement('input');
+    input.setAttribute('type', 'file');
+    input.setAttribute('accept', 'image/*');
+    input.click();
+
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      // Check file size (max 5MB for rich text images)
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: "Image too large",
+          description: "Please select an image smaller than 5MB",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      try {
+        // Convert image to base64 and store in attachments table as binary
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const base64Result = e.target?.result as string;
+          
+          // Create form data for upload
+          const formData = new FormData();
+          formData.append('files', file);
+          formData.append('type', 'inline-image'); // Mark as inline image
+
+          const response = await fetch('/api/attachments', {
+            method: 'POST',
+            body: formData
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            const uploadedFile = result.files[0];
+            
+            // Get the Quill editor instance
+            const quill = (document.querySelector(`[data-quill-key="quill-${editorKey}-${placeholder}"] .ql-editor`) as any)?.__quill;
+            if (quill) {
+              const range = quill.getSelection();
+              
+              // Use base64 data URL directly in the editor (stored in attachments table as binary)
+              quill.insertEmbed(range?.index || 0, 'image', base64Result);
+              quill.setSelection((range?.index || 0) + 1);
+            }
+
+            toast({
+              title: "Image uploaded",
+              description: `${file.name} has been stored in attachments database`,
+            });
+          } else {
+            throw new Error('Upload failed');
+          }
+        };
+        
+        reader.readAsDataURL(file);
+      } catch (error) {
+        console.error('Error uploading image:', error);
+        toast({
+          title: "Upload failed",
+          description: "Failed to upload image. Please try again.",
+          variant: "destructive"
+        });
+      }
+    };
+  }, [editorKey, placeholder]);
+
+  // Enhanced modules with custom image handler
+  const modules = useMemo(() => ({
+    toolbar: {
+      container: [
+        [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+        [{ 'font': [] }],
+        [{ 'size': ['small', false, 'large', 'huge'] }],
+        ['bold', 'italic', 'underline', 'strike'],
+        [{ 'color': [] }, { 'background': [] }],
+        [{ 'script': 'sub'}, { 'script': 'super' }],
+        [{ 'align': [] }],
+        [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+        [{ 'indent': '-1'}, { 'indent': '+1' }],
+        ['blockquote', 'code-block'],
+        ['link', 'image', 'video'],
+        [{ 'direction': 'rtl' }],
+        ['clean']
+      ],
+      handlers: disabled ? {} : {
+        image: imageHandler
+      }
+    },
     clipboard: {
       matchVisual: false,
     }
-  };
+  }), [imageHandler, disabled]);
 
   const formats = [
     'header', 'font', 'size', 'bold', 'italic', 'underline', 'strike',
@@ -151,12 +228,13 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
     <div className={`rich-text-editor ${disabled ? 'disabled' : ''} ${className}`}>
       <ReactQuill
         key={`quill-${editorKey}-${placeholder}`}
+        data-quill-key={`quill-${editorKey}-${placeholder}`}
         theme="snow"
         value={value}
         onChange={onChange}
         placeholder={placeholder}
         readOnly={disabled}
-        modules={disabled ? { toolbar: false } : modules}
+        modules={modules}
         formats={formats}
         style={{
           backgroundColor: disabled ? '#f8fafc' : 'white',

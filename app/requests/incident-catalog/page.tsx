@@ -197,47 +197,47 @@ export default function IncidentCatalogTab() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-3 sm:p-4 lg:p-6">
       {/* Header Section */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">Incident Catalog</h1>
-        <p className="text-slate-600 mb-6">Browse and request available Incident</p>
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Incident Catalog</h1>
+        <p className="text-sm sm:text-base text-slate-600 mb-4 sm:mb-6">Browse and request available Incident</p>
         
         {/* Search */}
-        <div className="flex items-center gap-4 mb-4">
-          <div className="flex-1 max-w-lg">
+        <div className="flex items-center gap-2 sm:gap-4 mb-4">
+          <div className="flex-1 max-w-full sm:max-w-lg">
             <div className="relative search-container">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 h-5 w-5" />
               <Input
-                placeholder="Search categories, incidents & templates..."
+                placeholder="Search incidents..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full h-12 pl-12 pr-4 text-base border-2 border-slate-200 rounded-xl shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200"
+                className="w-full h-10 sm:h-12 pl-10 sm:pl-12 pr-3 sm:pr-4 text-sm sm:text-base border-2 border-slate-200 rounded-lg sm:rounded-xl shadow-sm focus:border-blue-500 focus:ring-2 sm:focus:ring-4 focus:ring-blue-100 transition-all duration-200"
               />
               
               {/* Search Dropdown */}
               {showDropdown && searchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 bg-white border border-slate-200/50 rounded-xl shadow-2xl mt-2 max-h-96 overflow-hidden z-[9999] backdrop-blur-sm">
-                  <div className="p-4 border-b border-gray-100 bg-gradient-to-r from-red-50 to-orange-50">
-                    <p className="text-sm font-semibold text-gray-800">
+                <div className="absolute top-full left-0 right-0 bg-white border border-slate-200/50 rounded-lg sm:rounded-xl shadow-2xl mt-2 max-h-80 sm:max-h-96 overflow-hidden z-[9999] backdrop-blur-sm">
+                  <div className="p-3 sm:p-4 border-b border-gray-100 bg-gradient-to-r from-red-50 to-orange-50">
+                    <p className="text-xs sm:text-sm font-semibold text-gray-800">
                       🚨 Found {searchResults.length} incident template{searchResults.length !== 1 ? 's' : ''}
                     </p>
                   </div>
-                  <div className="max-h-80 overflow-y-auto">
+                  <div className="max-h-60 sm:max-h-80 overflow-y-auto">
                     {searchResults.map((result, index) => (
                       <div
                         key={`${result.type}-${result.id}`}
-                        className="p-4 hover:bg-gradient-to-r hover:from-red-50 hover:to-orange-50 cursor-pointer border-b border-slate-100 last:border-b-0 transition-all duration-200 group"
+                        className="p-3 sm:p-4 hover:bg-gradient-to-r hover:from-red-50 hover:to-orange-50 cursor-pointer border-b border-slate-100 last:border-b-0 transition-all duration-200 group"
                         onClick={() => handleSearchResultClick(result)}
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 sm:gap-3">
                           <div className="flex-grow min-w-0">
                             {result.categoryName && (
                               <div className="text-xs text-slate-600 font-medium truncate mb-1">Category: {result.categoryName}</div>
                             )}
-                            <div className="font-medium text-slate-900 truncate mt-1 group-hover:text-red-700 transition-colors">Template name: {result.name}</div>
+                            <div className="text-sm sm:font-medium text-slate-900 truncate mt-1 group-hover:text-red-700 transition-colors">Template: {result.name}</div>
                             {result.description && (
-                              <div className="text-sm text-slate-500 truncate mt-1 group-hover:text-slate-600 transition-colors">Description: {result.description}</div>
+                              <div className="text-xs sm:text-sm text-slate-500 truncate mt-1 group-hover:text-slate-600 transition-colors line-clamp-1">Description: {result.description}</div>
                             )}
                           </div>
                           <div className="flex-shrink-0">
@@ -247,9 +247,9 @@ export default function IncidentCatalogTab() {
                       </div>
                     ))}
                   </div>
-                  <div className="p-3 bg-gradient-to-r from-red-50 to-orange-50 text-center border-t border-red-100">
+                  <div className="p-2 sm:p-3 bg-gradient-to-r from-red-50 to-orange-50 text-center border-t border-red-100">
                     <p className="text-xs text-red-700 font-medium">
-                      💡 Click on any template to report the incident
+                      💡 Tap to report incident
                     </p>
                   </div>
                 </div>
@@ -266,21 +266,21 @@ export default function IncidentCatalogTab() {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
         ) : (!Array.isArray(categories) || categories.length === 0) ? (
-          <div className="text-center py-12 bg-white rounded-lg border border-slate-200">
-            <FolderOpen className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-            <h3 className="text-lg font-medium text-slate-900 mb-2">No incident categories found</h3>
-            <p className="text-slate-500">Try adjusting your search terms</p>
+          <div className="text-center py-8 sm:py-12 bg-white rounded-lg border border-slate-200 mx-2 sm:mx-0">
+            <FolderOpen className="w-8 sm:w-12 h-8 sm:h-12 mx-auto mb-3 sm:mb-4 text-slate-300" />
+            <h3 className="text-base sm:text-lg font-medium text-slate-900 mb-2">No incident categories found</h3>
+            <p className="text-sm sm:text-base text-slate-500">Try adjusting your search terms</p>
           </div>
         ) : (
           (Array.isArray(categories) ? categories : []).map((category) => (
             <div key={category.id} className="bg-white rounded-lg border border-slate-200 shadow-sm">
               {/* Category Header */}
               <button
-                className="w-full p-6 text-left hover:bg-slate-50 transition-colors flex items-center justify-between"
+                className="w-full p-4 sm:p-6 text-left hover:bg-slate-50 transition-colors flex items-center justify-between"
                 onClick={() => handleToggleCategory(category.id)}
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center p-2">
+                <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-lg flex items-center justify-center p-2 flex-shrink-0">
                     {category.icon ? (
                       <img 
                         src={`/serviceicons/${category.icon}`} 
@@ -288,23 +288,25 @@ export default function IncidentCatalogTab() {
                         className="w-full h-full object-contain"
                       />
                     ) : (
-                      <AlertTriangle className="w-6 h-6 text-blue-600" />
+                      <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
                     )}
                   </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-1">
-                      <h3 className="text-lg font-semibold text-slate-900">{category.name}</h3>
-                      <Badge variant="outline" className="text-xs">
-                        {category.incidentCount || 0} {category.incidentCount === 1 ? 'incident type' : 'incident types'}
-                      </Badge>
-                      {category.isActive && (
-                        <Badge className="bg-green-100 text-green-800 text-xs status-badge">Active</Badge>
-                      )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 mb-1">
+                      <h3 className="text-base sm:text-lg font-semibold text-slate-900 truncate">{category.name}</h3>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="outline" className="text-xs">
+                          {category.incidentCount || 0} {category.incidentCount === 1 ? 'incident type' : 'incident types'}
+                        </Badge>
+                        {category.isActive && (
+                          <Badge className="bg-green-100 text-green-800 text-xs status-badge">Active</Badge>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-slate-600">{category.description || 'No description available'}</p>
+                    <p className="text-slate-600 text-xs sm:text-sm line-clamp-2">{category.description || 'No description available'}</p>
                   </div>
                 </div>
-                <div className="flex items-center">
+                <div className="flex items-center flex-shrink-0">
                   {expandedCategory === category.id ? (
                     <ChevronUp className="w-5 h-5 text-slate-400" />
                   ) : (
@@ -316,19 +318,19 @@ export default function IncidentCatalogTab() {
               {/* Expanded Incidents */}
               {expandedCategory === category.id && (
                 <div className="border-t border-slate-200 bg-slate-50">
-                  <div className="p-6">
-                    <h4 className="font-medium text-slate-900 mb-4">
+                  <div className="p-4 sm:p-6">
+                    <h4 className="font-medium text-slate-900 mb-3 sm:mb-4 text-sm sm:text-base">
                       Available Incident Types ({(categoryIncidents[category.id] || []).length})
                     </h4>
                     
                     {(categoryIncidents[category.id] || []).length > 0 ? (
                       <div className="space-y-3">
                         {(categoryIncidents[category.id] || []).map((incident) => (
-                          <div key={incident.id} className="bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50 transition-colors">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4 flex-1">
+                          <div key={incident.id} className="bg-white rounded-lg border border-slate-200 p-3 sm:p-4 hover:bg-slate-50 transition-colors">
+                            <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row">
+                              <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0 w-full sm:w-auto">
                                 {/* Incident Icon */}
-                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                   {incident.template?.icon ? (
                                     <img 
                                       src={`/serviceicons/${incident.template.icon}`} 
@@ -336,26 +338,26 @@ export default function IncidentCatalogTab() {
                                       className="w-full h-full object-contain"
                                     />
                                   ) : (
-                                    <Tags className="w-5 h-5 text-blue-600" />
+                                    <Tags className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
                                   )}
                                 </div>
 
                                 {/* Incident Details */}
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <h5 className="font-medium text-slate-900">{incident.name}</h5>
+                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mb-1">
+                                    <h5 className="font-medium text-slate-900 text-sm sm:text-base truncate">{incident.name}</h5>
                                     {!incident.isActive && (
-                                      <Badge variant="outline" className="text-xs text-slate-500">
+                                      <Badge variant="outline" className="text-xs text-slate-500 w-fit">
                                         Unavailable
                                       </Badge>
                                     )}
                                   </div>
-                                  <p className="text-sm text-slate-600 mb-2">
+                                  <p className="text-xs sm:text-sm text-slate-600 mb-2 line-clamp-2">
                                     {incident.description || 'No description available'}
                                   </p>
                                   
                                   {/* Incident Metadata */}
-                                  <div className="flex items-center gap-4 text-xs text-slate-500">
+                                  <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-slate-500">
                                     {incident.avgResolutionTime && (
                                       <div className="flex items-center gap-1">
                                         <Clock className="w-3 h-3" />
@@ -368,10 +370,10 @@ export default function IncidentCatalogTab() {
                               </div>
 
                               {/* Action Buttons */}
-                              <div className="flex items-center gap-2 ml-4">
+                              <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-4">
                                 <Button
                                   size="sm"
-                                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                                  className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto text-xs sm:text-sm"
                                   onClick={() => handleReportIncident(incident)}
                                   disabled={!incident.isActive}
                                 >
@@ -383,9 +385,9 @@ export default function IncidentCatalogTab() {
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center py-8 text-slate-500">
-                        <FolderOpen className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                        <p>No incident types available in this category</p>
+                      <div className="text-center py-6 sm:py-8 text-slate-500">
+                        <FolderOpen className="w-6 sm:w-8 h-6 sm:h-8 mx-auto mb-2 text-slate-300" />
+                        <p className="text-sm sm:text-base">No incident types available in this category</p>
                       </div>
                     )}
                   </div>

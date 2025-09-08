@@ -70,15 +70,24 @@ class SafeApprovalReminderService {
     try {
       console.log('📧 Calling approval reminders API...');
       
+      // Use localhost for internal API calls to avoid external network issues
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? (process.env.API_BASE_URL || process.env.NEXTAUTH_URL )
+        : 'https://localhost:3000';
+      
+      console.log('📧 Using API base URL:', baseUrl);
+      
       // Call the actual scheduled task API that handles all approval reminders
-      const response = await fetch(`${process.env.API_BASE_URL || process.env.NEXTAUTH_URL}/api/scheduled-tasks/approval-reminders`, {
+      const response = await fetch(`${baseUrl}/api/scheduled-tasks/approval-reminders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({}),
+        // Add timeout to prevent hanging
+        signal: AbortSignal.timeout(30000) // 30 second timeout
       });
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        throw new Error(`API error: ${response.status} ${response.statusText}`);
       }
 
       const result = await response.json();
@@ -94,7 +103,20 @@ class SafeApprovalReminderService {
 
     } catch (error) {
       console.error('❌ Error calling approval reminders API:', error);
-      results.errors.push(error instanceof Error ? error.message : 'Unknown error');
+      
+      // More specific error handling
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          errorMessage = 'Request timeout (30s)';
+        } else if (error.message.includes('fetch failed')) {
+          errorMessage = 'Network connection failed';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      results.errors.push(errorMessage);
       return results;
     }
   }

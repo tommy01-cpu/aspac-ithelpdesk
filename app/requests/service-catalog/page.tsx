@@ -196,47 +196,47 @@ export default function ServiceCatalog() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-3 sm:p-4 lg:p-6">
       {/* Header Section */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">Service Catalog</h1>
-        <p className="text-slate-600 mb-6">Browse and request available services</p>
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Service Catalog</h1>
+        <p className="text-sm sm:text-base text-slate-600 mb-4 sm:mb-6">Browse and request available services</p>
         
         {/* Search */}
-        <div className="flex items-center gap-4 mb-4">
-          <div className="flex-1 max-w-lg">
+        <div className="flex items-center gap-2 sm:gap-4 mb-4">
+          <div className="flex-1 max-w-full sm:max-w-lg">
             <div className="relative search-container">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 h-5 w-5" />
               <Input
-                placeholder="Search categories, services & templates..."
+                placeholder="Search services..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full h-12 pl-12 pr-4 text-base border-2 border-slate-200 rounded-xl shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200"
+                className="w-full h-10 sm:h-12 pl-10 sm:pl-12 pr-3 sm:pr-4 text-sm sm:text-base border-2 border-slate-200 rounded-lg sm:rounded-xl shadow-sm focus:border-blue-500 focus:ring-2 sm:focus:ring-4 focus:ring-blue-100 transition-all duration-200"
               />
               
               {/* Search Dropdown */}
               {showDropdown && searchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 bg-white border border-slate-200/50 rounded-xl shadow-2xl mt-2 max-h-96 overflow-hidden z-[9999] backdrop-blur-sm">
-                  <div className="p-4 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
-                    <p className="text-sm font-semibold text-gray-800">
+                <div className="absolute top-full left-0 right-0 bg-white border border-slate-200/50 rounded-lg sm:rounded-xl shadow-2xl mt-2 max-h-80 sm:max-h-96 overflow-hidden z-[9999] backdrop-blur-sm">
+                  <div className="p-3 sm:p-4 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
+                    <p className="text-xs sm:text-sm font-semibold text-gray-800">
                       🔍 Found {searchResults.length} service template{searchResults.length !== 1 ? 's' : ''}
                     </p>
                   </div>
-                  <div className="max-h-80 overflow-y-auto">
+                  <div className="max-h-60 sm:max-h-80 overflow-y-auto">
                     {searchResults.map((result, index) => (
                       <div
                         key={`${result.type}-${result.id}`}
-                        className="p-4 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 cursor-pointer border-b border-slate-100 last:border-b-0 transition-all duration-200 group"
+                        className="p-3 sm:p-4 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 cursor-pointer border-b border-slate-100 last:border-b-0 transition-all duration-200 group"
                         onClick={() => handleSearchResultClick(result)}
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 sm:gap-3">
                           <div className="flex-grow min-w-0">
                             {result.categoryName && (
                               <div className="text-xs text-slate-600 font-medium truncate mb-1">Category: {result.categoryName}</div>
                             )}
-                            <div className="font-medium text-slate-900 truncate mt-1 group-hover:text-blue-700 transition-colors">Template name: {result.name}</div>
+                            <div className="text-sm sm:font-medium text-slate-900 truncate mt-1 group-hover:text-blue-700 transition-colors">Template: {result.name}</div>
                             {result.description && (
-                              <div className="text-sm text-slate-500 truncate mt-1 group-hover:text-slate-600 transition-colors">Description: {result.description}</div>
+                              <div className="text-xs sm:text-sm text-slate-500 truncate mt-1 group-hover:text-slate-600 transition-colors line-clamp-1">Description: {result.description}</div>
                             )}
                           </div>
                           <div className="flex-shrink-0">
@@ -246,9 +246,9 @@ export default function ServiceCatalog() {
                       </div>
                     ))}
                   </div>
-                  <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 text-center border-t border-blue-100">
+                  <div className="p-2 sm:p-3 bg-gradient-to-r from-blue-50 to-indigo-50 text-center border-t border-blue-100">
                     <p className="text-xs text-blue-700 font-medium">
-                      💡 Click on any template to request the service
+                      💡 Tap to request service
                     </p>
                   </div>
                 </div>
@@ -265,21 +265,21 @@ export default function ServiceCatalog() {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
         ) : (!Array.isArray(categories) || categories.length === 0) ? (
-          <div className="text-center py-12 bg-white rounded-lg border border-slate-200">
-            <FolderOpen className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-            <h3 className="text-lg font-medium text-slate-900 mb-2">No service categories found</h3>
-            <p className="text-slate-500">Check back later for available services</p>
+          <div className="text-center py-8 sm:py-12 bg-white rounded-lg border border-slate-200 mx-2 sm:mx-0">
+            <FolderOpen className="w-8 sm:w-12 h-8 sm:h-12 mx-auto mb-3 sm:mb-4 text-slate-300" />
+            <h3 className="text-base sm:text-lg font-medium text-slate-900 mb-2">No service categories found</h3>
+            <p className="text-sm sm:text-base text-slate-500">Check back later for available services</p>
           </div>
         ) : (
           (Array.isArray(categories) ? categories : []).map((category) => (
             <div key={category.id} className="bg-white rounded-lg border border-slate-200 shadow-sm">
               {/* Category Header */}
               <button
-                className="w-full p-6 text-left hover:bg-slate-50 transition-colors flex items-center justify-between"
+                className="w-full p-4 sm:p-6 text-left hover:bg-slate-50 transition-colors flex items-center justify-between"
                 onClick={() => handleToggleCategory(category.id)}
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center p-2">
+                <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-lg flex items-center justify-center p-2 flex-shrink-0">
                     {category.icon ? (
                       <img 
                         src={`/serviceicons/${category.icon}`} 
@@ -287,12 +287,12 @@ export default function ServiceCatalog() {
                         className="w-full h-full object-contain"
                       />
                     ) : (
-                      <Briefcase className="w-6 h-6 text-blue-600" />
+                      <Briefcase className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
                     )}
                   </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-slate-900 text-lg">{category.name}</h3>
-                    <p className="text-slate-600 text-sm">{category.description}</p>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-slate-900 text-base sm:text-lg truncate">{category.name}</h3>
+                    <p className="text-slate-600 text-xs sm:text-sm truncate">{category.description}</p>
                     <div className="flex items-center gap-3 mt-1">
                       <span className="text-xs text-slate-500">
                         {category.serviceCount} service{category.serviceCount !== 1 ? 's' : ''}
@@ -300,7 +300,7 @@ export default function ServiceCatalog() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-shrink-0">
                   {expandedCategory === category.id ? (
                     <ChevronUp className="w-5 h-5 text-slate-400" />
                   ) : (
@@ -312,19 +312,19 @@ export default function ServiceCatalog() {
               {/* Expanded Services */}
               {expandedCategory === category.id && (
                 <div className="border-t border-slate-200 bg-slate-50">
-                  <div className="p-6">
-                    <h4 className="font-medium text-slate-900 mb-4">
+                  <div className="p-4 sm:p-6">
+                    <h4 className="font-medium text-slate-900 mb-3 sm:mb-4 text-sm sm:text-base">
                       Available Services ({(categoryServices[category.id] || []).length})
                     </h4>
                     
                     {(categoryServices[category.id] || []).length > 0 ? (
                       <div className="space-y-3">
                         {(categoryServices[category.id] || []).map((service) => (
-                          <div key={service.id} className="bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50 transition-colors">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4 flex-1">
+                          <div key={service.id} className="bg-white rounded-lg border border-slate-200 p-3 sm:p-4 hover:bg-slate-50 transition-colors">
+                            <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row">
+                              <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0 w-full sm:w-auto">
                                 {/* Service Icon */}
-                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                   {service.template?.icon ? (
                                     <img 
                                       src={`/serviceicons/${service.template.icon}`} 
@@ -332,17 +332,17 @@ export default function ServiceCatalog() {
                                       className="w-full h-full object-contain"
                                     />
                                   ) : (
-                                    <Briefcase className="w-5 h-5 text-blue-600" />
+                                    <Briefcase className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
                                   )}
                                 </div>
                                 
                                 {/* Service Details */}
                                 <div className="flex-1 min-w-0">
-                                  <h5 className="font-medium text-slate-900 truncate">{service.name}</h5>
+                                  <h5 className="font-medium text-slate-900 truncate text-sm sm:text-base">{service.name}</h5>
                                   {service.description && (
-                                    <p className="text-sm text-slate-600 truncate">{service.description}</p>
+                                    <p className="text-xs sm:text-sm text-slate-600 truncate">{service.description}</p>
                                   )}
-                                  <div className="flex items-center gap-4 mt-1">
+                                  <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-1">
                                     {service.templateName && (
                                       <span className="text-xs text-blue-600">Template: {service.templateName}</span>
                                     )}
@@ -358,7 +358,7 @@ export default function ServiceCatalog() {
                               <button
                                 onClick={() => handleServiceClick(service)}
                                 disabled={!service.isActive || !service.templateId}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 w-full sm:w-auto ${
                                   service.isActive && service.templateId
                                     ? 'bg-blue-600 text-white hover:bg-blue-700'
                                     : 'bg-slate-200 text-slate-500 cursor-not-allowed'
@@ -371,9 +371,9 @@ export default function ServiceCatalog() {
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center py-8 text-slate-500">
-                        <Briefcase className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                        <p>No services available in this category</p>
+                      <div className="text-center py-6 sm:py-8 text-slate-500">
+                        <Briefcase className="w-6 sm:w-8 h-6 sm:h-8 mx-auto mb-2 text-slate-300" />
+                        <p className="text-sm sm:text-base">No services available in this category</p>
                       </div>
                     )}
                   </div>
