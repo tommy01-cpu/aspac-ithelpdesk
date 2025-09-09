@@ -207,12 +207,18 @@ const getStatusIcon = (status: string) => {
 };
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
+  // The database timestamp is already in Philippine time (+8 hours)
+  // So we need to parse it without timezone conversion
+  const date = new Date(dateString);
+  
+  // Format directly without timezone conversion since it's already Philippine time
+  return date.toLocaleDateString('en-PH', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    hour12: true
   });
 };
 
@@ -800,7 +806,9 @@ export default function MyRequestsPage() {
                                     {/* Created Date */}
                                     <div className="flex items-center gap-1 text-gray-600 break-words leading-tight">
                                       <Calendar className="h-3 w-3 flex-shrink-0" />
-                                      <span className="text-sm break-words">{formatDate(request.createdAt)}</span>
+                                      <span className="text-sm break-words">
+                                        {formatDate(new Date(new Date(request.createdAt).getTime() - 8 * 60 * 60 * 1000).toISOString())}
+                                      </span>
                                     </div>
 
                                     {/* Assigned To */}
@@ -923,7 +931,7 @@ export default function MyRequestsPage() {
                                   <div>
                                     <span className="text-gray-500">Created:</span>
                                     <p className="font-medium text-gray-900">
-                                      {formatDate(request.createdAt)}
+                                      {formatDate(new Date(new Date(request.createdAt).getTime() - 8 * 60 * 60 * 1000).toISOString())}
                                     </p>
                                   </div>
                                   {showApprovalStatus && (
