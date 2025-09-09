@@ -2215,6 +2215,69 @@ export default function RequestViewPage() {
         .ql-toolbar button:hover .ql-fill {
           fill: #334155;
         }
+        
+        /* Styles for rendered HTML content (read-only) */
+        .prose ul, .text-gray-700 ul {
+          list-style-type: disc;
+          margin-left: 1.5rem;
+          margin-bottom: 1rem;
+          padding-left: 0.5rem;
+        }
+        
+        .prose ol, .text-gray-700 ol {
+          list-style-type: decimal;
+          margin-left: 1.5rem;
+          margin-bottom: 1rem;
+          padding-left: 0.5rem;
+        }
+        
+        .prose li, .text-gray-700 li {
+          margin-bottom: 0.5rem;
+          line-height: 1.6;
+        }
+        
+        .prose ul ul, .text-gray-700 ul ul {
+          list-style-type: circle;
+          margin-top: 0.5rem;
+          margin-bottom: 0.5rem;
+        }
+        
+        .prose ul ul ul, .text-gray-700 ul ul ul {
+          list-style-type: square;
+        }
+        
+        .prose p, .text-gray-700 p {
+          margin-bottom: 1rem;
+        }
+        
+        .prose strong, .text-gray-700 strong {
+          font-weight: 600;
+        }
+        
+        .prose em, .text-gray-700 em {
+          font-style: italic;
+        }
+        
+        .prose h1, .text-gray-700 h1 {
+          font-size: 1.875rem;
+          font-weight: 700;
+          margin-bottom: 1rem;
+          margin-top: 1.5rem;
+        }
+        
+        .prose h2, .text-gray-700 h2 {
+          font-size: 1.5rem;
+          font-weight: 600;
+          margin-bottom: 0.75rem;
+          margin-top: 1.25rem;
+        }
+        
+        .prose h3, .text-gray-700 h3 {
+          font-size: 1.25rem;
+          font-weight: 600;
+          margin-bottom: 0.5rem;
+          margin-top: 1rem;
+        }
       `}</style>
       <div className="min-h-screen bg-gray-50" style={{ transform: 'scale(0.9)', transformOrigin: 'top left', width: '111.11%', height: '111.11%' }}>
         {/* Header */}
