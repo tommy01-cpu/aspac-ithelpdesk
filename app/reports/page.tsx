@@ -1017,11 +1017,13 @@ export default function ReportsPage() {
                       <td className="px-3 py-2 border-r border-gray-200 text-blue-600 underline cursor-pointer">
                         {request.subject}
                       </td>
-                      <td className="px-3 py-2 border-r border-gray-200 text-gray-700 leading-relaxed">
-                        {request.description ? 
-                          request.description.replace(/<[^>]*>/g, '').substring(0, 300)
-                          : 'N/A'
-                        }
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-700 leading-relaxed max-w-md">
+                        <div className="whitespace-pre-wrap break-words">
+                          {request.description ? 
+                            request.description.replace(/<[^>]*>/g, '')
+                            : 'N/A'
+                          }
+                        </div>
                       </td>
                       <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
                         {capitalizeWords(request.requestType || '')}

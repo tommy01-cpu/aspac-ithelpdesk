@@ -111,6 +111,7 @@ export async function PUT(
     const emp_cell = formData.get('emp_cell') as string;
     const post_des = formData.get('post_des') as string;
     const department = formData.get('department') as string;
+    const departmentId = formData.get('departmentId') as string;
     const emp_status = formData.get('emp_status') as string;
     const profileImage = formData.get('profile_image') as File | null;
     
@@ -121,6 +122,14 @@ export async function PUT(
     const reportingToId = formData.get('reportingToId') as string;
     const isServiceApprover = formData.get('isServiceApprover') as string;
     const requester_view_permission = formData.get('requester_view_permission') as string;
+
+    // Debug logging for departmentId
+    console.log('🔍 DEBUG - PUT departmentId values:');
+    console.log('  Raw departmentId:', departmentId);
+    console.log('  departmentId type:', typeof departmentId);
+    console.log('  departmentId empty check:', departmentId === '');
+    console.log('  departmentId parsing:', departmentId && departmentId !== 'none' && departmentId !== '' ? parseInt(departmentId) : null);
+    console.log('  Department name:', department);
 
     // Validate required fields
     if (!emp_code || !emp_fname || !emp_lname || !emp_email) {
@@ -220,15 +229,16 @@ export async function PUT(
           corporate_mobile_no = $7,
           job_title = $8,
           department = $9,
-          status = $10,
-          profile_image = $11,
-          description = $12,
-          landline_no = $13,
-          local_no = $14,
-          "reportingToId" = $15,
-          "isServiceApprover" = $16,
-          requester_view_permission = $17
-        WHERE id = $18::integer
+          "departmentId" = $10,
+          status = $11,
+          profile_image = $12,
+          description = $13,
+          landline_no = $14,
+          local_no = $15,
+          "reportingToId" = $16,
+          "isServiceApprover" = $17,
+          requester_view_permission = $18
+        WHERE id = $19::integer
         RETURNING *
       `;
       
@@ -243,6 +253,7 @@ export async function PUT(
         emp_cell || null,
         post_des || null,
         department || null,
+        departmentId && departmentId !== 'none' && departmentId !== '' ? parseInt(departmentId) : null,
         emp_status,
         profile_image_filename,
         description || null,
@@ -265,14 +276,15 @@ export async function PUT(
           corporate_mobile_no = $7,
           job_title = $8,
           department = $9,
-          status = $10,
-          description = $11,
-          landline_no = $12,
-          local_no = $13,
-          "reportingToId" = $14,
-          "isServiceApprover" = $15,
-          requester_view_permission = $16
-        WHERE id = $17::integer
+          "departmentId" = $10,
+          status = $11,
+          description = $12,
+          landline_no = $13,
+          local_no = $14,
+          "reportingToId" = $15,
+          "isServiceApprover" = $16,
+          requester_view_permission = $17
+        WHERE id = $18::integer
         RETURNING *
       `;
       
@@ -287,6 +299,7 @@ export async function PUT(
         emp_cell || null,
         post_des || null,
         department || null,
+        departmentId && departmentId !== 'none' && departmentId !== '' ? parseInt(departmentId) : null,
         emp_status,
         description || null,
         landline_no || null,

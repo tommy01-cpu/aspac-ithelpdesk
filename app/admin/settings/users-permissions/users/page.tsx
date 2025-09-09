@@ -23,6 +23,7 @@ interface User {
   post_des?: string;
   emp_status: string;
   department?: string;
+  departmentId?: number;
   created_at: string;
   profile_image?: string;
   username?: string;
@@ -66,6 +67,7 @@ export default function UsersPage() {
     emp_cell: '',
     post_des: '',
     department: '',
+    departmentId: '',
     emp_status: 'active',
     description: '',
     landline_no: '',
@@ -108,10 +110,14 @@ export default function UsersPage() {
 
   const fetchDepartments = async () => {
     try {
+      console.log('🏢 Fetching departments...');
       const response = await fetch('/api/departments');
       const data = await response.json();
       
+      console.log('🏢 Departments API response:', data);
+      
       if (data.success) {
+        console.log('🏢 Setting departments:', data.departments);
         setDepartments(data.departments);
       } else {
         console.error('Failed to fetch departments:', data.error);
@@ -159,6 +165,7 @@ export default function UsersPage() {
       emp_cell: '',
       post_des: '',
       department: '',
+      departmentId: '',
       emp_status: 'active',
       description: '',
       landline_no: '',
@@ -218,6 +225,12 @@ export default function UsersPage() {
 
     setOperationLoading(true);
     try {
+      // Debug logging before submission
+      console.log('🚀 FORM SUBMISSION DEBUG:');
+      console.log('Form data object:', formData);
+      console.log('Department ID specifically:', formData.departmentId);
+      console.log('Department name specifically:', formData.department);
+      
       const formDataToSend = new FormData();
       Object.entries(formData).forEach(([key, value]) => {
         // Convert boolean values to strings for FormData
@@ -228,6 +241,13 @@ export default function UsersPage() {
       // Add username and password as employee ID (default)
       formDataToSend.append('username', formData.emp_code);
       formDataToSend.append('password', formData.emp_code);
+      
+      // Debug FormData contents
+      console.log('FormData entries:');
+      const entries = Array.from(formDataToSend.entries());
+      for (const [key, value] of entries) {
+        console.log(`  ${key}: ${value}`);
+      }
       
       if (selectedImage) {
         formDataToSend.append('profile_image', selectedImage);
@@ -273,12 +293,25 @@ export default function UsersPage() {
 
     setOperationLoading(true);
     try {
+      // Debug logging before submission
+      console.log('🔄 EDIT FORM SUBMISSION DEBUG:');
+      console.log('Form data object:', formData);
+      console.log('Department ID specifically:', formData.departmentId);
+      console.log('Department name specifically:', formData.department);
+      
       const formDataToSend = new FormData();
       Object.entries(formData).forEach(([key, value]) => {
         // Convert boolean values to strings for FormData
         const stringValue = typeof value === 'boolean' ? value.toString() : value;
         formDataToSend.append(key, stringValue);
       });
+      
+      // Debug FormData contents
+      console.log('FormData entries:');
+      const entries = Array.from(formDataToSend.entries());
+      for (const [key, value] of entries) {
+        console.log(`  ${key}: ${value}`);
+      }
       
       if (selectedImage) {
         formDataToSend.append('profile_image', selectedImage);
@@ -385,6 +418,10 @@ export default function UsersPage() {
   };
 
   const openEditModal = (user: User) => {
+    console.log('👤 Opening edit modal for user:', user);
+    console.log('👤 User departmentId:', user.departmentId);
+    console.log('👤 User department:', user.department);
+    
     setUserToEdit(user);
     setFormData({
       emp_code: user.emp_code,
@@ -396,6 +433,7 @@ export default function UsersPage() {
       emp_cell: user.emp_cell || '',
       post_des: user.post_des || '',
       department: user.department || '',
+      departmentId: user.departmentId?.toString() || '',
       emp_status: user.emp_status,
       description: user.description || '',
       landline_no: user.landline_no || '',
@@ -403,6 +441,11 @@ export default function UsersPage() {
       reportingToId: user.reportingToId?.toString() || '',
       isServiceApprover: user.isServiceApprover || false,
       requester_view_permission: user.requester_view_permission || 'own_requests',
+    });
+    
+    console.log('👤 Form data after setting:', {
+      departmentId: user.departmentId?.toString() || '',
+      department: user.department || ''
     });
     
     // Reset image states and set existing profile image
@@ -648,14 +691,28 @@ export default function UsersPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="department" className="text-sm font-medium text-gray-700">Department</Label>
-                <Select value={formData.department === '' ? 'none' : formData.department} onValueChange={(value) => setFormData(prev => ({ ...prev, department: value === 'none' ? '' : value }))}>
+                <Select 
+                  value={formData.departmentId === '' ? 'none' : formData.departmentId} 
+                  onValueChange={(value) => {
+                    if (value === 'none') {
+                      setFormData(prev => ({ ...prev, departmentId: '', department: '' }));
+                    } else {
+                      const selectedDept = departments.find(dept => dept.id.toString() === value);
+                      setFormData(prev => ({ 
+                        ...prev, 
+                        departmentId: value,
+                        department: selectedDept?.name || ''
+                      }));
+                    }
+                  }}
+                >
                   <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No department</SelectItem>
                     {departments.map(dept => (
-                      <SelectItem key={dept.id} value={dept.name}>
+                      <SelectItem key={dept.id} value={dept.id.toString()}>
                         {dept.name}
                       </SelectItem>
                     ))}
@@ -960,14 +1017,28 @@ export default function UsersPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="edit_department" className="text-sm font-medium text-gray-700">Department</Label>
-                <Select value={formData.department === '' ? 'none' : formData.department} onValueChange={(value) => setFormData(prev => ({ ...prev, department: value === 'none' ? '' : value }))}>
+                <Select 
+                  value={formData.departmentId === '' ? 'none' : formData.departmentId} 
+                  onValueChange={(value) => {
+                    if (value === 'none') {
+                      setFormData(prev => ({ ...prev, departmentId: '', department: '' }));
+                    } else {
+                      const selectedDept = departments.find(dept => dept.id.toString() === value);
+                      setFormData(prev => ({ 
+                        ...prev, 
+                        departmentId: value,
+                        department: selectedDept?.name || ''
+                      }));
+                    }
+                  }}
+                >
                   <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No department</SelectItem>
                     {departments.map(dept => (
-                      <SelectItem key={dept.id} value={dept.name}>
+                      <SelectItem key={dept.id} value={dept.id.toString()}>
                         {dept.name}
                       </SelectItem>
                     ))}

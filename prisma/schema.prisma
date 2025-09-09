@@ -93,16 +93,16 @@ model Department {
 }
 
 model Holiday {
-  id            Int       @id @default(autoincrement())
+  id            Int      @id @default(autoincrement())
   name          String
-  date          DateTime  @db.Date
+  date          DateTime @db.Date
   description   String?
-  isRecurring   Boolean   @default(false)
-  recurringType String?   // 'yearly', 'monthly', etc.
-  recurringRule Json?     // JSON with specific recurring rules
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  isRecurring   Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  recurringRule Json?
+  recurringType String?
 
   @@map("holidays")
 }
@@ -418,11 +418,11 @@ model ServiceCategory {
   icon                 String?               @db.VarChar(255)
   isActive             Boolean               @default(true)
   serviceCount         Int                   @default(0)
-  sortOrder            Int?                  @map("sort_order")
   createdAt            DateTime              @default(now()) @db.Timestamp(6)
   updatedAt            DateTime              @updatedAt @db.Timestamp(6)
   createdBy            Int?
   updatedBy            Int?
+  sortOrder            Int?                  @map("sort_order")
   incidentCatalogItems IncidentCatalogItem[]
   serviceCatalogItems  ServiceCatalogItem[]
   creator              users?                @relation("ServiceCategoryCreatedBy", fields: [createdBy], references: [id])
@@ -440,11 +440,11 @@ model ServiceCatalogItem {
   templateId   Int?
   isActive     Boolean         @default(true)
   requestCount Int             @default(0)
-  sortOrder    Int?            @map("sort_order")
   createdAt    DateTime        @default(now()) @db.Timestamp(6)
   updatedAt    DateTime        @updatedAt @db.Timestamp(6)
   createdBy    Int?
   updatedBy    Int?
+  sortOrder    Int?            @map("sort_order")
   category     ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   creator      users?          @relation("ServiceCatalogCreatedBy", fields: [createdBy], references: [id])
   template     Template?       @relation("ServiceTemplate", fields: [templateId], references: [id])
@@ -565,11 +565,11 @@ model IncidentCatalogItem {
   priority    Priority        @default(Medium)
   isActive    Boolean         @default(true)
   usageCount  Int             @default(0)
-  sortOrder   Int?            @map("sort_order")
   createdAt   DateTime        @default(now()) @db.Timestamp(6)
   updatedAt   DateTime        @updatedAt @db.Timestamp(6)
   createdBy   Int?
   updatedBy   Int?
+  sortOrder   Int?            @map("sort_order")
   category    ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   creator     users?          @relation("IncidentCatalogCreatedBy", fields: [createdBy], references: [id])
   template    Template?       @relation("IncidentTemplate", fields: [templateId], references: [id])

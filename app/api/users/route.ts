@@ -47,6 +47,12 @@ export async function GET(req: NextRequest) {
             roles: true,
           },
         },
+        userDepartment: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         reportingTo: {
           select: {
             id: true,
@@ -71,6 +77,7 @@ export async function GET(req: NextRequest) {
       post_des: user.post_des,
       emp_status: user.emp_status,
       department: user.department,
+      departmentId: user.departmentId,
       created_at: user.created_at,
       profile_image: user.profile_image,
       description: user.description,
@@ -125,6 +132,7 @@ export async function POST(req: NextRequest) {
       emp_cell,
       post_des,
       department,
+      departmentId,
       emp_status,
       username,
       password,
@@ -135,6 +143,14 @@ export async function POST(req: NextRequest) {
       isServiceApprover,
       requester_view_permission,
     } = formData instanceof FormData ? Object.fromEntries(formData.entries()) : formData;
+
+    // Debug logging for departmentId
+    console.log('🔍 DEBUG - departmentId values:');
+    console.log('  Raw departmentId:', departmentId);
+    console.log('  departmentId type:', typeof departmentId);
+    console.log('  departmentId empty check:', departmentId === '');
+    console.log('  departmentId parsing:', departmentId && departmentId !== '' ? parseInt(departmentId as string) : null);
+    console.log('  Department name:', department);
 
     // Validate required fields
     if (!emp_code || !emp_fname || !emp_lname) {
@@ -230,6 +246,7 @@ export async function POST(req: NextRequest) {
         emp_cell: emp_cell || null,        // maps to corporate_mobile_no
         post_des: post_des || null,        // maps to job_title
         department: department || null,
+        departmentId: departmentId && departmentId !== '' ? parseInt(departmentId as string) : null,
         emp_status: emp_status || 'active', // maps to status
         password: hashedPassword, // Store hashed password
         // New fields

@@ -320,7 +320,6 @@ export async function POST(request: Request) {
         department: true,
         departmentId: true,
         reportingToId: true,
-        departmentHeadId: true,
         reportingTo: {
           select: {
             id: true,
@@ -342,14 +341,6 @@ export async function POST(request: Request) {
               }
             }
           }
-        },
-        departmentHead: {
-          select: {
-            id: true,
-            emp_fname: true,
-            emp_lname: true,
-            emp_email: true,
-          }
         }
       }
     });
@@ -358,12 +349,13 @@ export async function POST(request: Request) {
       id: requestUser?.id,
       name: requestUser ? `${requestUser.emp_fname} ${requestUser.emp_lname}` : 'N/A',
       department: requestUser?.department,
+      departmentId: requestUser?.departmentId,
       reportingToId: requestUser?.reportingToId,
-      departmentHeadId: requestUser?.departmentHeadId,
       hasReportingTo: !!requestUser?.reportingTo,
-      hasDepartmentHead: !!requestUser?.departmentHead,
+      hasDepartmentHead: !!requestUser?.userDepartment?.departmentHead,
       reportingToName: requestUser?.reportingTo ? `${requestUser.reportingTo.emp_fname} ${requestUser.reportingTo.emp_lname}` : 'N/A',
-      departmentHeadName: requestUser?.departmentHead ? `${requestUser.departmentHead.emp_fname} ${requestUser.departmentHead.emp_lname}` : 'N/A'
+      departmentHeadName: requestUser?.userDepartment?.departmentHead ? `${requestUser.userDepartment.departmentHead.emp_fname} ${requestUser.userDepartment.departmentHead.emp_lname}` : 'N/A',
+      departmentName: requestUser?.userDepartment?.name || 'N/A'
     });
 
     // Create the request in the database
@@ -808,103 +800,185 @@ export async function POST(request: Request) {
           console.log('Additional approvers type:', typeof additionalApprovers, Array.isArray(additionalApprovers));
           console.log('Individual approver types:', additionalApprovers.map((a: any) => ({ value: a, type: typeof a })));
           
+          console.log('📋 Template analysis:', {
+            templateLevels: templateLevels.length,
+            additionalApprovers: additionalApprovers.length
+          });
+          
           // Create approval records for each template level
           for (let i = 0; i < templateLevels.length; i++) {
             const level = templateLevels[i];
             const levelNumber = i + 1;
             
-            // Collect approver names for Level 1 history entry
-            let level1ApproverNames = [];
+            // Collect approver names for each level's history entry
+            let levelApproverNames = [];
             
-            // For Level 1, include both template approvers and additional approvers from form
+            // For Level 1, prioritize selected approvers over template approvers
             if (levelNumber === 1) {
-              // First, create records for template approvers
-              if (level.approvers && level.approvers.length > 0) {
-                for (const approver of level.approvers) {
-                  console.log('Processing template approver:', approver);
+              // Track approver IDs to avoid duplicates
+              const processedApproverIds = new Set<number>();
+              
+              // Check if we have selected approvers from form
+              const hasSelectedApprovers = Array.isArray(additionalApprovers) && additionalApprovers.length > 0;
+              
+              if (hasSelectedApprovers) {
+                console.log('✅ Using selected approvers for Level 1 (completely overriding template approvers)');
+                
+                // Use ONLY selected approvers for Level 1 - completely skip template approvers
+                for (const approverId of additionalApprovers) {
+                  // Convert to number if needed
+                  const numericApproverId = typeof approverId === 'string' ? parseInt(approverId) : approverId;
+                  console.log(`Processing selected approver ID: ${approverId} (${typeof approverId}) -> ${numericApproverId}`);
                   
-                  let actualApproverId = null;
-                  let approverName = '';
-                  
-                  // Check if this is a special approver type (reporting to, department head)
-                  // Handle exact string values like "reporting_to" and "department_head" from template
-                  // Also handle numeric codes like -1 (reporting_to) and -2 (department_head)
-                  const approverValue = String(approver.id || approver.name || approver).toLowerCase();
-                  const approverNumericId = parseInt(approver.id || approver.name || approver);
-                  console.log(`Checking approver value: "${approverValue}" (original:`, approver, ') | Numeric ID:', approverNumericId);
-                  
-                  if (approverValue === 'reporting_to' || 
-                      approverValue.includes('reporting') || 
-                      approverValue.includes('immediate supervisor') ||
-                      approverValue.includes('manager') ||
-                      approver.type === 'reporting_to' ||
-                      approverNumericId === -1) {  // -1 typically represents reporting manager
-                    // Use the requester's reporting manager
-                    if (requestUser && requestUser.reportingToId) {
-                      actualApproverId = requestUser.reportingToId;
-                      if (requestUser.reportingTo) {
-                        approverName = `${requestUser.reportingTo.emp_fname} ${requestUser.reportingTo.emp_lname}`;
-                      }
-                      console.log(`✅ Using reporting manager (code: ${approverNumericId}): ${approverName} (ID: ${actualApproverId})`);
-                    } else {
-                      console.warn('⚠️ Requester has no reporting manager configured');
-                      continue;
-                    }
-                  } else if (approverValue === 'department_head' || 
-                            approverValue.includes('department') || 
-                            approverValue.includes('head') ||
-                            approverValue.includes('chief') ||
-                            approver.type === 'department_head' ||
-                            approverNumericId === -2) {  // -2 typically represents department head
-                    // Get department head through userDepartment relationship
-                    if (requestUser && requestUser.userDepartment?.departmentHead) {
-                      const departmentHead = requestUser.userDepartment.departmentHead;
-                      actualApproverId = departmentHead.id;
-                      approverName = `${departmentHead.emp_fname} ${departmentHead.emp_lname}`;
-                      console.log(`✅ Using department head (code: ${approverNumericId}): ${approverName} (ID: ${actualApproverId})`);
-                    } else if (requestUser && requestUser.userDepartment) {
-                      console.warn(`⚠️ Department "${requestUser.userDepartment.name}" has no department head configured`);
-                      continue;
-                    } else {
-                      console.warn('⚠️ Requester has no department configured');
-                      continue;
-                    }
-                  } else {
-                    // Regular user approver - validate that the user exists
-                    // Try to parse as number if it's a string ID
-                    let userIdToCheck = approver.id;
-                    if (typeof userIdToCheck === 'string' && !isNaN(parseInt(userIdToCheck))) {
-                      userIdToCheck = parseInt(userIdToCheck);
-                    }
-                    
-                    // Skip negative IDs that aren't our special codes
-                    if (userIdToCheck < 0 && userIdToCheck !== -1 && userIdToCheck !== -2) {
-                      console.warn(`⚠️ Skipping unknown negative approver ID: ${userIdToCheck}`);
-                      continue;
-                    }
-                    
-                    actualApproverId = userIdToCheck;
-                    const templateApprover = await prisma.users.findUnique({
-                      where: { id: actualApproverId },
-                      select: {
-                        id: true,
-                        emp_fname: true,
-                        emp_lname: true,
-                        emp_email: true,
-                      }
-                    });
-                    
-                    if (templateApprover) {
-                      approverName = `${templateApprover.emp_fname} ${templateApprover.emp_lname}`;
-                      console.log(`✅ Using template approver: ${approverName} (ID: ${actualApproverId})`);
-                    } else {
-                      console.warn(`⚠️ Template approver with ID ${actualApproverId} not found in database`);
-                      continue;
-                    }
+                  // Skip if the ID is invalid
+                  if (isNaN(numericApproverId) || numericApproverId <= 0) {
+                    console.warn(`Invalid approver ID: ${approverId}`);
+                    continue;
                   }
                   
-                  // Create the approval record if we have a valid approver ID
-                  if (actualApproverId) {
+                  // Check for duplicates - skip if already processed
+                  if (processedApproverIds.has(numericApproverId)) {
+                    console.log(`⚠️ Skipping duplicate selected approver ID: ${numericApproverId}`);
+                    continue;
+                  }
+                  
+                  // Mark as processed to avoid future duplicates
+                  processedApproverIds.add(numericApproverId);
+                  
+                  // Fetch user details for the selected approver
+                  const selectedApprover = await prisma.users.findUnique({
+                    where: { id: numericApproverId },
+                    select: {
+                      id: true,
+                      emp_fname: true,
+                      emp_lname: true,
+                      emp_email: true,
+                    }
+                  });
+                  
+                  if (selectedApprover) {
+                    const createdSelected = await prisma.requestApproval.create({
+                      data: {
+                        requestId: newRequest.id,
+                        level: levelNumber,
+                        name: level.displayName || `Level ${levelNumber}`,
+                        approverId: selectedApprover.id,
+                        approverName: `${selectedApprover.emp_fname} ${selectedApprover.emp_lname}`,
+                        approverEmail: selectedApprover.emp_email,
+                        status: APPROVAL_STATUS.PENDING_APPROVAL,
+                        sentOn: philippineTime, // ✅ Set sentOn since email is sent immediately for Level 1
+                        createdAt: philippineTime,
+                        updatedAt: philippineTime,
+                      }
+                    });
+                    levelApproverNames.push(`${selectedApprover.emp_fname} ${selectedApprover.emp_lname}`);
+                    console.log(`Created selected approver for level ${levelNumber}: ${selectedApprover.emp_fname} ${selectedApprover.emp_lname}`);
+                    
+                    // 📧 Send approval required notification
+                    try {
+                      if (requestUser) {
+                        const requestWithUser = {
+                          id: newRequest.id,
+                          status: newRequest.status,
+                          formData: newRequest.formData,
+                          user: requestUser
+                        };
+                        
+                        await notifyApprovalRequired(requestWithUser, template, selectedApprover, createdSelected.id);
+                        console.log(`✅ Approval notification sent to ${selectedApprover.emp_fname} ${selectedApprover.emp_lname}`);
+                      }
+                    } catch (notificationError) {
+                      console.error(`Error sending approval notification to ${selectedApprover.emp_fname} ${selectedApprover.emp_lname}:`, notificationError);
+                      // Don't fail the request creation if notification fails
+                    }
+                  } else {
+                    console.warn(`Selected approver with ID ${numericApproverId} not found in database`);
+                  }
+                }
+                
+                // ✅ IMPORTANT: When selected approvers exist, completely skip template approvers
+                console.log('🚫 Skipping all template approvers for Level 1 because selected approvers were provided');
+              } else {
+                console.log('📋 No selected approvers found, using template Level 1 approvers (excluding department_head)');
+                
+                // Use template approvers for Level 1 if no selected approvers, but skip department_head
+                if (level.approvers && level.approvers.length > 0) {
+                  for (const approver of level.approvers) {
+                    console.log('Processing template approver:', approver);
+                  
+                    let actualApproverId = null;
+                    let approverName = '';
+                    
+                    // Check if this is a special approver type (reporting to, department head)
+                    const approverValue = String(approver.id || approver.name || approver).toLowerCase();
+                    const approverNumericId = parseInt(approver.id || approver.name || approver);
+                    console.log(`Checking approver value: "${approverValue}" (original:`, approver, ') | Numeric ID:', approverNumericId);
+                    
+                    // ✅ SKIP department_head for Level 1
+                    if (approverValue === 'department_head' || 
+                        approverValue.includes('department') && approverValue.includes('head') ||
+                        approverValue.includes('chief') ||
+                        approver.type === 'department_head' ||
+                        approverNumericId === -2) {
+                      console.log(`🚫 Skipping department_head for Level 1: ${JSON.stringify(approver)}`);
+                      continue;
+                    }
+                    
+                    if (approverValue === 'reporting_to' || 
+                        approverValue.includes('reporting') || 
+                        approverValue.includes('immediate supervisor') ||
+                        approverValue.includes('manager') ||
+                        approver.type === 'reporting_to' ||
+                        approverNumericId === -1) {  // -1 typically represents reporting manager
+                      // Use the requester's reporting manager
+                      if (requestUser && requestUser.reportingToId) {
+                        actualApproverId = requestUser.reportingToId;
+                        if (requestUser.reportingTo) {
+                          approverName = `${requestUser.reportingTo.emp_fname} ${requestUser.reportingTo.emp_lname}`;
+                        }
+                        console.log(`✅ Using reporting manager (code: ${approverNumericId}): ${approverName} (ID: ${actualApproverId})`);
+                      } else {
+                        console.warn('⚠️ Requester has no reporting manager configured');
+                        continue;
+                      }
+                    } else {
+                      // Regular user approver - validate that the user exists
+                      // Try to parse as number if it's a string ID
+                      let userIdToCheck = approver.id;
+                      if (typeof userIdToCheck === 'string' && !isNaN(parseInt(userIdToCheck))) {
+                        userIdToCheck = parseInt(userIdToCheck);
+                      }
+                      
+                      // Skip negative IDs that aren't our special codes
+                      if (userIdToCheck < 0 && userIdToCheck !== -1 && userIdToCheck !== -2) {
+                        console.warn(`⚠️ Skipping unknown negative approver ID: ${userIdToCheck}`);
+                        continue;
+                      }
+                      
+                      actualApproverId = userIdToCheck;
+                      const templateApprover = await prisma.users.findUnique({
+                        where: { id: actualApproverId },
+                        select: {
+                          id: true,
+                          emp_fname: true,
+                          emp_lname: true,
+                          emp_email: true,
+                        }
+                      });
+                      
+                      if (templateApprover) {
+                        approverName = `${templateApprover.emp_fname} ${templateApprover.emp_lname}`;
+                        console.log(`✅ Using template approver: ${approverName} (ID: ${actualApproverId})`);
+                      } else {
+                        console.warn(`⚠️ Template approver with ID ${actualApproverId} not found in database`);
+                        continue;
+                      }
+                    }
+                  
+                  // Check for duplicates before creating
+                  if (actualApproverId && !processedApproverIds.has(actualApproverId)) {
+                    processedApproverIds.add(actualApproverId);
+                    
                     // Create Philippine time (server is already in Philippine timezone)
                     const now = new Date();
                     const philippineTime = now; // No conversion needed - server is already GMT+8
@@ -928,11 +1002,12 @@ export async function POST(request: Request) {
                         approverName: approverName, // ✅ Add approver name to database
                         approverEmail: approverUser?.emp_email, // ✅ Add approver email to database
                         status: APPROVAL_STATUS.PENDING_APPROVAL,
+                        sentOn: philippineTime, // ✅ Set sentOn since email is sent immediately for Level 1
                         createdAt: philippineTime,
                         updatedAt: philippineTime,
                       }
                     });
-                    level1ApproverNames.push(approverName);
+                    levelApproverNames.push(approverName);
                     console.log(`Created template approver for level ${levelNumber}: ${approverName}`);
                     
                     // 📧 Send approval required notification
@@ -960,87 +1035,25 @@ export async function POST(request: Request) {
                       console.error(`Error sending approval notification to ${approverName}:`, notificationError);
                       // Don't fail the request creation if notification fails
                     }
-                  }
-                }
-              }
-              
-              // Then, create records for additional approvers from form
-              if (Array.isArray(additionalApprovers) && additionalApprovers.length > 0) {
-                for (const approverId of additionalApprovers) {
-                  // Convert to number if needed
-                  const numericApproverId = typeof approverId === 'string' ? parseInt(approverId) : approverId;
-                  console.log(`Processing additional approver ID: ${approverId} (${typeof approverId}) -> ${numericApproverId}`);
-                  
-                  // Skip if the ID is invalid
-                  if (isNaN(numericApproverId) || numericApproverId <= 0) {
-                    console.warn(`Invalid approver ID: ${approverId}`);
-                    continue;
-                  }
-                  
-                  // Fetch user details for the additional approver
-                  const additionalApprover = await prisma.users.findUnique({
-                    where: { id: numericApproverId },
-                    select: {
-                      id: true,
-                      emp_fname: true,
-                      emp_lname: true,
-                      emp_email: true,
-                    }
-                  });
-                  
-                  if (additionalApprover) {
-                    const createdAdditional = await prisma.requestApproval.create({
-                      data: {
-                        requestId: newRequest.id,
-                        level: levelNumber,
-                        name: level.displayName || `Level ${levelNumber}`,
-                        approverId: additionalApprover.id,
-                        approverName: `${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`, // ✅ Add approver name
-                        approverEmail: additionalApprover.emp_email, // ✅ Add approver email
-                        status: APPROVAL_STATUS.PENDING_APPROVAL,
-                        sentOn: philippineTime, // ✅ Set sentOn since email is sent immediately for Level 1
-                        createdAt: philippineTime, // ✅ Use the main philippineTime variable
-                        updatedAt: philippineTime, // ✅ Use the main philippineTime variable
-                      }
-                    });
-                    level1ApproverNames.push(`${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`);
-                    console.log(`Created additional approver for level ${levelNumber}: ${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`);
-                    
-                    // 📧 Send approval required notification
-                    try {
-                      if (requestUser) {
-                        const requestWithUser = {
-                          id: newRequest.id,
-                          status: newRequest.status,
-                          formData: newRequest.formData,
-                          user: requestUser
-                        };
-                        
-                        await notifyApprovalRequired(requestWithUser, template, additionalApprover, createdAdditional.id);
-                        console.log(`✅ Approval notification sent to ${additionalApprover.emp_fname} ${additionalApprover.emp_lname}`);
-                      }
-                    } catch (notificationError) {
-                      console.error(`Error sending approval notification to ${additionalApprover.emp_fname} ${additionalApprover.emp_lname}:`, notificationError);
-                      // Don't fail the request creation if notification fails
-                    }
                   } else {
-                    console.warn(`Additional approver with ID ${numericApproverId} not found in database`);
+                    console.log(`⚠️ Skipping duplicate template approver ID: ${actualApproverId}`);
                   }
                 }
               }
+            }
               
               // 📧 STANDARD HISTORY ENTRY 2: Approvals Initiated - Level 1 (Priority 2)
-              if (level1ApproverNames.length > 0) {
+              if (levelApproverNames.length > 0) {
                 await addHistory(prisma as any, {
                   requestId: newRequest.id,
                   action: "Approvals Initiated",
                   actorName: "System",
                   actorType: "system",
-                  details: `Approver(s) : ${level1ApproverNames.join(', ')}\nLevel : ${level.displayName || `Level ${levelNumber}`}`,
+                  details: `Approver(s) : ${levelApproverNames.join(', ')}\nLevel : ${level.displayName || `Level ${levelNumber}`}`,
                 });
-                console.log('✅ Created history entry: Approvals Initiated - Level 1');
+                console.log(`✅ Created history entry: Approvals Initiated - Level ${levelNumber}`);
               }
-            } else {
+            } else if (levelNumber > 1) {
               // ⚠️ IMPORTANT: For levels > 1, create approval records in "dormant" state
               // These levels should NOT receive email notifications during request creation
               // They will be activated (and emails sent) when previous level completes
@@ -1079,12 +1092,17 @@ export async function POST(request: Request) {
                       continue;
                     }
                   } else if (approverValue === 'department_head' || 
-                            approverValue.includes('department') || 
-                            approverValue.includes('head') ||
+                            approverValue.includes('department') && approverValue.includes('head') ||
                             approverValue.includes('chief') ||
                             approver.type === 'department_head' ||
                             approverNumericId === -2) {  // -2 typically represents department head
                     // Get department head through userDepartment relationship
+                    console.log('🔍 Department debug for level', levelNumber, ':', {
+                      hasUserDepartment: !!requestUser?.userDepartment,
+                      departmentData: requestUser?.userDepartment,
+                      hasDepartmentHead: !!requestUser?.userDepartment?.departmentHead,
+                      departmentHeadData: requestUser?.userDepartment?.departmentHead
+                    });
                     if (requestUser && requestUser.userDepartment?.departmentHead) {
                       const departmentHead = requestUser.userDepartment.departmentHead;
                       actualApproverId = departmentHead.id;

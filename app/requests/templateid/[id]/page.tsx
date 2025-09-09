@@ -987,6 +987,18 @@ export default function RequestPage() {
     }
   }, [templateData, session?.user?.name]);
 
+  // Auto-populate first level approvers when template and users are both loaded
+  useEffect(() => {
+    if (templateData && allUsers.length > 0) {
+      // Small delay to ensure form data is properly initialized
+      const timer = setTimeout(() => {
+        autoPopulateFirstLevelApprovers(templateData);
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [templateData, allUsers]);
+
   const fetchTemplateData = async () => {
     try {
       const response = await fetch(`/api/templates/${templateId}`);
@@ -1081,6 +1093,9 @@ export default function RequestPage() {
           }
         }
         setFormData(initialFormData);
+
+        // Auto-populate first level approvers after form data is initialized
+        await autoPopulateFirstLevelApprovers(template);
       }
     } catch (error) {
       console.error('Error fetching template:', error);
@@ -1154,6 +1169,197 @@ export default function RequestPage() {
       }
     } catch (error) {
       console.error('Error fetching users:', error);
+    }
+  };
+
+  // Function to get first level approvers from template and auto-populate the Select Approvers field
+  const autoPopulateFirstLevelApprovers = async (template: TemplateData) => {
+    console.log('🔍 Auto-populating first level approvers...');
+    console.log('Template data:', template);
+    
+    // Start with an empty set of approver IDs
+    let approverIdsToAdd: string[] = [];
+    
+    // ❌ DISABLED: Dynamic approver auto-population
+    // This was causing reporting managers and department heads to be auto-added
+    // User wants only template approvers to show up
+    /*
+    // 1. First, get dynamic approvers from current user's data (reporting to, department head)
+    if (session?.user?.id) {
+      console.log('📋 Fetching current user data for dynamic approvers...');
+      try {
+        const userResponse = await fetch(`/api/users/${session.user.id}`);
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          console.log('👤 Current user data:', userData.user);
+          
+          const currentUser = userData.user;
+          
+          // Add reporting manager if exists
+          if (currentUser.reportingToId) {
+            approverIdsToAdd.push(String(currentUser.reportingToId));
+            console.log('✅ Added reporting manager ID:', currentUser.reportingToId);
+          }
+          
+          // ❌ DISABLED: Do not auto-add department head to selected approvers
+          // This was causing both selected approvers AND department head to appear in Level 1
+          // The department head should only appear in Level 2+ from templates
+        }
+      } catch (error) {
+        console.error('❌ Error fetching user data for dynamic approvers:', error);
+      }
+    }
+    */
+    
+    // 2. Get ONLY template first level approvers (no dynamic approvers)
+    const templateAny = template as any;
+    if (templateAny.approvalWorkflow) {
+      const approvalConfig = templateAny.approvalWorkflow;
+      console.log('📋 Approval config:', approvalConfig);
+
+      if (approvalConfig.levels && Array.isArray(approvalConfig.levels) && approvalConfig.levels.length > 0) {
+        // Get the first level (Level 1)
+        const firstLevel = approvalConfig.levels[0];
+        console.log('📌 First level data:', firstLevel);
+
+        if (firstLevel.approvers && Array.isArray(firstLevel.approvers) && firstLevel.approvers.length > 0) {
+          // Process template Level 1 approvers, including special types like reporting_to
+          console.log('🔍 Processing first level approvers:', firstLevel.approvers);
+          
+          for (const approver of firstLevel.approvers) {
+            console.log('📋 Processing approver:', approver);
+            
+            let resolvedApproverId: string | null = null;
+            
+            // Handle different approver formats
+            if (typeof approver === 'object' && approver.id) {
+              const approverId = approver.id;
+              console.log('🔍 Object approver ID:', approverId);
+              
+              // Check if it's a special approver type
+              const approverValue = String(approverId).toLowerCase();
+              
+              if (approverValue === 'reporting_to' || approverValue === '-1') {
+                // Resolve reporting_to to actual user ID
+                if (session?.user?.id) {
+                  try {
+                    const userResponse = await fetch(`/api/users/${session.user.id}`);
+                    if (userResponse.ok) {
+                      const userData = await userResponse.json();
+                      const currentUser = userData.user;
+                      
+                      if (currentUser.reportingToId) {
+                        resolvedApproverId = String(currentUser.reportingToId);
+                        console.log('✅ Resolved reporting_to to user ID:', resolvedApproverId);
+                      } else {
+                        console.log('⚠️ No reporting manager found for current user');
+                      }
+                    }
+                  } catch (error) {
+                    console.error('❌ Error fetching user data for reporting_to:', error);
+                  }
+                }
+              } else if (!isNaN(Number(approverId)) && Number(approverId) > 0) {
+                // Regular numeric user ID
+                resolvedApproverId = String(approverId);
+                console.log('✅ Using numeric user ID:', resolvedApproverId);
+              }
+            } else if (typeof approver === 'number' && approver > 0) {
+              resolvedApproverId = String(approver);
+              console.log('✅ Using numeric approver:', resolvedApproverId);
+            } else if (typeof approver === 'string') {
+              const approverValue = approver.toLowerCase();
+              
+              if (approverValue === 'reporting_to' || approverValue === '-1') {
+                // Resolve reporting_to to actual user ID
+                if (session?.user?.id) {
+                  try {
+                    const userResponse = await fetch(`/api/users/${session.user.id}`);
+                    if (userResponse.ok) {
+                      const userData = await userResponse.json();
+                      const currentUser = userData.user;
+                      
+                      if (currentUser.reportingToId) {
+                        resolvedApproverId = String(currentUser.reportingToId);
+                        console.log('✅ Resolved string reporting_to to user ID:', resolvedApproverId);
+                      } else {
+                        console.log('⚠️ No reporting manager found for current user');
+                      }
+                    }
+                  } catch (error) {
+                    console.error('❌ Error fetching user data for string reporting_to:', error);
+                  }
+                }
+              } else if (!isNaN(Number(approver)) && Number(approver) > 0) {
+                resolvedApproverId = approver;
+                console.log('✅ Using string numeric ID:', resolvedApproverId);
+              }
+            }
+            
+            // Add resolved approver ID if valid
+            if (resolvedApproverId) {
+              approverIdsToAdd.push(resolvedApproverId);
+              console.log('✅ Added resolved approver ID:', resolvedApproverId);
+            }
+          }
+          
+          console.log('📋 All resolved first level approver IDs:', approverIdsToAdd);
+        } else {
+          console.log('❌ No approvers found in first level');
+        }
+      } else {
+        console.log('❌ No approval levels found');
+      }
+    } else {
+      console.log('❌ No approval workflow found in template');
+    }
+
+    // 3. Remove duplicates from the combined list
+    const uniqueApproverIds = Array.from(new Set(approverIdsToAdd));
+    console.log('🔗 Template approver IDs only:', uniqueApproverIds);
+    console.log('📊 Found', uniqueApproverIds.length, 'template approvers (no dynamic approvers)');
+
+    // 4. Find the "Select Approvers" field and auto-populate it with template approvers only
+    const approverField = template.fields?.find((field: FormField) => 
+      field.id === '12' || 
+      (field.type === 'input-list' && field.label.toLowerCase().includes('approver'))
+    );
+
+    if (approverField && uniqueApproverIds.length > 0) {
+      console.log('📝 Found approver field:', approverField);
+      
+      // Only auto-populate if the field is empty or has default value
+      setFormData(prev => {
+        const currentValue = prev[approverField.id];
+        const isEmpty = !currentValue || 
+                       (Array.isArray(currentValue) && currentValue.length === 0) ||
+                       (typeof currentValue === 'string' && currentValue.trim() === '');
+        
+        if (isEmpty) {
+          console.log('✅ Auto-populating approver field with template approvers only');
+          return {
+            ...prev,
+            [approverField.id]: uniqueApproverIds
+          };
+        } else {
+          console.log('ℹ️ Approver field already has values, not auto-populating');
+          return prev;
+        }
+      });
+    } else if (!approverField) {
+      console.log('⚠️ Select Approvers field not found in template');
+    } else {
+      console.log('ℹ️ No approvers to add (neither dynamic nor template approvers found)');
+    }
+  };
+
+  // Manual trigger function for debugging or manual population
+  const manualPopulateApprovers = async () => {
+    if (templateData) {
+      console.log('🔄 Manually triggering approver population...');
+      await autoPopulateFirstLevelApprovers(templateData);
+    } else {
+      console.log('❌ No template data available for manual population');
     }
   };
 
