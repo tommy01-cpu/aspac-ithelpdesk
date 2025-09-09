@@ -10,6 +10,11 @@ const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
+// Force load background services in production
+if (!dev) {
+  console.log('🔧 Production mode: Will initialize background services after server start...');
+}
+
 // CORS middleware function - More secure configuration
 const enableCors = (req, res) => {
   // More restrictive CORS - only allow your domain and localhost
@@ -77,29 +82,49 @@ app.prepare().then(() => {
         logger.error('HTTPS Server failed to start:', err);
         throw err;
       }
-      logger.security('HTTPS Server ready on:');
+      logger.security('🔒 [SECURITY] HTTPS Server ready on:');
       logger.info('   - https://localhost');
       logger.info('   - https://192.168.1.85');
       logger.info('   - https://43.250.226.166');
-      logger.security('All APIs are now ENCRYPTED with SSL/TLS');
-    });
-    
-    // HTTP redirect server - redirects all HTTP to HTTPS
-    createHttpServer((req, res) => {
-      const host = req.headers.host;
-      const httpsUrl = `https://${host}${req.url}`;
-      res.writeHead(301, { 
-        Location: httpsUrl,
-        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains'
-      });
-      res.end();
-    }).listen(80, '0.0.0.0', (err) => {
-      if (err) {
-        logger.warn('HTTP Redirect Server (port 80) could not start:', err.message);
-        logger.info('This is normal if WAMP Apache is using port 80');
-      } else {
-        logger.server('HTTP Redirect Server (port 80) -> HTTPS');
-        logger.info('   - http://192.168.1.85 -> https://192.168.1.85');
+      logger.security('🔒 [SECURITY] All APIs are now ENCRYPTED with SSL/TLS');
+      
+      // Initialize background services in production
+      if (!dev) {
+        setTimeout(() => {
+          console.log('🔧 Triggering background services initialization...');
+          
+          // Use Node.js built-in https module instead of fetch
+          const https = require('https');
+          const options = {
+            hostname: 'localhost',
+            port: 443,
+            path: '/api/init-background-services',
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            rejectUnauthorized: false // Ignore self-signed certificate
+          };
+
+          const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => {
+              data += chunk;
+            });
+            res.on('end', () => {
+              try {
+                const result = JSON.parse(data);
+                console.log('✅ Background services initialization result:', result);
+              } catch (error) {
+                console.log('✅ Background services initialization completed');
+              }
+            });
+          });
+
+          req.on('error', (error) => {
+            console.error('❌ Failed to initialize background services:', error.message);
+          });
+
+          req.end();
+        }, 5000); // Wait 5 seconds after server start
       }
     });
     
@@ -137,9 +162,9 @@ app.prepare().then(() => {
       logger.error('Mobile HTTP Server failed to start:', err);
       throw err;
     }
-    logger.mobile('Mobile HTTP Server ready on:');
+    logger.mobile('📱 [MOBILE] Mobile HTTP Server ready on:');
     logger.info('   - http://localhost:3001');
     logger.info('   - http://192.168.1.85:3001');
-    logger.warn('Mobile APIs are NOT encrypted (HTTP only)');
+    logger.warn('⚠️  [WARNING] Mobile APIs are NOT encrypted (HTTP only)');
   });
 });

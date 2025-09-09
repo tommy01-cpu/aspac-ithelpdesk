@@ -2,6 +2,9 @@ import { checkAndGenerateHolidays } from '@/lib/recurring-holidays-service';
 import { safeApprovalReminderService } from '@/lib/safe-approval-reminder-service';
 import { safeSLAMonitoringService } from '@/lib/safe-sla-monitoring-service';
 
+// Immediate log to confirm file is loaded
+console.log('🚀 LOADING: SafeBackgroundServiceManager module loaded!');
+
 /**
  * MASTER background service manager - coordinates all background services
  * Multiple safety layers to prevent any background failure from affecting main app
@@ -656,18 +659,31 @@ class SafeBackgroundServiceManager {
 
 export const safeBackgroundServiceManager = SafeBackgroundServiceManager.getInstance();
 
+// Add immediate log to verify file is being loaded
+console.log('🚀 SafeBackgroundServiceManager file loaded!');
+
 // SAFE auto-initialization with delay and error protection
 if (typeof window === 'undefined') { // Server-side only
-  // Use a global flag to prevent multiple initializations in development
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
+  console.log(`🔍 Environment check: NODE_ENV=${process.env.NODE_ENV}, isDevelopment=${isDevelopment}`);
+  
+  // Use a global flag only in development to prevent multiple initializations during hot reloads
   const globalKey = '__ASPAC_BACKGROUND_SERVICES_INITIALIZED__';
   
-  if (!(global as any)[globalKey]) {
-    (global as any)[globalKey] = true;
+  if (isDevelopment && (global as any)[globalKey]) {
+    console.log('⚡ Background services already initialized (development mode protection)');
+  } else {
+    // Set flag only in development
+    if (isDevelopment) {
+      (global as any)[globalKey] = true;
+    }
     
-    console.log('🔧 First-time background service initialization...');
+    console.log(`🔧 [${isDevelopment ? 'DEV' : 'PROD'}] Initializing background services...`);
     
     setTimeout(async () => {
       try {
+        console.log('⏰ 8-second delay completed, starting initialization...');
         // Additional safety check to ensure services are properly instantiated
         const manager = safeBackgroundServiceManager;
         if (manager && typeof manager.initializeAllServices === 'function') {
@@ -679,7 +695,5 @@ if (typeof window === 'undefined') { // Server-side only
         console.error('Failed to initialize background services (main app protected):', error);
       }
     }, 8000); // Increased delay to ensure full application startup
-  } else {
-    console.log('⚡ Background services already initialized (development mode protection)');
   }
 }

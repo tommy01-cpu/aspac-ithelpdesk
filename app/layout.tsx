@@ -7,8 +7,6 @@ import HeaderVisibility from '../components/header-visibility';
 import GlobalNotificationPanel from '../components/GlobalNotificationPanel';
 import { Toaster } from '@/components/ui/toaster';
 
-// Import console silencer to disable all console logs
-import '@/lib/console-silencer';
 // Import SAFE background service manager to auto-start all services
 import '@/lib/safe-background-service-manager';
 
