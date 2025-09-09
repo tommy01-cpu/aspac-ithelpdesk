@@ -107,64 +107,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       },
     });
 
-    // 🎯 PRIORITY: Send resolved email notifications IMMEDIATELY after database update
-    // This ensures resolved notifications are sent before any other notifications
-    try {
-      const statusChanged = existing.status !== 'resolved';
-      if (statusChanged) {
-        console.log('🔥 PRIORITY: Sending resolved notifications FIRST...');
-        
-        // Get the complete request data with user information for notifications
-        const requestWithUser = await prisma.request.findUnique({
-          where: { id: requestId },
-          include: {
-            user: true,
-          },
-        });
-
-        if (requestWithUser) {
-          // Get template data if available
-          const templateData = null; // Template data not needed for notification, but parameter is required
-          
-          // Use the actual technical resolution notes for the email template, not just the request closure comments
-          // The request_resolution field should show the full technical resolution
-          const actualResolution = String(closureComments || '').trim();
-          const userComments = String(requestClosureComments || '').trim();
-          
-          // Combine both resolution content and user comments for a complete resolution description
-          let resolutionDescription = '';
-          if (actualResolution) {
-            // Strip HTML from resolution notes for email
-            const stripHtml = (html: string) => {
-              return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
-            };
-            resolutionDescription = stripHtml(actualResolution);
-          }
-          
-          // If there are additional user comments, append them
-          if (userComments) {
-            if (resolutionDescription) {
-              resolutionDescription += '\n\n' + userComments;
-            } else {
-              resolutionDescription = userComments;
-            }
-          }
-          
-          // Fallback if no resolution content
-          if (!resolutionDescription) {
-            resolutionDescription = 'Request has been resolved';
-          }
-          
-          await notifyRequestResolved(requestWithUser, templateData, resolutionDescription);
-          
-          console.log(`✅ PRIORITY: Resolved notifications sent FIRST for request #${requestId}`);
-        }
-      }
-    } catch (error) {
-      console.error('Error sending resolved request notifications:', error);
-      // Don't fail the request resolution if notifications fail
-    }
-
     // History entry (only if status changed or resolution was updated)
     try {
       const statusChanged = existing.status !== 'resolved';
@@ -234,6 +176,61 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         details: historyDetails,
       });
     } catch {}
+
+    // Send email notifications for resolved request (only when status changes to resolved)
+    try {
+      const statusChanged = existing.status !== 'resolved';
+      if (statusChanged) {
+        // Get the complete request data with user information for notifications
+        const requestWithUser = await prisma.request.findUnique({
+          where: { id: requestId },
+          include: {
+            user: true,
+          },
+        });
+
+        if (requestWithUser) {
+          // Get template data if available
+          const templateData = null; // Template data not needed for notification, but parameter is required
+          
+          // Use the actual technical resolution notes for the email template, not just the request closure comments
+          // The request_resolution field should show the full technical resolution
+          const actualResolution = String(closureComments || '').trim();
+          const userComments = String(requestClosureComments || '').trim();
+          
+          // Combine both resolution content and user comments for a complete resolution description
+          let resolutionDescription = '';
+          if (actualResolution) {
+            // Strip HTML from resolution notes for email
+            const stripHtml = (html: string) => {
+              return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+            };
+            resolutionDescription = stripHtml(actualResolution);
+          }
+          
+          // If there are additional user comments, append them
+          if (userComments) {
+            if (resolutionDescription) {
+              resolutionDescription += '\n\n' + userComments;
+            } else {
+              resolutionDescription = userComments;
+            }
+          }
+          
+          // Fallback if no resolution content
+          if (!resolutionDescription) {
+            resolutionDescription = 'Request has been resolved';
+          }
+          
+          await notifyRequestResolved(requestWithUser, templateData, resolutionDescription);
+          
+          console.log(`✅ Resolved notifications sent for request #${requestId}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error sending resolved request notifications:', error);
+      // Don't fail the request resolution if notifications fail
+    }
 
     return NextResponse.json({ ok: true, request: updated });
   } catch (e) {

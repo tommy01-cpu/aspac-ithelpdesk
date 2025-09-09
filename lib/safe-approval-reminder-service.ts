@@ -70,10 +70,10 @@ class SafeApprovalReminderService {
     try {
       console.log('📧 Calling approval reminders API...');
       
-      // Use localhost for internal API calls to avoid external network issues
+      // Use appropriate URL based on environment
       const baseUrl = process.env.NODE_ENV === 'production' 
-        ? (process.env.API_BASE_URL || process.env.NEXTAUTH_URL )
-        : 'https://localhost:3000';
+        ? (process.env.API_BASE_URL || process.env.NEXTAUTH_URL)
+        : 'http://localhost:3001';
       
       console.log('📧 Using API base URL:', baseUrl);
       
