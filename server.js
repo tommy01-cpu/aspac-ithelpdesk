@@ -22,7 +22,9 @@ const enableCors = (req, res) => {
     'http://192.168.1.85',
     'http://43.250.226.166:3000',
     'https://43.250.226.166:3000',
-    'http://43.250.226.166:8080'
+    'http://43.250.226.166:8080',
+    'https://ithelpdesk.aspacphils.com.ph',
+    'http://ithelpdesk.aspacphils.com.ph',
   ];
   
   const origin = req.headers.origin;
