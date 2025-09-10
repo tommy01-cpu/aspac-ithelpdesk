@@ -73,7 +73,7 @@ class SafeApprovalReminderService {
       // Use appropriate URL based on environment
       const baseUrl = process.env.NODE_ENV === 'production' 
         ? (process.env.API_BASE_URL || process.env.NEXTAUTH_URL)
-        : 'http://localhost:3001';
+        : 'http://ithelpdeskt.aspacphils.com.ph';
       
       console.log('📧 Using API base URL:', baseUrl);
       

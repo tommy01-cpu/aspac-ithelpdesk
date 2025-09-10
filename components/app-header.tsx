@@ -260,7 +260,7 @@ export default function AppHeader() {
               )}
               
               {/* Only show Reports if user is admin, technician, or has elevated privileges */}
-              {(session?.user?.isAdmin || session?.user?.isTechnician || session?.user?.isServiceApprover) && (
+              {/* {(session?.user?.isAdmin || session?.user?.isTechnician || session?.user?.isServiceApprover) && (
                 <Link href="/reports">
                   <Button 
                     variant="ghost" 
@@ -272,7 +272,7 @@ export default function AppHeader() {
                     Reports
                   </Button>
                 </Link>
-              )}
+              )} */}
               
               {/* Only show Technician View if user is a technician */}
               {session?.user?.isTechnician && (
