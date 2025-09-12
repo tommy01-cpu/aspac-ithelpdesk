@@ -57,7 +57,7 @@ async function findAvailableTechnician(templateId: string, tx: any) {
       }
     });
 
-    const supportGroupIds = templateSupportGroups.map(tsg => tsg.supportGroupId);
+    const supportGroupIds = templateSupportGroups.map((tsg: { supportGroupId: number }) => tsg.supportGroupId);
     console.log('📋 Template support groups:', supportGroupIds);
 
     let templateTechnicians: any[] = [];
@@ -87,8 +87,8 @@ async function findAvailableTechnician(templateId: string, tx: any) {
       });
 
       templateTechnicians = technicianMemberships
-        .map(membership => membership.technician)
-        .filter(tech => tech && tech.isActive);
+        .map((membership: any) => membership.technician)
+        .filter((tech: any) => tech && tech.isActive);
     }
 
     console.log(`📋 Found ${templateTechnicians.length} technicians supporting template ${templateId}`);
