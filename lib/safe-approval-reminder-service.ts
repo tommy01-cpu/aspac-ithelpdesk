@@ -71,9 +71,11 @@ class SafeApprovalReminderService {
       console.log('📧 Calling approval reminders API...');
       
       // Use appropriate URL based on environment
-      const baseUrl = process.env.NODE_ENV === 'production' 
-        ? (process.env.API_BASE_URL || process.env.NEXTAUTH_URL)
-        : 'http://ithelpdeskt.aspacphils.com.ph';
+      // const baseUrl = process.env.NODE_ENV === 'production' 
+      //   ? (process.env.API_BASE_URL || process.env.NEXTAUTH_URL)
+      //   : 'http://ithelpdeskt.aspacphils.com.ph';
+
+      const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXTAUTH_URL;
       
       console.log('📧 Using API base URL:', baseUrl);
       
