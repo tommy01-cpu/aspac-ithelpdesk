@@ -325,13 +325,13 @@ class SafeApprovalReminderService {
         const request = approval.request;
         const requesterName = `${request.user.emp_fname} ${request.user.emp_lname}`.trim();
         const requestSubject = this.getRequestSubject(request.formData);
-        const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+        const baseUrl = process.env.NEXTAUTH_URL || 'https:/ithelpdesk.aspacphils.com.ph';
         const specificRequestApprovalUrl = `${baseUrl}/requests/approvals/${request.id}`;
         const specificRequestViewUrl = `${baseUrl}/requests/view/${request.id}`;
         return `- Request #${request.id}: "${requestSubject}" from ${requesterName} - [View Request](${specificRequestViewUrl}) | [Approve Here](${specificRequestApprovalUrl})`;
       }).join('\n');
 
-      const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+      const baseUrl = process.env.NEXTAUTH_URL || 'https:/ithelpdesk.aspacphils.com.ph';
       const primaryRequestId = approvals[0].requestId;
       const requestViewUrl = `${baseUrl}/requests/view/${primaryRequestId}`;
       const specificApprovalUrl = `${baseUrl}/requests/approvals/${primaryRequestId}`;
