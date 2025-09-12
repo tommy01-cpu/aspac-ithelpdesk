@@ -70,11 +70,9 @@ class SafeApprovalReminderService {
     try {
       console.log('📧 Calling approval reminders API...');
       
-      // Use appropriate URL based on environment
-      const baseUrl = process.env.NODE_ENV === 'production' 
-        ? (process.env.API_BASE_URL || process.env.NEXTAUTH_URL)
-        : 'http://localhost:3001';
-      
+      // Use NEXTAUTH_URL environment variable directly
+      const baseUrl = process.env.NEXTAUTH_URL || 'https://ithelpdesk.aspacphils.com.ph';
+
       console.log('📧 Using API base URL:', baseUrl);
       
       // Call the actual scheduled task API that handles all approval reminders

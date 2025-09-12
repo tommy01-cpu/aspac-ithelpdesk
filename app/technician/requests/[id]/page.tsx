@@ -3083,6 +3083,7 @@ export default function RequestViewPage() {
             <DialogFooter>
               <Button 
                 variant="outline" 
+                disabled={addingNote}
                 onClick={() => setShowNotesModal(false)}
               >
                 Cancel
@@ -3246,7 +3247,7 @@ export default function RequestViewPage() {
         {/* Work Log Modal (Add/Edit) */}
         {session?.user?.isTechnician && (
           <Dialog open={showWorkLogModal} onOpenChange={setShowWorkLogModal}>
-            <DialogContent className="max-w-3xl">
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{editingWorkLog ? 'Edit Work Log' : 'New Work Log'}</DialogTitle>
               </DialogHeader>

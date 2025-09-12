@@ -180,6 +180,19 @@ export const markAllNotificationsAsRead = async (userId: number): Promise<boolea
   }
 };
 
+// Delete all notifications for a user
+export const deleteAllNotifications = async (userId: number): Promise<boolean> => {
+  try {
+    await prisma.notification.deleteMany({
+      where: { userId },
+    });
+    return true;
+  } catch (error) {
+    console.error('Error deleting all notifications:', error);
+    return false;
+  }
+};
+
 // Get unread notification count
 export const getUnreadNotificationCount = async (userId: number): Promise<number> => {
   try {

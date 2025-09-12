@@ -2983,6 +2983,7 @@ export default function RequestViewPage() {
                                 <Button 
                                   variant="outline" 
                                   size="sm"
+                                  disabled={savingResolution}
                                   onClick={() => { 
                                     // Reset to original values instead of clearing
                                     const fd: any = requestData?.formData || {};
@@ -4455,15 +4456,16 @@ export default function RequestViewPage() {
             <DialogFooter>
               <Button 
                 variant="outline" 
+                disabled={addingNote}
                 onClick={() => setShowNotesModal(false)}
               >
                 Cancel
               </Button>
               <Button 
                 onClick={addNote}
-                disabled={!newNote.trim()}
+                disabled={!newNote.trim() || addingNote}
               >
-                Save
+                {addingNote ? 'Saving...' : 'Save'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -4595,7 +4597,8 @@ export default function RequestViewPage() {
 
             <DialogFooter>
               <Button 
-                variant="outline" 
+                variant="outline"
+                disabled={addingApprovers}
                 onClick={() => {
                   setShowAddApprovalModal(false);
                   setSelectedUsers([]);
@@ -4630,7 +4633,7 @@ export default function RequestViewPage() {
               resetWorkLogForm(); // Clear form when modal closes
             }
           }}>
-            <DialogContent className="max-w-3xl">
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{editingWorkLog ? 'Edit Work Log' : 'New Work Log'}</DialogTitle>
               </DialogHeader>
@@ -5413,7 +5416,7 @@ export default function RequestViewPage() {
             </div>
             
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowChangeStatusModal(false)}>
+              <Button variant="outline" onClick={() => setShowChangeStatusModal(false)} disabled={isUpdatingStatus}>
                 Cancel
               </Button>
               <Button 
@@ -5558,7 +5561,7 @@ export default function RequestViewPage() {
               <Button variant="outline" onClick={() => {
                 setShowSlaTimerModal(false);
                 setSlaStopReason(''); // Clear reason when canceling
-              }}>
+              }} disabled={isUpdatingSla}>
                 Cancel
               </Button>
               <Button 

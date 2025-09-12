@@ -287,8 +287,8 @@ class SafeSLAMonitoringService {
   }
 
   /**
-   * Check if request has breached SLA (response time or resolution time)
-   * NOW USES slaDueDate and respects slaStop flag
+   * Check if request has breached SLA or needs escalation based on template configuration
+   * ENFORCES all escalations to be sent BEFORE due date for proactive management
    */
   private async checkSLABreach(request: any): Promise<{
     isBreached: boolean;
@@ -322,41 +322,233 @@ class SafeSLAMonitoringService {
       const now = new Date();
       const dueDate = new Date(slaDueDate);
       
-      // Check if SLA is breached (current time > due date)
+      // Get SLA incident configuration to check escalation settings
+      const slaId = formData?.slaId || formData?.slaid;
+      let slaIncident = null;
+      
+      if (slaId) {
+        try {
+          slaIncident = await prisma.sLAIncident.findUnique({
+            where: { id: parseInt(slaId) }
+          });
+        } catch (error) {
+          console.warn(`Failed to fetch SLA incident for ID ${slaId}:`, error);
+        }
+      }
+
+      // PRIORITY: Check proactive escalations (BEFORE due date) first
+      const escalationHistory = formData?.history?.escalations || [];
+      const shouldSendEscalation = await this.shouldSendEscalationNow(
+        request.id,
+        now,
+        dueDate,
+        escalationHistory,
+        slaIncident
+      );
+
+      if (shouldSendEscalation.shouldSend) {
+        console.log(`🎯 Request ${request.id} needs PROACTIVE escalation:`, {
+          reason: shouldSendEscalation.reason,
+          level: shouldSendEscalation.level,
+          escalateType: 'BEFORE due date (forced)',
+          triggerTime: shouldSendEscalation.triggerTime,
+          now: now.toLocaleString(),
+          dueDate: dueDate.toLocaleString(),
+          minutesUntilDue: Math.round((dueDate.getTime() - now.getTime()) / (1000 * 60))
+        });
+
+        // Calculate time until due date (should be positive for proactive escalations)
+        const hoursUntilDue = (dueDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+        const slaHours = parseFloat(formData?.slaHours || '0');
+
+        return {
+          isBreached: true,
+          hoursOverdue: Math.max(0, -hoursUntilDue), // Convert to positive if before due date
+          breachType: 'proactive-escalation',
+          slaService,
+          actualElapsed: Math.max(0, slaHours - hoursUntilDue),
+          slaLimit: slaHours
+        };
+      }
+
+      // Secondary check: Only after due date if no proactive escalations configured
       const isBreached = now > dueDate;
       
       if (!isBreached) {
-        console.log(`✅ Request ${request.id} SLA OK - Due: ${dueDate.toLocaleString()}, Now: ${now.toLocaleString()}`);
+        const minutesUntilDue = Math.round((dueDate.getTime() - now.getTime()) / (1000 * 60));
+        console.log(`✅ Request ${request.id} SLA OK - Due in ${minutesUntilDue} minutes (${dueDate.toLocaleString()})`);
         return { isBreached: false };
       }
 
-      // Calculate hours overdue
-      const hoursOverdue = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
-      const slaHours = parseFloat(formData?.slaHours || '0');
-      
-      // SLA is breached - escalation will be sent
+      // Only send post-due-date notifications if no escalation system is configured
+      if (!slaIncident?.resolutionEscalationEnabled) {
+        const hoursOverdue = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
+        const slaHours = parseFloat(formData?.slaHours || '0');
+        
+        console.log(`⚠️ Request ${request.id} SLA BREACHED (reactive fallback):`, {
+          dueDate: dueDate.toLocaleString(),
+          now: now.toLocaleString(),
+          hoursOverdue: hoursOverdue.toFixed(2),
+          slaHours,
+          note: 'No proactive escalation configured'
+        });
 
-      console.log(`⚠️ Request ${request.id} SLA BREACHED:`, {
-        dueDate: dueDate.toLocaleString(),
-        now: now.toLocaleString(),
-        hoursOverdue: hoursOverdue.toFixed(2),
-        slaHours,
-        slaStop: formData?.slaStop || false
-      });
+        return {
+          isBreached: true,
+          hoursOverdue,
+          breachType: 'resolution',
+          slaService,
+          actualElapsed: hoursOverdue + slaHours,
+          slaLimit: slaHours
+        };
+      }
 
-      return {
-        isBreached: true,
-        hoursOverdue,
-        breachType: 'resolution', // Based on due date which represents final resolution time
-        slaService,
-        actualElapsed: hoursOverdue + slaHours, // Total time including overdue
-        slaLimit: slaHours
-      };
+      // If escalation system is configured but no escalations sent, just log the breach
+      console.log(`📝 Request ${request.id} passed due date but proactive escalations should have been sent earlier`);
+      return { isBreached: false };
 
     } catch (error) {
       console.error('Error checking SLA breach:', error);
       return { isBreached: false };
     }
+  }
+
+  /**
+   * Determine if an escalation should be sent now based on SLA template configuration
+   * ALWAYS defaults to 'before' due date to ensure proactive escalations
+   */
+  private async shouldSendEscalationNow(
+    requestId: number,
+    now: Date,
+    dueDate: Date,
+    escalationHistory: any[],
+    slaIncident: any
+  ): Promise<{
+    shouldSend: boolean;
+    reason?: string;
+    level?: number;
+    escalateType?: string;
+    triggerTime?: Date;
+  }> {
+    if (!slaIncident?.resolutionEscalationEnabled) {
+      return { shouldSend: false };
+    }
+
+    const sentLevels = escalationHistory.map(h => h.level);
+
+    // Check Level 1 escalation - ALWAYS before due date
+    if (!sentLevels.includes(1) && slaIncident.resolutionEscalationEnabled) {
+      const escalateType = 'before'; // Force to 'before' for proactive escalation
+      const escalationTriggerTime = this.calculateEscalationTriggerTime(
+        dueDate,
+        slaIncident.escalateDays || 0,
+        slaIncident.escalateHours || 1, // Default to 1 hour before if not set
+        slaIncident.escalateMinutes || 0,
+        escalateType
+      );
+
+      if (now >= escalationTriggerTime) {
+        return {
+          shouldSend: true,
+          reason: `Level 1 escalation time reached (BEFORE due date)`,
+          level: 1,
+          escalateType,
+          triggerTime: escalationTriggerTime
+        };
+      }
+    }
+
+    // Check Level 2 escalation - ALWAYS before due date
+    if (!sentLevels.includes(2) && slaIncident.level2Enabled) {
+      const escalateType = 'before'; // Force to 'before' for proactive escalation
+      const escalationTriggerTime = this.calculateEscalationTriggerTime(
+        dueDate,
+        slaIncident.level2Days || 0,
+        slaIncident.level2Hours || 2, // Default to 2 hours before if not set
+        slaIncident.level2Minutes || 0,
+        escalateType
+      );
+
+      if (now >= escalationTriggerTime) {
+        return {
+          shouldSend: true,
+          reason: `Level 2 escalation time reached (BEFORE due date)`,
+          level: 2,
+          escalateType,
+          triggerTime: escalationTriggerTime
+        };
+      }
+    }
+
+    // Check Level 3 escalation - ALWAYS before due date
+    if (!sentLevels.includes(3) && slaIncident.level3Enabled) {
+      const escalateType = 'before'; // Force to 'before' for proactive escalation
+      const escalationTriggerTime = this.calculateEscalationTriggerTime(
+        dueDate,
+        slaIncident.level3Days || 0,
+        slaIncident.level3Hours || 4, // Default to 4 hours before if not set
+        slaIncident.level3Minutes || 0,
+        escalateType
+      );
+
+      if (now >= escalationTriggerTime) {
+        return {
+          shouldSend: true,
+          reason: `Level 3 escalation time reached (BEFORE due date)`,
+          level: 3,
+          escalateType,
+          triggerTime: escalationTriggerTime
+        };
+      }
+    }
+
+    // Check Level 4 escalation - ALWAYS before due date
+    if (!sentLevels.includes(4) && slaIncident.level4Enabled) {
+      const escalateType = 'before'; // Force to 'before' for proactive escalation
+      const escalationTriggerTime = this.calculateEscalationTriggerTime(
+        dueDate,
+        slaIncident.level4Days || 0,
+        slaIncident.level4Hours || 6, // Default to 6 hours before if not set
+        slaIncident.level4Minutes || 0,
+        escalateType
+      );
+
+      if (now >= escalationTriggerTime) {
+        return {
+          shouldSend: true,
+          reason: `Level 4 escalation time reached (BEFORE due date)`,
+          level: 4,
+          escalateType,
+          triggerTime: escalationTriggerTime
+        };
+      }
+    }
+
+    return { shouldSend: false };
+  }
+
+  /**
+   * Calculate when an escalation should trigger based on the due date and escalation timing
+   */
+  private calculateEscalationTriggerTime(
+    dueDate: Date,
+    days: number,
+    hours: number,
+    minutes: number,
+    escalateType: 'before' | 'after'
+  ): Date {
+    const totalMinutes = (days * 24 * 60) + (hours * 60) + minutes;
+    const triggerTime = new Date(dueDate);
+
+    if (escalateType === 'before') {
+      // Subtract time from due date (escalate BEFORE due)
+      triggerTime.setMinutes(triggerTime.getMinutes() - totalMinutes);
+    } else {
+      // Add time to due date (escalate AFTER due)
+      triggerTime.setMinutes(triggerTime.getMinutes() + totalMinutes);
+    }
+
+    return triggerTime;
   }
 
   /**
@@ -972,14 +1164,32 @@ class SafeSLAMonitoringService {
 
       // Check escalation history to determine current level
       const escalationHistory = formData?.history?.escalations || [];
-      const currentLevel = this.getCurrentEscalationLevel(escalationHistory, slaIncident);
       
-      if (!currentLevel) {
-        console.log(`❌ No escalation level needed for request ${request.id}`);
+      // Use the new shouldSendEscalationNow logic to determine the correct level
+      const now = new Date();
+      const dueDate = new Date(formData?.slaDueDate);
+      const shouldSendResult = await this.shouldSendEscalationNow(
+        request.id,
+        now,
+        dueDate,
+        escalationHistory,
+        slaIncident
+      );
+      
+      if (!shouldSendResult.shouldSend) {
+        console.log(`❌ No escalation needed for request ${request.id} at this time`);
         return null;
       }
 
-      console.log(`🎯 Using escalation level ${currentLevel.level} for request ${request.id}`);
+      console.log(`🎯 Using escalation level ${shouldSendResult.level} for request ${request.id} (${shouldSendResult.reason})`);
+
+      // Get the escalation configuration for the determined level
+      const currentLevel = this.getEscalationLevelConfig(shouldSendResult.level!, slaIncident);
+      
+      if (!currentLevel) {
+        console.log(`❌ No escalation configuration found for level ${shouldSendResult.level} in request ${request.id}`);
+        return null;
+      }
 
       console.log(`Processing escalation level ${currentLevel.level} for request ${request.id}`);
 
@@ -1001,45 +1211,68 @@ class SafeSLAMonitoringService {
   }
 
   /**
-   * Determine which escalation level to process
+   * Get escalation configuration for a specific level
    */
-  private getCurrentEscalationLevel(escalationHistory: any[], slaIncident: any): any {
-    const sentLevels = escalationHistory.map(h => h.level);
+  private getEscalationLevelConfig(level: number, slaIncident: any): any {
+    switch (level) {
+      case 1:
+        if (slaIncident.resolutionEscalationEnabled) {
+          return {
+            level: 1,
+            escalateTo: slaIncident.escalateTo || [],
+            timing: { 
+              days: slaIncident.escalateDays, 
+              hours: slaIncident.escalateHours,
+              minutes: slaIncident.escalateMinutes
+            }
+          };
+        }
+        break;
 
-    // Check levels in order
-    if (!sentLevels.includes(1) && slaIncident.resolutionEscalationEnabled) {
-      return {
-        level: 1,
-        escalateTo: slaIncident.escalateTo || [],
-        timing: { days: slaIncident.escalateDays, hours: slaIncident.escalateHours }
-      };
+      case 2:
+        if (slaIncident.level2Enabled) {
+          return {
+            level: 2,
+            escalateTo: slaIncident.level2EscalateTo || [],
+            timing: { 
+              days: slaIncident.level2Days, 
+              hours: slaIncident.level2Hours,
+              minutes: slaIncident.level2Minutes
+            }
+          };
+        }
+        break;
+
+      case 3:
+        if (slaIncident.level3Enabled) {
+          return {
+            level: 3,
+            escalateTo: slaIncident.level3EscalateTo || [],
+            timing: { 
+              days: slaIncident.level3Days, 
+              hours: slaIncident.level3Hours,
+              minutes: slaIncident.level3Minutes
+            }
+          };
+        }
+        break;
+
+      case 4:
+        if (slaIncident.level4Enabled) {
+          return {
+            level: 4,
+            escalateTo: slaIncident.level4EscalateTo || [],
+            timing: { 
+              days: slaIncident.level4Days, 
+              hours: slaIncident.level4Hours,
+              minutes: slaIncident.level4Minutes
+            }
+          };
+        }
+        break;
     }
 
-    if (!sentLevels.includes(2) && slaIncident.level2Enabled) {
-      return {
-        level: 2,
-        escalateTo: slaIncident.level2EscalateTo || [],
-        timing: { days: slaIncident.level2Days, hours: slaIncident.level2Hours }
-      };
-    }
-
-    if (!sentLevels.includes(3) && slaIncident.level3Enabled) {
-      return {
-        level: 3,
-        escalateTo: slaIncident.level3EscalateTo || [],
-        timing: { days: slaIncident.level3Days, hours: slaIncident.level3Hours }
-      };
-    }
-
-    if (!sentLevels.includes(4) && slaIncident.level4Enabled) {
-      return {
-        level: 4,
-        escalateTo: slaIncident.level4EscalateTo || [],
-        timing: { days: slaIncident.level4Days, hours: slaIncident.level4Hours }
-      };
-    }
-
-    return null; // No more levels
+    return null; // Level not found or not enabled
   }
 
   /**

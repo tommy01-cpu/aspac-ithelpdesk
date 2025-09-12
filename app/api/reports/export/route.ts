@@ -4,6 +4,130 @@ import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
+import { format } from 'date-fns';
+import fs from 'fs';
+import path from 'path';
+
+// Helper functions to match frontend formatting exactly
+const capitalizeWords = (str: string) => {
+  if (!str) return str;
+  return str.split(' ').map(word => 
+    word.charAt(0).toUpperCase() + word.toLowerCase().slice(1)
+  ).join(' ');
+};
+
+const formatStatusText = (text: string) => {
+  if (!text) return text;
+  return capitalizeWords(text.replace(/_/g, ' '));
+};
+
+const getTechnicianName = (technicianData: any) => {
+  if (!technicianData) return 'Unassigned';
+  
+  // If it's already a name (string), return it capitalized
+  if (typeof technicianData === 'string') {
+    // Don't capitalize if it's already a proper name or "Unassigned"
+    if (technicianData === 'Unassigned' || technicianData === 'null' || technicianData === '') {
+      return 'Unassigned';
+    }
+    // If it looks like a position/title, return as-is with proper capitalization
+    return capitalizeWords(technicianData);
+  }
+  
+  return 'Unassigned';
+};
+
+// Function to preserve description formatting including indentation and bullets
+const preserveDescriptionFormatting = (description: string) => {
+  if (!description) return 'N/A';
+  
+  // Convert HTML to text while preserving structure and formatting
+  let formatted = description
+    // Convert HTML breaks to newlines
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<p[^>]*>/gi, '')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<div[^>]*>/gi, '')
+    
+    // Convert HTML lists to text bullets
+    .replace(/<ul[^>]*>/gi, '')
+    .replace(/<\/ul>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<\/li>/gi, '\n')
+    
+    // Convert ordered lists to numbered bullets  
+    .replace(/<ol[^>]*>/gi, '')
+    .replace(/<\/ol>/gi, '\n')
+    
+    // Preserve headings with formatting (remove bold markers since we're not rendering markdown)
+    .replace(/<h[1-6][^>]*>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, ':\n')
+    
+    // Remove strong/bold formatting markers (don't add ** since we're not rendering markdown)
+    .replace(/<strong[^>]*>/gi, '')
+    .replace(/<\/strong>/gi, '')
+    .replace(/<b[^>]*>/gi, '')
+    .replace(/<\/b>/gi, '')
+    
+    // Remove emphasis/italic formatting markers
+    .replace(/<em[^>]*>/gi, '')
+    .replace(/<\/em>/gi, '')
+    .replace(/<i[^>]*>/gi, '')
+    .replace(/<\/i>/gi, '')
+    
+    // Convert indentation (HTML spaces and tabs) - Enhanced for better structure
+    .replace(/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/gi, '        ') // 8 spaces
+    .replace(/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/gi, '      ') // 6 spaces  
+    .replace(/&nbsp;&nbsp;&nbsp;&nbsp;/gi, '    ') // 4 spaces for tab-like indentation
+    .replace(/&nbsp;&nbsp;/gi, '  ') // 2 spaces for smaller indentation
+    .replace(/&nbsp;/gi, ' ')
+    
+    // Convert common HTML entities - Enhanced
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/&rarr;/gi, '→') // Right arrow
+    .replace(/&larr;/gi, '←') // Left arrow
+    .replace(/&uarr;/gi, '↑') // Up arrow
+    .replace(/&darr;/gi, '↓') // Down arrow
+    
+    // Remove remaining HTML tags but preserve the content
+    .replace(/<[^>]*>/g, '')
+    
+    // Clean up excessive whitespace while preserving intentional formatting
+    .replace(/\n\s*\n\s*\n/g, '\n\n') // Convert multiple newlines to double newlines
+    .replace(/^[\s\n]+|[\s\n]+$/g, '') // Trim leading/trailing whitespace
+    .replace(/[ \t]+$/gm, '') // Remove trailing spaces from each line
+    .replace(/^[ \t]+/gm, (match) => match) // Preserve leading spaces (indentation)
+    
+    // Ensure bullets are properly spaced and formatted - Enhanced
+    .replace(/\n•/g, '\n• ')
+    .replace(/• {2,}/g, '• ')
+    // Handle different bullet types
+    .replace(/\n\*\s/g, '\n• ')
+    .replace(/\n-\s/g, '\n• ')
+    .replace(/\n\+\s/g, '\n• ')
+    // Handle numbered lists
+    .replace(/\n(\d+)\.\s/g, '\n$1. ')
+    
+    // Handle long lines that will wrap in Excel (approximately 50 characters per line)
+    .split('\n')
+    .map(line => {
+      if (line.length > 50) {
+        // For long lines, add additional newlines for wrapping calculation
+        const wrappedLines = Math.ceil(line.length / 50);
+        return line + '\n'.repeat(wrappedLines - 1);
+      }
+      return line;
+    })
+    .join('\n');
+  
+  return formatted || 'N/A';
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -497,7 +621,7 @@ export async function GET(request: NextRequest) {
       }
     };
 
-    // Set up headers for export
+    // Set up headers for export - EXACTLY matching frontend table order
     const exportHeaders = [
       'Request ID',
       'Subject',
@@ -527,402 +651,62 @@ export async function GET(request: NextRequest) {
       worksheet.views = [{ showGridLines: false }];
 
       // Add professional header section
-      // Row 1: Logo placeholder and Company Header
-      const logoRow = worksheet.addRow(['[ASPAC LOGO]', '', '', '', '', '', '', '', '', '', '', '', '', '', 'ASPAC IT HELPDESK SYSTEM']);
-      logoRow.getCell(1).font = { size: 10, bold: true, color: { argb: '1F4E79' } };
-      logoRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      // Row 1: Logo and text centered in cell A1 with background
+      const logoRow = worksheet.addRow(['']);
+      
+      // Set column A width to make it proportional
+      worksheet.getColumn(1).width = 12; // Wider for the logo and text
+      
+      // Add green background to cell A1
       logoRow.getCell(1).fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'E5F3FF' } // Light blue background for logo placeholder
-      };
-      logoRow.getCell(1).border = {
-        top: { style: 'thin', color: { argb: '1F4E79' } },
-        left: { style: 'thin', color: { argb: '1F4E79' } },
-        bottom: { style: 'thin', color: { argb: '1F4E79' } },
-        right: { style: 'thin', color: { argb: '1F4E79' } }
+        fgColor: { argb: 'C6EFCE' } // Light green background
       };
       
-      // Company name styling
-      logoRow.getCell(15).font = { size: 24, bold: true, color: { argb: '1F4E79' } };
-      logoRow.getCell(15).alignment = { horizontal: 'right', vertical: 'middle' };
-      logoRow.height = 40;
-      worksheet.mergeCells('O1:P1'); // Merge cells for company name
+      // Add ASPAC logo image
+      try {
+        const logoPath = path.join(process.cwd(), 'public', 'aspac-logo.png');
+        const logoBuffer = fs.readFileSync(logoPath);
+        const logoId = workbook.addImage({
+          buffer: logoBuffer,
+          extension: 'png',
+        });
+        
+        // Insert the logo centered in upper part of cell A1
+        worksheet.addImage(logoId, {
+          tl: { col: 0.25, row: 0.1 }, // Centered horizontally, upper part vertically
+          ext: { width: 50, height: 25 } // Logo size to fit with text below
+        });
+        
+        // Add "aspac" text below the logo in the same cell
+        logoRow.getCell(1).value = '\n\n\naspac';
+        logoRow.getCell(1).font = { size: 12, bold: true, color: { argb: '000000' }, name: 'Arial' };
+        logoRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        
+      } catch (error) {
+        console.log('Logo file not found, using placeholder');
+        logoRow.getCell(1).value = 'ASPAC\nLOGO\naspac';
+        logoRow.getCell(1).font = { size: 10, bold: true, color: { argb: '000000' }, name: 'Arial' };
+        logoRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      }
+      
+      // Make row height tall enough for logo and text
+      logoRow.height = 60;
 
-      // Row 2: Report Title
+      // Row 2: IT HELPDESK SYSTEM left-aligned
+      const systemRow = worksheet.addRow(['IT HELPDESK SYSTEM']);
+      systemRow.getCell(1).font = { size: 11, bold: true, color: { argb: '000000' }, name: 'Arial' };
+      systemRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+      // Auto-adjust height based on text
+
+      // Row 3: IT Helpdesk Export Report on separate row
       const titleRow = worksheet.addRow(['IT Helpdesk Export Report']);
-      titleRow.getCell(1).font = { size: 18, bold: true, color: { argb: '2D3748' } };
-      titleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-      titleRow.height = 30;
-      worksheet.mergeCells('A2:P2');
+      titleRow.getCell(1).font = { size: 11, bold: false, color: { argb: '000000' }, name: 'Arial' };
+      titleRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+      // Auto-adjust height based on text
 
-      // Row 3: Generation Info and Record Count
-      const infoRow = worksheet.addRow([`Generated: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`]);
-      infoRow.getCell(1).font = { size: 11, color: { argb: '6B7280' } };
-      infoRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
-      infoRow.getCell(13).value = `Total Records: ${filteredRequests.length}`;
-      infoRow.getCell(13).font = { size: 11, color: { argb: '6B7280' } };
-      infoRow.getCell(13).alignment = { horizontal: 'right', vertical: 'middle' };
-      worksheet.mergeCells('A3:L3');
-      worksheet.mergeCells('M3:P3');
-
-      // Row 4: Department/User Info (if available from session)
-      const userInfoRow = worksheet.addRow(['Exported by: System Administrator']);
-      userInfoRow.getCell(1).font = { size: 10, color: { argb: '9CA3AF' } };
-      userInfoRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
-      userInfoRow.getCell(13).value = `Page 1 of 1`;
-      userInfoRow.getCell(13).font = { size: 10, color: { argb: '9CA3AF' } };
-      userInfoRow.getCell(13).alignment = { horizontal: 'right', vertical: 'middle' };
-      worksheet.mergeCells('A4:L4');
-      worksheet.mergeCells('M4:P4');
-
-      // Add decorative border under header
-      const borderRow = worksheet.addRow([]);
-      borderRow.height = 3;
-      const borderRange = worksheet.getCell('A5:P5');
-      worksheet.getRow(5).eachCell((cell) => {
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: '1F4E79' }
-        };
-      });
-
-      // Add some spacing
-      worksheet.addRow([]);
-
-      // 📊 EXECUTIVE DASHBOARD SECTION 📊
-      // Add Dashboard Title
-      const dashboardTitleRow = worksheet.addRow(['📊 EXECUTIVE DASHBOARD & ANALYTICS']);
-      dashboardTitleRow.height = 35;
-      worksheet.mergeCells('A8:P8');
-      const dashboardTitleCell = worksheet.getCell('A8');
-      dashboardTitleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFF' } };
-      dashboardTitleCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: '2E8B57' } // Sea green
-      };
-      dashboardTitleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-
-      // Add spacing
-      worksheet.addRow([]);
-
-      // Calculate statistics for dashboard
-      const stats = {
-        total: filteredRequests.length,
-        byStatus: {} as Record<string, number>,
-        byPriority: {} as Record<string, number>,
-        byApprovalStatus: {} as Record<string, number>,
-        byDepartment: {} as Record<string, number>,
-        resolved: 0,
-        pending: 0,
-        overdue: 0
-      };
-
-      // Calculate statistics
-      filteredRequests.forEach(request => {
-        // Status breakdown
-        const status = request.status || 'Unknown';
-        stats.byStatus[status] = (stats.byStatus[status] || 0) + 1;
-
-        // Priority breakdown
-        const priority = request.priority || 'Unknown';
-        stats.byPriority[priority] = (stats.byPriority[priority] || 0) + 1;
-
-        // Approval status breakdown
-        const approvalStatus = request.approvalStatus || 'Not Required';
-        stats.byApprovalStatus[approvalStatus] = (stats.byApprovalStatus[approvalStatus] || 0) + 1;
-
-        // Department breakdown
-        const department = request.department || 'Unknown';
-        stats.byDepartment[department] = (stats.byDepartment[department] || 0) + 1;
-
-        // Status categorization
-        if (request.status === 'Closed' || request.status === 'Resolved') {
-          stats.resolved++;
-        } else {
-          stats.pending++;
-        }
-
-        // Check if overdue (simple check)
-        if (request.dueByTime && new Date(request.dueByTime) < new Date() && request.status !== 'Closed') {
-          stats.overdue++;
-        }
-      });
-
-      // 1. STATUS DISTRIBUTION CHART (Visual representation using colored cells)
-      const statusChartRow = worksheet.addRow(['📈 STATUS DISTRIBUTION CHART']);
-      statusChartRow.height = 25;
-      worksheet.mergeCells('A10:H10');
-      const statusChartCell = worksheet.getCell('A10');
-      statusChartCell.font = { bold: true, size: 12, color: { argb: '1F4E79' } };
-      statusChartCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E6F3FF' } };
-      statusChartCell.alignment = { horizontal: 'left', vertical: 'middle' };
-
-      // Status chart headers
-      const statusHeaderRow = worksheet.addRow(['Status', 'Count', 'Percentage', 'Visual Chart (Progress Bar)']);
-      statusHeaderRow.height = 20;
-      statusHeaderRow.eachCell((cell, colNumber) => {
-        if (colNumber <= 4) {
-          cell.font = { bold: true, size: 10 };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D9E2F3' } };
-          cell.border = {
-            top: { style: 'thin' }, left: { style: 'thin' },
-            bottom: { style: 'thin' }, right: { style: 'thin' }
-          };
-        }
-      });
-
-      // Add status data with visual progress bars
-      Object.entries(stats.byStatus).forEach(([status, count], index) => {
-        const countValue = count as number;
-        const percentage = ((countValue / stats.total) * 100).toFixed(1);
-        const progressBarLength = Math.round((countValue / stats.total) * 20); // 20 cells for progress bar
-        
-        const statusRow = worksheet.addRow([
-          formatStatusText(status),
-          countValue,
-          `${percentage}%`,
-          '■'.repeat(progressBarLength) + '□'.repeat(20 - progressBarLength)
-        ]);
-        
-        statusRow.height = 18;
-        
-        // Color coding for different statuses
-        let statusColor = '90EE90'; // Light green default
-        if (status.toLowerCase().includes('pending')) statusColor = 'FFE4B5'; // Moccasin
-        if (status.toLowerCase().includes('open')) statusColor = 'FFB6C1'; // Light pink
-        if (status.toLowerCase().includes('closed')) statusColor = '90EE90'; // Light green
-        if (status.toLowerCase().includes('cancelled')) statusColor = 'FFB6C1'; // Light pink
-        
-        statusRow.eachCell((cell, colNumber) => {
-          if (colNumber <= 4) {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: statusColor } };
-            cell.border = {
-              top: { style: 'thin' }, left: { style: 'thin' },
-              bottom: { style: 'thin' }, right: { style: 'thin' }
-            };
-            if (colNumber === 4) { // Progress bar column
-              cell.font = { name: 'Courier New', size: 8, color: { argb: '1F4E79' } };
-            }
-          }
-        });
-      });
-
-      // Add spacing
-      worksheet.addRow([]);
-
-      // 2. PRIORITY BREAKDOWN (Color-coded statistics)
-      const priorityChartRow = worksheet.addRow(['⚡ PRIORITY BREAKDOWN']);
-      priorityChartRow.height = 25;
-      worksheet.mergeCells(`A${13 + Object.keys(stats.byStatus).length}:H${13 + Object.keys(stats.byStatus).length}`);
-      const priorityChartCell = worksheet.getCell(`A${13 + Object.keys(stats.byStatus).length}`);
-      priorityChartCell.font = { bold: true, size: 12, color: { argb: '1F4E79' } };
-      priorityChartCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6E6' } };
-      priorityChartCell.alignment = { horizontal: 'left', vertical: 'middle' };
-
-      // Priority headers
-      const priorityHeaderRow = worksheet.addRow(['Priority', 'Count', 'Percentage', 'Visual Indicator']);
-      priorityHeaderRow.height = 20;
-      priorityHeaderRow.eachCell((cell, colNumber) => {
-        if (colNumber <= 4) {
-          cell.font = { bold: true, size: 10 };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F2F2F2' } };
-          cell.border = {
-            top: { style: 'thin' }, left: { style: 'thin' },
-            bottom: { style: 'thin' }, right: { style: 'thin' }
-          };
-        }
-      });
-
-      // Add priority data with color coding
-      Object.entries(stats.byPriority).forEach(([priority, count]) => {
-        const countValue = count as number;
-        const percentage = ((countValue / stats.total) * 100).toFixed(1);
-        const priorityRow = worksheet.addRow([
-          priority,
-          countValue,
-          `${percentage}%`,
-          `${'🔴'.repeat(Math.ceil(countValue / stats.total * 10))} ${percentage}%`
-        ]);
-        
-        priorityRow.height = 18;
-        
-        // Color coding for priorities
-        let priorityColor = '90EE90'; // Default green
-        if (priority.toLowerCase() === 'high') priorityColor = 'FFB6C1'; // Light pink
-        if (priority.toLowerCase() === 'critical') priorityColor = 'FF6B6B'; // Red
-        if (priority.toLowerCase() === 'medium') priorityColor = 'FFE4B5'; // Moccasin
-        if (priority.toLowerCase() === 'low') priorityColor = '90EE90'; // Light green
-        
-        priorityRow.eachCell((cell, colNumber) => {
-          if (colNumber <= 4) {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: priorityColor } };
-            cell.border = {
-              top: { style: 'thin' }, left: { style: 'thin' },
-              bottom: { style: 'thin' }, right: { style: 'thin' }
-            };
-          }
-        });
-      });
-
-      // Add spacing
-      worksheet.addRow([]);
-
-      // 3. APPROVAL STATUS OVERVIEW
-      const currentRow = 15 + Object.keys(stats.byStatus).length + Object.keys(stats.byPriority).length;
-      const approvalChartRow = worksheet.addRow(['✅ APPROVAL STATUS OVERVIEW']);
-      approvalChartRow.height = 25;
-      worksheet.mergeCells(`A${currentRow}:H${currentRow}`);
-      const approvalChartCell = worksheet.getCell(`A${currentRow}`);
-      approvalChartCell.font = { bold: true, size: 12, color: { argb: '1F4E79' } };
-      approvalChartCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E6FFE6' } };
-      approvalChartCell.alignment = { horizontal: 'left', vertical: 'middle' };
-
-      // Approval headers
-      const approvalHeaderRow = worksheet.addRow(['Approval Status', 'Count', 'Percentage', 'Progress Bar']);
-      approvalHeaderRow.height = 20;
-      approvalHeaderRow.eachCell((cell, colNumber) => {
-        if (colNumber <= 4) {
-          cell.font = { bold: true, size: 10 };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D4EDDA' } };
-          cell.border = {
-            top: { style: 'thin' }, left: { style: 'thin' },
-            bottom: { style: 'thin' }, right: { style: 'thin' }
-          };
-        }
-      });
-
-      // Add approval status data
-      Object.entries(stats.byApprovalStatus).forEach(([approvalStatus, count]) => {
-        const countValue = count as number;
-        const percentage = ((countValue / stats.total) * 100).toFixed(1);
-        const progressBarLength = Math.round((countValue / stats.total) * 15);
-        
-        const approvalRow = worksheet.addRow([
-          formatStatusText(approvalStatus),
-          countValue,
-          `${percentage}%`,
-          '▓'.repeat(progressBarLength) + '░'.repeat(15 - progressBarLength)
-        ]);
-        
-        approvalRow.height = 18;
-        
-        // Color coding for approval status
-        let approvalColor = 'E6FFE6'; // Default light green
-        if (approvalStatus.toLowerCase().includes('pending')) approvalColor = 'FFF3CD'; // Light yellow
-        if (approvalStatus.toLowerCase().includes('approved')) approvalColor = 'D4EDDA'; // Light green
-        if (approvalStatus.toLowerCase().includes('rejected')) approvalColor = 'F8D7DA'; // Light red
-        
-        approvalRow.eachCell((cell, colNumber) => {
-          if (colNumber <= 4) {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: approvalColor } };
-            cell.border = {
-              top: { style: 'thin' }, left: { style: 'thin' },
-              bottom: { style: 'thin' }, right: { style: 'thin' }
-            };
-            if (colNumber === 4) { // Progress bar column
-              cell.font = { name: 'Courier New', size: 10, color: { argb: '1F4E79' } };
-            }
-          }
-        });
-      });
-
-      // Add spacing
-      worksheet.addRow([]);
-
-      // 4. KEY PERFORMANCE INDICATORS (KPIs)
-      const kpiRow = worksheet.addRow(['📊 KEY PERFORMANCE INDICATORS']);
-      kpiRow.height = 25;
-      const kpiRowNum = currentRow + 3 + Object.keys(stats.byApprovalStatus).length;
-      worksheet.mergeCells(`A${kpiRowNum}:P${kpiRowNum}`);
-      const kpiCell = worksheet.getCell(`A${kpiRowNum}`);
-      kpiCell.font = { bold: true, size: 12, color: { argb: 'FFFFFF' } };
-      kpiCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4472C4' } };
-      kpiCell.alignment = { horizontal: 'center', vertical: 'middle' };
-
-      // KPI metrics in a grid
-      const kpiDataRow1 = worksheet.addRow([
-        'Total Requests', stats.total,
-        'Resolved', stats.resolved,
-        'Pending', stats.pending,
-        'Overdue', stats.overdue
-      ]);
-      kpiDataRow1.height = 25;
-
-      // Style KPI row
-      kpiDataRow1.eachCell((cell, colNumber) => {
-        if (colNumber <= 8) {
-          if (colNumber % 2 === 1) { // Label columns
-            cell.font = { bold: true, size: 10, color: { argb: '1F4E79' } };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0F8FF' } };
-          } else { // Value columns
-            cell.font = { bold: true, size: 12, color: { argb: '000000' } };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E6F3FF' } };
-          }
-          cell.border = {
-            top: { style: 'thin' }, left: { style: 'thin' },
-            bottom: { style: 'thin' }, right: { style: 'thin' }
-          };
-          cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        }
-      });
-
-      // Add percentages row
-      const kpiDataRow2 = worksheet.addRow([
-        'Resolution Rate', `${((stats.resolved / stats.total) * 100).toFixed(1)}%`,
-        'Pending Rate', `${((stats.pending / stats.total) * 100).toFixed(1)}%`,
-        'Overdue Rate', `${((stats.overdue / stats.total) * 100).toFixed(1)}%`,
-        'On-Time Rate', `${(((stats.total - stats.overdue) / stats.total) * 100).toFixed(1)}%`
-      ]);
-      kpiDataRow2.height = 25;
-
-      // Style KPI percentage row
-      kpiDataRow2.eachCell((cell, colNumber) => {
-        if (colNumber <= 8) {
-          if (colNumber % 2 === 1) { // Label columns
-            cell.font = { bold: true, size: 10, color: { argb: '1F4E79' } };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0F8FF' } };
-          } else { // Value columns
-            cell.font = { bold: true, size: 11, color: { argb: '000000' } };
-            // Color code percentages
-            const cellValue = cell.value;
-            if (cellValue && typeof cellValue === 'string') {
-              const value = parseFloat(cellValue.toString().replace('%', ''));
-              let bgColor = 'E6F3FF'; // Default blue
-              if (value >= 80) bgColor = '90EE90'; // Green for high values
-              if (value >= 60 && value < 80) bgColor = 'FFE4B5'; // Yellow for medium
-              if (value < 60) bgColor = 'FFB6C1'; // Pink for low values
-              
-              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
-            } else {
-              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E6F3FF' } };
-            }
-          }
-          cell.border = {
-            top: { style: 'thin' }, left: { style: 'thin' },
-            bottom: { style: 'thin' }, right: { style: 'thin' }
-          };
-          cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        }
-      });
-
-      // Add final spacing before data table
-      worksheet.addRow([]);
-      worksheet.addRow([]);
-
-      // Add separator for data section
-      const dataSeparatorRow = worksheet.addRow(['📋 DETAILED REQUEST DATA']);
-      dataSeparatorRow.height = 30;
-      const dataSeparatorRowNum = kpiRowNum + 4;
-      worksheet.mergeCells(`A${dataSeparatorRowNum}:P${dataSeparatorRowNum}`);
-      const dataSeparatorCell = worksheet.getCell(`A${dataSeparatorRowNum}`);
-      dataSeparatorCell.font = { bold: true, size: 14, color: { argb: 'FFFFFF' } };
-      dataSeparatorCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E79' } };
-      dataSeparatorCell.alignment = { horizontal: 'center', vertical: 'middle' };
-
-      // Add spacing
+      // Add spacing before data table
       worksheet.addRow([]);
 
       // Now add the data table header row with professional styling
@@ -930,7 +714,7 @@ export async function GET(request: NextRequest) {
       headerRow.height = 30;
       
       headerRow.eachCell((cell, colNumber) => {
-        cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 11 };
+        cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 11, name: 'Arial' };
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
@@ -949,43 +733,60 @@ export async function GET(request: NextRequest) {
         };
       });
 
-      // Add data rows with alternating colors and professional formatting
+      // Add data rows with alternating colors and professional formatting - EXACTLY matching frontend
       filteredRequests.forEach((request, index) => {
         const row = worksheet.addRow([
           request.id,
-          request.subject,
-          request.description ? request.description.replace(/<[^>]*>/g, '').substring(0, 100) + (request.description.length > 100 ? '...' : '') : '',
-          request.requestType,
-          formatStatusText(request.status),
-          formatStatusText(request.approvalStatus),
-          formatStatusText(request.mode),
-          `${request.requester.name}\n${request.requester.employeeId}`, // Multi-line requester info
-          request.department,
-          formatDate(request.createdAt),
-          formatDate(request.dueByTime),
-          formatDate(request.resolvedTime),
-          request.priority,
-          request.technician,
-          request.serviceCategory,
-          request.template
+          request.subject || 'N/A',
+          preserveDescriptionFormatting(request.description), // Preserve formatting including indents and bullets
+          capitalizeWords(request.requestType || ''),
+          formatStatusText(request.status || 'Unknown'),
+          formatStatusText(request.approvalStatus || ''),
+          capitalizeWords(request.mode || 'Standard'),
+          `${request.requester.name}\n${request.requester.employeeId || ''}`, // Multi-line as shown in frontend
+          capitalizeWords(request.department || ''),
+          request.createdAt ? format(new Date(request.createdAt), 'MMM dd, HH:mm') : 'N/A',
+          request.dueByTime ? format(new Date(request.dueByTime), 'MMM dd, HH:mm') : 'N/A',
+          request.resolvedTime ? format(new Date(request.resolvedTime), 'MMM dd, HH:mm') : 'N/A',
+          capitalizeWords(request.priority || ''),
+          getTechnicianName(request.technician),
+          request.serviceCategory || 'N/A',
+          request.template || 'N/A'
         ]);
 
-        // Auto-adjust row height based on content (minimum 25, maximum 60)
+        // Auto-adjust row height based on content including preserved description formatting
+        const formattedDescription = preserveDescriptionFormatting(request.description);
+        const descriptionLines = (formattedDescription.match(/\n/g) || []).length + 1;
+        
+        // Calculate lines for other potentially long columns
+        const subjectLines = Math.ceil((request.subject?.length || 0) / 30); // Characters per line in subject
+        const requesterLines = 2; // Always 2 lines for name + employee ID
+        
+        // For description, also consider line length (if lines are very long, they'll wrap)
+        const descriptionLongestLine = Math.max(...formattedDescription.split('\n').map(line => line.length));
+        const descriptionWrapLines = Math.ceil(descriptionLongestLine / 60); // Approx 60 chars per line at current width
+        const effectiveDescriptionLines = Math.max(descriptionLines, descriptionWrapLines);
+        
+        // Calculate the maximum lines needed across all columns
         const maxLines = Math.max(
-          1,
-          Math.ceil((request.subject?.length || 0) / 30),
-          Math.ceil(((request.description?.replace(/<[^>]*>/g, '') || '').length) / 40),
-          2 // Minimum for multi-line requester info
+          effectiveDescriptionLines, // Description with word wrap consideration
+          subjectLines,              // Subject might wrap
+          requesterLines,            // Requester info (name + employee ID)
+          1                          // Minimum 1 line
         );
-        row.height = Math.min(Math.max(25, maxLines * 15), 60);
+        
+        // Set row height based on content - generous height for readability
+        // Base height of 25 + (18 pixels per additional line) for better spacing
+        const calculatedHeight = 25 + ((maxLines - 1) * 18);
+        row.height = Math.min(Math.max(calculatedHeight, 30), 200); // Min 30, Max 200 pixels
 
         // Apply alternating row colors
         const isEvenRow = index % 2 === 0;
         const fillColor = isEvenRow ? 'FFFFFF' : 'F8F9FA'; // White and light gray
 
         row.eachCell((cell, colNumber) => {
-          // Apply consistent styling
-          cell.font = { size: 9, color: { argb: '000000' } };
+          // Apply consistent styling with Arial font
+          cell.font = { size: 9, color: { argb: '000000' }, name: 'Arial' };
           cell.fill = {
             type: 'pattern',
             pattern: 'solid',
@@ -1009,8 +810,23 @@ export async function GET(request: NextRequest) {
             cell.alignment = { horizontal: 'center', vertical: 'middle' };
           } else if (colNumber === 2) { // Subject - blue and underlined
             cell.font = { size: 9, color: { argb: '2563EB' }, underline: true };
+            cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
+          } else if (colNumber === 3) { // Description - preserve formatting with special alignment
+            cell.font = { 
+              size: 9, 
+              color: { argb: '374151' }, 
+              name: 'Arial' // Arial font for better readability
+            }; 
+            cell.alignment = { 
+              horizontal: 'left', 
+              vertical: 'top', 
+              wrapText: true,
+              indent: 1 // Add slight indent for better readability
+            };
           } else if (colNumber === 5 || colNumber === 6) { // Status columns
             cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          } else if (colNumber === 8) { // Requester column (multi-line)
+            cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
           } else if (colNumber === 10 || colNumber === 11 || colNumber === 12) { // Date columns
             cell.alignment = { horizontal: 'center', vertical: 'middle' };
           } else if (colNumber === 13) { // Priority
@@ -1028,58 +844,65 @@ export async function GET(request: NextRequest) {
         });
       });
 
-      // Auto-adjust column widths and set minimum/maximum widths
+      // Auto-adjust column widths with minimum widths but no maximum limits
       const columnSettings = [
-        { min: 8, max: 12 },   // Request ID
-        { min: 20, max: 35 },  // Subject
-        { min: 25, max: 40 },  // Description
-        { min: 12, max: 18 },  // Request Type
-        { min: 12, max: 18 },  // Request Status
-        { min: 12, max: 18 },  // Approval Status
-        { min: 10, max: 15 },  // Mode
-        { min: 15, max: 25 },  // Requester
-        { min: 15, max: 22 },  // Department
-        { min: 12, max: 18 },  // Created At
-        { min: 10, max: 15 },  // Due By
-        { min: 12, max: 18 },  // Resolved Time
-        { min: 10, max: 15 },  // Priority
-        { min: 15, max: 22 },  // Technician
-        { min: 15, max: 22 },  // Service Category
-        { min: 20, max: 30 }   // Template
+        { min: 10, autoWidth: true },   // Request ID
+        { min: 25, autoWidth: true },   // Subject
+        { min: 40, autoWidth: true },   // Description - minimum 40, auto-expand as needed
+        { min: 15, autoWidth: true },   // Request Type
+        { min: 15, autoWidth: true },   // Request Status
+        { min: 15, autoWidth: true },   // Approval Status
+        { min: 12, autoWidth: true },   // Mode
+        { min: 20, autoWidth: true },   // Requester
+        { min: 18, autoWidth: true },   // Department
+        { min: 15, autoWidth: true },   // Created At
+        { min: 12, autoWidth: true },   // Due By
+        { min: 15, autoWidth: true },   // Resolved Time
+        { min: 12, autoWidth: true },   // Priority
+        { min: 18, autoWidth: true },   // Technician
+        { min: 18, autoWidth: true },   // Service Category
+        { min: 25, autoWidth: true }    // Template
       ];
 
-      // Auto-adjust columns based on content
+      // Auto-adjust columns based on actual content with intelligent width calculation
       columnSettings.forEach((setting, index) => {
         const column = worksheet.getColumn(index + 1);
         
-        // Calculate optimal width based on content
-        let maxLength = 0;
+        // Calculate optimal width based on content with special handling for description
+        let maxLength = setting.min;
         column.eachCell({ includeEmpty: false }, (cell) => {
-          const cellValue = cell.value ? cell.value.toString() : '';
-          maxLength = Math.max(maxLength, cellValue.length);
+          if (cell.value) {
+            const cellValue = cell.value.toString();
+            if (index === 2) { // Description column (index 2) - special handling
+              // For description, calculate based on longest line rather than total length
+              const lines = cellValue.split('\n');
+              const longestLine = Math.max(...lines.map(line => line.length));
+              maxLength = Math.max(maxLength, Math.min(longestLine + 5, 80)); // Cap at 80 for readability
+            } else {
+              // For other columns, use actual content length
+              maxLength = Math.max(maxLength, cellValue.length + 3);
+            }
+          }
         });
         
-        // Set width with min/max constraints
-        const optimalWidth = Math.min(Math.max(maxLength + 2, setting.min), setting.max);
-        column.width = optimalWidth;
+        // Set the calculated width
+        column.width = maxLength;
         
-        // Center align all cells in the column
-        column.alignment = { 
-          horizontal: 'center', 
-          vertical: 'middle',
-          wrapText: true
-        };
-      });
-
-      // Freeze the header row
-      worksheet.views = [
-        {
-          state: 'frozen',
-          xSplit: 0,
-          ySplit: 7, // Freeze at row 7 (after company header, title, info, and table headers)
-          showGridLines: false
+        // Set column alignment with special handling for description
+        if (index === 2) { // Description column
+          column.alignment = { 
+            horizontal: 'left', 
+            vertical: 'top',
+            wrapText: true
+          };
+        } else {
+          column.alignment = { 
+            horizontal: 'center', 
+            vertical: 'middle',
+            wrapText: true
+          };
         }
-      ];
+      });
 
       // Final formatting adjustments
       worksheet.eachRow((row, rowNumber) => {
@@ -1117,6 +940,16 @@ export async function GET(request: NextRequest) {
           }
         }
       });
+
+      // Add footer information at the bottom left
+      worksheet.addRow([]); // Empty row for spacing
+      const footerRow1 = worksheet.addRow([`Generated: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`]);
+      footerRow1.getCell(1).font = { size: 10, color: { argb: '6B7280' }, name: 'Arial' };
+      footerRow1.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+      
+      const footerRow2 = worksheet.addRow([`Exported by: System Administrator | Total Records: ${filteredRequests.length} | Page 1 of 1`]);
+      footerRow2.getCell(1).font = { size: 10, color: { argb: '6B7280' }, name: 'Arial' };
+      footerRow2.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
 
       // Generate Excel buffer
       const buffer = await workbook.xlsx.writeBuffer();

@@ -229,10 +229,23 @@ const getTemplateTooltip = (request: RequestData) => {
   // Add description from formData field 9 (Description field)
   const description = request.formData?.['9'];
   if (description) {
-    // Remove HTML tags from rich text
-    const cleanDescription = description.replace(/<[^>]*>/g, '').trim();
-    if (cleanDescription) {
-      details.push(`Description: ${cleanDescription}`);
+    // Remove HTML tags from rich text and decode HTML entities
+    const cleanDescription = description
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .trim();
+    
+    if (cleanDescription && cleanDescription.length > 0) {
+      // Limit description length for tooltip
+      const truncatedDescription = cleanDescription.length > 200 
+        ? cleanDescription.substring(0, 200) + '...' 
+        : cleanDescription;
+      details.push(`Description: ${truncatedDescription}`);
     }
   }
   
@@ -256,10 +269,23 @@ const getTemplateTooltip = (request: RequestData) => {
   // Add template type
   details.push(`Type: ${capitalizeWords(request.type || 'Service')}`);
   
-  // Add template name
-  details.push(`Template: ${request.templateName}`);
+  // Add template name - use the same fallback logic as the main display
+  const templateName = request.formData?.['8'] || request.templateName || request.template?.name;
+  if (templateName && templateName.trim() && templateName !== 'undefined') {
+    details.push(`Template: ${templateName}`);
+  }
   
-  return details.join('\n');
+  // Debug: Log the request data to see what's available
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Request data for tooltip:', {
+      id: request.id,
+      templateName: request.templateName,
+      template: request.template,
+      formData: request.formData
+    });
+  }
+  
+  return details.length > 0 ? details.join('\n') : 'No additional information available';
 };
 
 export default function MyRequestsPage() {
@@ -688,7 +714,7 @@ export default function MyRequestsPage() {
                                     onClick={() =>
                                       router.push(`/requests/view/${request.id}?from=/technician/requests`)
                                     }
-                                    title="Click to view request details"
+                                    // title="Click to view request details"
                                   >
                                     {/* ID */}
                                     <div className="flex items-center gap-2">
@@ -725,8 +751,13 @@ export default function MyRequestsPage() {
                                               "-"}
                                           </p>
                                         </TooltipTrigger>
-                                        <TooltipContent className="max-w-md p-3">
-                                          <div className="text-sm whitespace-pre-line">
+                                        <TooltipContent 
+                                          className="max-w-sm p-3 bg-white border border-gray-200 shadow-lg z-[9999]" 
+                                          side="bottom" 
+                                          align="start"
+                                          sideOffset={5}
+                                        >
+                                          <div className="text-sm whitespace-pre-line leading-relaxed">
                                             {getTemplateTooltip(request)}
                                           </div>
                                         </TooltipContent>

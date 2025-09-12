@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { prisma } from '@/lib/prisma';
+import { prisma, checkConnectionHealth } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth';
+import { withRetry, safeQuery } from '@/lib/database-circuit-breaker';
 
 export async function GET(request: NextRequest) {
   try {
+    // Check connection health before proceeding
+    const connectionHealth = checkConnectionHealth();
+    if (connectionHealth.activeConnections > 8) {
+      console.warn('🚨 High connection usage, proceeding with caution');
+    }
+
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -303,28 +310,36 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    // Check user permissions
+    // Check user permissions with circuit breaker protection
     const userId = parseInt(session.user.id);
-    const user = await prisma.users.findUnique({
-      where: { id: userId },
-      include: {
-        technician: true,
-        userDepartment: true
-      }
+    const user = await safeQuery(async () => {
+      return await prisma.users.findUnique({
+        where: { id: userId },
+        include: {
+          technician: true,
+          userDepartment: true
+        }
+      });
     });
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
 
     // If user is not technician/admin, apply restrictions
     if (!user?.technician && !(user?.technician?.isAdmin)) {
       // Check if user is department head of any departments
-      const headOfDepartments = await prisma.department.findMany({
-        where: { 
-          departmentHeadId: userId,
-          isActive: true 
-        },
-        select: { id: true }
-      });
+      const headOfDepartments = await safeQuery(async () => {
+        return await prisma.department.findMany({
+          where: { 
+            departmentHeadId: userId,
+            isActive: true 
+          },
+          select: { id: true }
+        });
+      }, []);
 
-      if (headOfDepartments.length > 0) {
+      if (headOfDepartments && headOfDepartments.length > 0) {
         // Department head - show requests from departments they manage
         const departmentIds = headOfDepartments.map(d => d.id);
         
@@ -358,54 +373,87 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    // Get requests with all related data
-    const requests = await prisma.request.findMany({
-      where,
-      include: {
-        user: {
+    // Get requests with all related data - OPTIMIZED single query with all includes + circuit breaker
+    const [requests, totalCount, templates] = await withRetry(async () => {
+      return await Promise.all([
+        prisma.request.findMany({
+          where,
           include: {
-            userDepartment: true
-          }
-        },
-        approvals: {
-          include: {
-            approver: true
+            user: {
+              include: {
+                userDepartment: true
+              }
+            },
+            approvals: {
+              include: {
+                approver: true
+              },
+              orderBy: {
+                level: 'asc'
+              }
+            }
           },
           orderBy: {
-            level: 'asc'
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      },
-      skip: offset,
-      take: limit
-    });
-
-    // Get total count for pagination
-    const totalCount = await prisma.request.count({ where });
-
-    // Get templates for lookup
-    const templates = await prisma.template.findMany({
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        category: {
+            createdAt: 'desc'
+          },
+          skip: offset,
+          take: limit
+        }),
+        prisma.request.count({ where }),
+        prisma.template.findMany({
           select: {
             id: true,
-            name: true
+            name: true,
+            type: true,
+            category: {
+              select: {
+                id: true,
+                name: true
+              }
+            }
           }
-        }
-      }
+        })
+      ]);
     });
 
     // Create template lookup map
     const templateMap = new Map(templates.map(t => [t.id.toString(), t]));
 
-    // Process requests to extract data from formData JSON - Updated logic based on technician API
-    const processedRequests = await Promise.all(requests.map(async (request: any) => {
+    // OPTIMIZED: Batch process requests to avoid individual database calls
+    // Get all unique template IDs that need to be fetched
+    const templateIds = Array.from(new Set(requests.map(r => r.templateId).filter(Boolean)));
+    
+    // Batch fetch missing templates if any
+    const missingTemplateIds = templateIds.filter(id => !templateMap.has(id.toString()));
+    if (missingTemplateIds.length > 0) {
+      const additionalTemplates = await safeQuery(async () => {
+        return await prisma.template.findMany({
+          where: { 
+            id: { in: missingTemplateIds.map(id => parseInt(id) || 0).filter(id => id > 0) }
+          },
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            type: true,
+            category: {
+              select: {
+                id: true,
+                name: true
+              }
+            }
+          }
+        });
+      }, []);
+      
+      // Add to template map
+      if (additionalTemplates) {
+        additionalTemplates.forEach(t => templateMap.set(t.id.toString(), t));
+      }
+    }
+
+    // Process requests to extract data from formData JSON - NO MORE INDIVIDUAL DB CALLS
+    const processedRequests = requests.map((request: any) => {
       let formData: any = {};
       try {
         formData = typeof request.formData === 'string' 
@@ -415,43 +463,11 @@ export async function GET(request: NextRequest) {
         console.error('Error parsing formData for request', request.id, error);
       }
 
-      // Debug: Log technician-related fields in formData
-      const technicianKeys = Object.keys(formData).filter(key => 
-        key.toLowerCase().includes('tech') || 
-        key.toLowerCase().includes('assign') ||
-        key.toLowerCase().includes('responsible')
-      );
-      if (technicianKeys.length > 0) {
-        console.log(`Request ${request.id} technician fields:`, technicianKeys.map(key => `${key}: ${formData[key]}`));
-      }
-
-      // Get template information like technician API does
-      let template = null;
-      try {
-        template = await prisma.template.findFirst({
-          where: { 
-            OR: [
-              { id: parseInt(request.templateId) || 0 },
-              { name: { contains: request.templateId } }
-            ]
-          },
-          select: {
-            name: true,
-            description: true, // Get template description as subject
-            type: true,
-            category: {
-              select: {
-                name: true
-              }
-            }
-          }
-        });
-      } catch (templateError) {
-        console.warn('Error fetching template for request', request.id, ':', templateError);
-      }
+      // Get template information from our pre-loaded map (NO DATABASE CALL)
+      const template = templateMap.get(request.templateId?.toString()) || null;
       
-      // Extract subject from formData field 8, fallback to template description or name
-      const subject = formData?.['8'] || formData?.subject || template?.description || template?.name || `Request #${request.id}`;
+      // Extract subject from formData field 8, fallback to template name
+      const subject = formData?.['8'] || formData?.subject || template?.name || `Request #${request.id}`;
       
       // Extract description from formData field 9
       const description = formData?.['9'] || formData?.description || formData?.details || formData?.issueDescription || '';
@@ -544,7 +560,7 @@ export async function GET(request: NextRequest) {
             : 'Unassigned';
         })()
       };
-    }));
+    });
 
     // Apply post-processing filters for fields that can't be filtered at database level
     let filteredRequests = processedRequests;
@@ -601,8 +617,37 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Error fetching reports:', error);
+    
+    // Check if it's a connection pool exhaustion error
+    if (error instanceof Error && 
+        (error.message.includes('too many clients already') || 
+         error.message.includes('sorry, too many clients') ||
+         error.message.includes('connection pool'))) {
+      
+      console.error('🚨 Database connection pool exhausted');
+      
+      return NextResponse.json({
+        error: 'Database temporarily overloaded. Please try again in a moment.',
+        code: 'CONNECTION_POOL_EXHAUSTED',
+        retryAfter: 30
+      }, { status: 503 });
+    }
+
+    // Check if it's a circuit breaker error
+    if (error instanceof Error && error.message.includes('Circuit breaker is OPEN')) {
+      return NextResponse.json({
+        error: 'Database temporarily unavailable due to high load. Please try again later.',
+        code: 'CIRCUIT_BREAKER_OPEN',
+        retryAfter: 60
+      }, { status: 503 });
+    }
+
+    // Generic error response
     return NextResponse.json(
-      { error: 'Failed to fetch reports' },
+      { 
+        error: 'Failed to fetch reports. Please try again.',
+        code: 'INTERNAL_ERROR'
+      },
       { status: 500 }
     );
   }

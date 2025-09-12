@@ -179,6 +179,86 @@ export default function ReportsPage() {
     totalPages: 0
   });
 
+  // Helper function to preserve description formatting including indentation and bullets
+  const preserveDescriptionFormatting = (description: string) => {
+    if (!description) return 'N/A';
+    
+    // Convert HTML to text while preserving structure and formatting
+    let formatted = description
+      // Convert HTML breaks to newlines
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<p[^>]*>/gi, '')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<div[^>]*>/gi, '')
+      
+      // Convert HTML lists to text bullets
+      .replace(/<ul[^>]*>/gi, '')
+      .replace(/<\/ul>/gi, '\n')
+      .replace(/<li[^>]*>/gi, '• ')
+      .replace(/<\/li>/gi, '\n')
+      
+      // Convert ordered lists to numbered bullets  
+      .replace(/<ol[^>]*>/gi, '')
+      .replace(/<\/ol>/gi, '\n')
+      
+      // Preserve headings with formatting (remove bold markers since we're not rendering markdown)
+      .replace(/<h[1-6][^>]*>/gi, '\n')
+      .replace(/<\/h[1-6]>/gi, ':\n')
+      
+      // Remove strong/bold formatting markers (don't add ** since we're not rendering markdown)
+      .replace(/<strong[^>]*>/gi, '')
+      .replace(/<\/strong>/gi, '')
+      .replace(/<b[^>]*>/gi, '')
+      .replace(/<\/b>/gi, '')
+      
+      // Remove emphasis/italic formatting markers
+      .replace(/<em[^>]*>/gi, '')
+      .replace(/<\/em>/gi, '')
+      .replace(/<i[^>]*>/gi, '')
+      .replace(/<\/i>/gi, '')
+      
+      // Convert indentation (HTML spaces and tabs) - Enhanced for better structure
+      .replace(/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/gi, '        ') // 8 spaces
+      .replace(/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/gi, '      ') // 6 spaces  
+      .replace(/&nbsp;&nbsp;&nbsp;&nbsp;/gi, '    ') // 4 spaces for tab-like indentation
+      .replace(/&nbsp;&nbsp;/gi, '  ') // 2 spaces for smaller indentation
+      .replace(/&nbsp;/gi, ' ')
+      
+      // Convert common HTML entities - Enhanced
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/&apos;/gi, "'")
+      .replace(/&rarr;/gi, '→') // Right arrow
+      .replace(/&larr;/gi, '←') // Left arrow
+      .replace(/&uarr;/gi, '↑') // Up arrow
+      .replace(/&darr;/gi, '↓') // Down arrow
+      
+      // Remove remaining HTML tags but preserve the content
+      .replace(/<[^>]*>/g, '')
+      
+      // Clean up excessive whitespace while preserving intentional formatting
+      .replace(/\n\s*\n\s*\n/g, '\n\n') // Convert multiple newlines to double newlines
+      .replace(/^[\s\n]+|[\s\n]+$/g, '') // Trim leading/trailing whitespace
+      .replace(/[ \t]+$/gm, '') // Remove trailing spaces from each line
+      .replace(/^[ \t]+/gm, (match) => match) // Preserve leading spaces (indentation)
+      
+      // Ensure bullets are properly spaced and formatted - Enhanced
+      .replace(/\n•/g, '\n• ')
+      .replace(/• {2,}/g, '• ')
+      // Handle different bullet types
+      .replace(/\n\*\s/g, '\n• ')
+      .replace(/\n-\s/g, '\n• ')
+      .replace(/\n\+\s/g, '\n• ')
+      // Handle numbered lists
+      .replace(/\n(\d+)\.\s/g, '\n$1. ');
+    
+    return formatted || 'N/A';
+  };
+
   // Helper function to capitalize each word
   const capitalizeWords = (str: string) => {
     if (!str) return str;
@@ -1018,11 +1098,8 @@ export default function ReportsPage() {
                         {request.subject}
                       </td>
                       <td className="px-3 py-2 border-r border-gray-200 text-gray-700 leading-relaxed max-w-md">
-                        <div className="whitespace-pre-wrap break-words">
-                          {request.description ? 
-                            request.description.replace(/<[^>]*>/g, '')
-                            : 'N/A'
-                          }
+                        <div className="whitespace-pre-wrap break-words font-mono text-sm">
+                          {preserveDescriptionFormatting(request.description)}
                         </div>
                       </td>
                       <td className="px-3 py-2 border-r border-gray-200 text-gray-900">

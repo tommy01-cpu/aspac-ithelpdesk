@@ -733,14 +733,38 @@ export default function ApprovalDetailsPage() {
         throw new Error(errorData.error || 'Failed to process approval');
       }
 
-      const actionText = action === 'approve' ? 'approved' : 
-                        action === 'reject' ? 'rejected' : 
-                        'sent for clarification';
+      // Close the dialogs first before showing success toast
+      if (action === 'approve') {
+        setShowApprovalModal(false);
+        setApprovalComment('');
+      } else if (action === 'reject') {
+        setShowRejectModal(false);
+        setApprovalComment('');
+      } else if (action === 'clarification') {
+        setShowClarificationModal(false);
+        setClarificationMessage('');
+      }
 
-      toast({
-        title: "Success",
-        description: `Request ${actionText} successfully`,
-      });
+      // Scroll to top of page
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      // Small delay to ensure dialog closes before toast appears
+      setTimeout(() => {
+        const actionText = action === 'approve' ? 'approved' : 
+                          action === 'reject' ? 'rejected' : 
+                          'sent for clarification';
+
+        const requestTitle = requestDetails?.templateName || `Request #${requestId}`;
+        
+        toast({
+          title: "Success",
+          description: `${requestTitle} ${actionText} successfully`,
+          variant: "default",
+          className: action === 'approve' ? "bg-green-50 border-green-200" : 
+                    action === 'reject' ? "bg-red-50 border-red-200" : 
+                    "bg-blue-50 border-blue-200",
+        });
+      }, 100);
 
       // Navigate to the first pending approval or back to approvals list if none
       await redirectToFirstPendingApproval();
@@ -748,11 +772,27 @@ export default function ApprovalDetailsPage() {
       
     } catch (error) {
       console.error('Error processing approval:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to process approval",
-        variant: "destructive"
-      });
+      
+      // Close dialogs even on error
+      if (action === 'approve') {
+        setShowApprovalModal(false);
+        setApprovalComment('');
+      } else if (action === 'reject') {
+        setShowRejectModal(false);
+        setApprovalComment('');
+      } else if (action === 'clarification') {
+        setShowClarificationModal(false);
+        setClarificationMessage('');
+      }
+
+      // Show error toast after dialog is closed
+      setTimeout(() => {
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to process approval",
+          variant: "destructive"
+        });
+      }, 100);
     } finally {
       if (isMounted.current) setActionLoading(null);
     }
@@ -1211,6 +1251,36 @@ export default function ApprovalDetailsPage() {
                           <div className="bg-gray-50 border border-gray-200 p-3 sm:p-4 rounded-lg">
                             <div className="prose prose-sm max-w-none">
                               {(() => {
+                                // Helper function to preserve rich text formatting
+                                const preserveDescriptionFormatting = (content: string): string => {
+                                  if (!content) return '';
+                                  
+                                  // If it's already HTML, return as is
+                                  if (/<[^>]*>/g.test(content)) {
+                                    return content;
+                                  }
+                                  
+                                  // Convert plain text with special formatting
+                                  return content
+                                    // Convert bullet points (•, -, *, etc.)
+                                    .replace(/^[\s]*[•\-\*]\s+(.+)$/gm, '<li>$1</li>')
+                                    // Convert numbered lists
+                                    .replace(/^[\s]*(\d+)[\.\)]\s+(.+)$/gm, '<li>$2</li>')
+                                    // Wrap consecutive list items in ul tags
+                                    .replace(/(<li>.*<\/li>(?:\s*<li>.*<\/li>)*)/gs, '<ul>$1</ul>')
+                                    // Convert double line breaks to paragraphs
+                                    .replace(/\n\s*\n/g, '</p><p>')
+                                    // Convert single line breaks to br tags
+                                    .replace(/\n/g, '<br>')
+                                    // Wrap in paragraph tags if not already wrapped
+                                    .replace(/^(?!<[uo]l>|<p>)(.+)/, '<p>$1')
+                                    .replace(/(.+)(?!<\/[uo]l>|<\/p>)$/, '$1</p>')
+                                    // Clean up any malformed paragraph tags
+                                    .replace(/<p>\s*<\/p>/g, '')
+                                    .replace(/<p>\s*(<[uo]l>)/g, '$1')
+                                    .replace(/(<\/[uo]l>)\s*<\/p>/g, '$1');
+                                };
+
                                 // Try to find description from multiple possible field names and numbered fields
                                 const formData = requestDetails.formData || {};
                                 let description = null;
@@ -1249,21 +1319,22 @@ export default function ApprovalDetailsPage() {
                                 }
                                 
                                 if (description) {
-                                  // Check if description contains HTML tags (from Quill editor)
-                                  if (/<[^>]*>/g.test(description)) {
-                                    return (
-                                      <div 
-                                        className="text-gray-700 leading-relaxed text-sm sm:text-base break-words"
-                                        dangerouslySetInnerHTML={{ __html: description }}
-                                      />
-                                    );
-                                  } else {
-                                    return (
-                                      <p className="text-gray-700 leading-relaxed whitespace-pre-wrap text-sm sm:text-base break-words">
-                                        {description}
-                                      </p>
-                                    );
-                                  }
+                                  // Process the description to preserve formatting
+                                  const formattedDescription = preserveDescriptionFormatting(description);
+                                  
+                                  return (
+                                    <div 
+                                      className="text-gray-700 leading-relaxed text-sm sm:text-base break-words prose prose-sm prose-gray max-w-none
+                                        prose-ul:my-2 prose-ul:pl-4 prose-li:my-1 
+                                        prose-ol:my-2 prose-ol:pl-4 
+                                        prose-p:my-2 prose-p:leading-relaxed
+                                        prose-strong:font-semibold prose-em:italic
+                                        [&_ul]:list-disc [&_ol]:list-decimal
+                                        [&_li]:ml-4 [&_li]:mb-1
+                                        [&_p]:mb-2 [&_br]:mb-1"
+                                      dangerouslySetInnerHTML={{ __html: formattedDescription }}
+                                    />
+                                  );
                                 }
                                 
                                 return <p className="text-gray-500 italic text-sm sm:text-base">No description provided.</p>;
@@ -1495,6 +1566,180 @@ export default function ApprovalDetailsPage() {
                       </div>
                     </CardContent>
                   </Card>
+
+                  {/* Approval Levels Status - Show only current user's level and previous levels */}
+                  {allApprovals.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                          <div className="w-1 h-5 bg-blue-600 rounded"></div>
+                          Approval Levels
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3 sm:space-y-4">
+                          {(() => {
+                            // Find current user's approval level
+                            const currentUserApprovals = allApprovals.filter((approval: any) => 
+                              session?.user?.email && approval.approverEmail === session.user.email
+                            );
+                            
+                            // If user has no approvals in this request, don't show approval levels
+                            if (currentUserApprovals.length === 0) {
+                              return (
+                                <div className="text-center py-4 text-gray-500">
+                                  <p className="text-sm">You are not an approver for this request</p>
+                                </div>
+                              );
+                            }
+
+                            // Get current user's highest level (in case they have multiple levels)
+                            const currentUserLevel = Math.max(...currentUserApprovals.map((app: any) => app.level));
+
+                            // Group all approvals by level
+                            const approvalsByLevel: Record<number, any[]> = allApprovals.reduce((acc: Record<number, any[]>, approval: any) => {
+                              const level = approval.level;
+                              if (!acc[level]) {
+                                acc[level] = [];
+                              }
+                              acc[level].push(approval);
+                              return acc;
+                            }, {});
+
+                            // Get all unique levels and sort them
+                            const allLevels = Object.keys(approvalsByLevel).sort((a, b) => parseInt(a) - parseInt(b));
+
+                            // Filter to show only current user's level and previous levels
+                            const levelsToShow = allLevels.filter(level => parseInt(level) <= currentUserLevel);
+
+                            return levelsToShow.map((level) => {
+                              const levelApprovals = approvalsByLevel[parseInt(level)];
+                              const levelName = levelApprovals[0]?.name || `Level ${level}`;
+                              const isCurrentUserLevel = parseInt(level) === currentUserLevel;
+                              
+                              // Determine level status based on all approvals in this level
+                              const hasApproved = levelApprovals.some((app: any) => normalizeStatus(app.status) === 'approved');
+                              const hasPending = levelApprovals.some((app: any) => {
+                                const st = normalizeStatus(app.status);
+                                return st === 'pending approval' || st === 'for clarification' || st === 'pending clarification';
+                              });
+                              const hasRejected = levelApprovals.some((app: any) => normalizeStatus(app.status) === 'rejected');
+                              const allApproved = levelApprovals.every((app: any) => normalizeStatus(app.status) === 'approved');
+                              
+                              // Check if all previous levels are approved
+                              const currentLevelNumber = parseInt(level);
+                              const previousLevels = levelsToShow.filter(l => parseInt(l) < currentLevelNumber);
+                              const allPreviousLevelsApproved = previousLevels.every(prevLevel => {
+                                const prevLevelApprovals = approvalsByLevel[parseInt(prevLevel)];
+                                return prevLevelApprovals.every((app: any) => normalizeStatus(app.status) === 'approved');
+                              });
+                              
+                              // Determine the level status
+                              let levelStatus = '';
+                              let levelBadgeColor = '';
+                              
+                              if (hasRejected) {
+                                levelStatus = 'Rejected';
+                                levelBadgeColor = 'bg-red-100 text-red-800 border-red-200';
+                              } else if (allApproved) {
+                                levelStatus = 'Approved';
+                                levelBadgeColor = 'bg-green-100 text-green-800 border-green-200';
+                              } else if (hasPending && allPreviousLevelsApproved) {
+                                levelStatus = 'In Progress';
+                                levelBadgeColor = 'bg-blue-100 text-blue-800 border-blue-200';
+                              } else if (hasPending && !allPreviousLevelsApproved) {
+                                levelStatus = 'Waiting';
+                                levelBadgeColor = 'bg-gray-100 text-gray-600 border-gray-200';
+                              } else {
+                                levelStatus = 'Pending';
+                                levelBadgeColor = 'bg-gray-100 text-gray-600 border-gray-200';
+                              }
+
+                              return (
+                                <div key={level} className={`border rounded-lg p-3 sm:p-4 ${isCurrentUserLevel ? 'bg-blue-50 border-blue-200' : 'bg-white'}`}>
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                                    <div className="flex items-center gap-3">
+                                      <div className={`w-8 h-8 ${isCurrentUserLevel ? 'bg-blue-500 text-white' : 'bg-blue-100 text-blue-600'} rounded-full flex items-center justify-center flex-shrink-0`}>
+                                        <span className="text-sm font-semibold">{level}</span>
+                                      </div>
+                                      <div className="min-w-0">
+                                        <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                                          {levelName}
+                                          {isCurrentUserLevel && (
+                                            <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300 text-xs">
+                                              Your Level
+                                            </Badge>
+                                          )}
+                                        </h4>
+                                        <p className="text-xs text-gray-500">
+                                          {levelApprovals.length} approver{levelApprovals.length !== 1 ? 's' : ''}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Badge className={`${levelBadgeColor} border text-xs`}>
+                                        {levelStatus}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Show approvers in this level */}
+                                  <div className="space-y-2">
+                                    {levelApprovals.map((approval: any) => (
+                                      <div key={approval.id} className="bg-gray-50 rounded-lg p-2.5 sm:p-3">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                                            <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
+                                              <User className="h-3 w-3 text-gray-600" />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                              <p className="text-sm font-medium text-gray-900 truncate">
+                                                {(() => {
+                                                  if (approval.approver) {
+                                                    return `${approval.approver.emp_fname} ${approval.approver.emp_lname}`;
+                                                  }
+                                                  return approval.approverName || approval.approverEmail || 'Unknown Approver';
+                                                })()}
+                                              </p>
+                                              <p className="text-xs text-gray-500 truncate">
+                                                {(() => {
+                                                  if (approval.approver?.emp_email) {
+                                                    return approval.approver.emp_email;
+                                                  }
+                                                  return approval.approverEmail || '';
+                                                })()}
+                                              </p>
+                                            </div>
+                                          </div>
+                                          <div className="flex flex-col items-end gap-1">
+                                            <Badge className={`${getApprovalStatusColor(normalizeStatus(approval.status))} text-xs whitespace-nowrap`}>
+                                              {titleCaseStatus(approval.status)}
+                                            </Badge>
+                                            {approval.actedOn && (
+                                              <span className="text-xs text-gray-500">
+                                                {formatDbTimestampDisplay(approval.actedOn, { shortFormat: true })}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        
+                                        {/* Show comment directly below the approver if they have one */}
+                                        {approval.comments && (
+                                          <div className="mt-2 pt-2 border-t border-gray-200">
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap bg-white rounded p-2 border">{approval.comments}</p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   {/* Approver Conversations - Only show if there are active conversations */}
                   {approvals.some((approval) => 
@@ -1937,6 +2182,7 @@ export default function ApprovalDetailsPage() {
                   setShowApprovalModal(false);
                   setApprovalComment('');
                 }}
+                disabled={actionLoading === 'approve'}
                 className="w-full sm:w-auto order-2 sm:order-1"
               >
                 Cancel
@@ -2019,6 +2265,7 @@ export default function ApprovalDetailsPage() {
                   setShowRejectModal(false);
                   setApprovalComment('');
                 }}
+                disabled={actionLoading === 'reject'}
                 className="w-full sm:w-auto order-2 sm:order-1"
               >
                 Cancel

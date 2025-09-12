@@ -6,6 +6,7 @@ import {
   getUserNotifications, 
   markNotificationAsRead, 
   markAllNotificationsAsRead, 
+  deleteAllNotifications,
   getUnreadNotificationCount 
 } from '@/lib/notifications';
 
@@ -79,5 +80,30 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Error updating notifications:', error);
     return NextResponse.json({ error: 'Failed to update notifications' }, { status: 500 });
+  }
+}
+
+// DELETE - Delete all notifications for a user
+export async function DELETE(request: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { deleteAll } = body;
+    const userId = parseInt(session.user.id);
+
+    if (deleteAll) {
+      await deleteAllNotifications(userId);
+      return NextResponse.json({ success: true, message: 'All notifications deleted successfully' });
+    } else {
+      return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+    }
+
+  } catch (error) {
+    console.error('Error deleting notifications:', error);
+    return NextResponse.json({ error: 'Failed to delete notifications' }, { status: 500 });
   }
 }
