@@ -369,6 +369,7 @@ export default function RequestViewPage() {
   const [newNote, setNewNote] = useState('');
   const [noteAttachments, setNoteAttachments] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  const [addingNote, setAddingNote] = useState(false);
   const noteFileInputRef = useRef<HTMLInputElement>(null);
   const conversationRefs = useRef<{[approvalId: string]: HTMLDivElement | null}>({});
   // Work Logs state (technician-only)
@@ -1151,9 +1152,11 @@ export default function RequestViewPage() {
 
   const addNote = async () => {
     const message = newNote.trim();
-    if (!message) return;
+    if (!message || addingNote) return;
 
     try {
+      setAddingNote(true);
+      
       // First, upload files if any
       let uploadedFileData: any[] = [];
       if (noteAttachments.length > 0) {
@@ -1212,6 +1215,8 @@ export default function RequestViewPage() {
         description: "Failed to add note",
         variant: "destructive"
       });
+    } finally {
+      setAddingNote(false);
     }
   };
 
@@ -3083,15 +3088,16 @@ export default function RequestViewPage() {
             <DialogFooter>
               <Button 
                 variant="outline" 
+                disabled={addingNote}
                 onClick={() => setShowNotesModal(false)}
               >
                 Cancel
               </Button>
               <Button 
                 onClick={addNote}
-                disabled={!newNote.trim()}
+                disabled={!newNote.trim() || addingNote}
               >
-                Save
+                {addingNote ? 'Saving...' : 'Save'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -3246,7 +3252,7 @@ export default function RequestViewPage() {
         {/* Work Log Modal (Add/Edit) */}
         {session?.user?.isTechnician && (
           <Dialog open={showWorkLogModal} onOpenChange={setShowWorkLogModal}>
-            <DialogContent className="max-w-3xl">
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{editingWorkLog ? 'Edit Work Log' : 'New Work Log'}</DialogTitle>
               </DialogHeader>

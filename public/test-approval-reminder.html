@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Approval Reminder</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { padding: 10px 20px; background: #007cba; color: white; border: none; border-radius: 5px; cursor: pointer; margin: 10px 0; }
+        button:hover { background: #005a85; }
+        #result { margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #f9f9f9; white-space: pre-wrap; }
+        .loading { color: #007cba; }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Approval Reminder Service Test</h1>
+    <p>Click the button below to test the approval reminder service manually:</p>
+    
+    <button onclick="testApprovalReminder()">🚀 Test Approval Reminder Service</button>
+    <button onclick="clearResult()">🗑️ Clear Result</button>
+    
+    <div id="result"></div>
+
+    <script>
+        async function testApprovalReminder() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div class="loading">⏳ Testing approval reminder service...</div>';
+            
+            try {
+                const response = await fetch('/api/test-approval-reminder', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `<div class="success">✅ Test completed successfully!</div>\n\n` + 
+                                        `<strong>Result:</strong>\n${JSON.stringify(data, null, 2)}`;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Test failed!</div>\n\n` + 
+                                        `<strong>Error:</strong>\n${JSON.stringify(data, null, 2)}`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Network error!</div>\n\n` + 
+                                    `<strong>Error:</strong>\n${error.message}`;
+            }
+        }
+        
+        function clearResult() {
+            document.getElementById('result').innerHTML = '';
+        }
+        
+        // Show current time
+        document.addEventListener('DOMContentLoaded', function() {
+            const now = new Date();
+            const localTime = now.toLocaleString('en-PH', { timeZone: 'Asia/Manila' });
+            document.querySelector('h1').innerHTML += `<br><small>Current time: ${localTime}</small>`;
+        });
+    </script>
+</body>
+</html>

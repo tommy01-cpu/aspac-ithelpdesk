@@ -42,12 +42,12 @@ const APPROVAL_STATUS = {
 } as const;
 
 // Helper function to find an available technician for auto-assignment
-async function findAvailableTechnician(templateId: string) {
+async function findAvailableTechnician(templateId: string, tx: any) {
   try {
     console.log('🔍 Finding available technician for templateId:', templateId);
     
-    // First, try to find support groups that support this template
-    const templateSupportGroups = await prisma.templateSupportGroup.findMany({
+    // First, try to find support groups that support this template (using transaction)
+    const templateSupportGroups = await tx.templateSupportGroup.findMany({
       where: {
         templateId: parseInt(templateId),
         isActive: true
@@ -57,14 +57,14 @@ async function findAvailableTechnician(templateId: string) {
       }
     });
 
-    const supportGroupIds = templateSupportGroups.map(tsg => tsg.supportGroupId);
+    const supportGroupIds = templateSupportGroups.map((tsg: { supportGroupId: number }) => tsg.supportGroupId);
     console.log('📋 Template support groups:', supportGroupIds);
 
     let templateTechnicians: any[] = [];
 
     if (supportGroupIds.length > 0) {
-      // Find technicians in these support groups
-      const technicianMemberships = await prisma.technicianSupportGroup.findMany({
+      // Find technicians in these support groups (using transaction)
+      const technicianMemberships = await tx.technicianSupportGroup.findMany({
         where: {
           supportGroupId: {
             in: supportGroupIds
@@ -87,8 +87,8 @@ async function findAvailableTechnician(templateId: string) {
       });
 
       templateTechnicians = technicianMemberships
-        .map(membership => membership.technician)
-        .filter(tech => tech && tech.isActive);
+        .map((membership: any) => membership.technician)
+        .filter((tech: any) => tech && tech.isActive);
     }
 
     console.log(`📋 Found ${templateTechnicians.length} technicians supporting template ${templateId}`);
@@ -100,8 +100,8 @@ async function findAvailableTechnician(templateId: string) {
       let minActiveRequests = Infinity;
 
       for (const tech of templateTechnicians) {
-        // Count active requests assigned to this technician
-        const activeRequestsCount = await prisma.request.count({
+        // Count active requests assigned to this technician (using transaction)
+        const activeRequestsCount = await tx.request.count({
           where: {
             formData: {
               path: ['assignedTechnicianId'],
@@ -127,10 +127,10 @@ async function findAvailableTechnician(templateId: string) {
       }
     }
 
-    // Fallback: find any available technician with lowest workload
+    // Fallback: find any available technician with lowest workload (using transaction)
     console.log('🔄 No template-specific technicians found, using general pool');
     
-    const allTechnicians = await prisma.technician.findMany({
+    const allTechnicians = await tx.technician.findMany({
       where: {
         isActive: true,
       },
@@ -155,7 +155,7 @@ async function findAvailableTechnician(templateId: string) {
     let minGeneralRequests = Infinity;
 
     for (const tech of allTechnicians) {
-      const activeRequestsCount = await prisma.request.count({
+      const activeRequestsCount = await tx.request.count({
         where: {
           formData: {
             path: ['assignedTechnicianId'],
@@ -201,6 +201,9 @@ export async function POST(request: Request) {
     const data = await request.json();
     const { templateId, templateName, type, formData, attachments, selectedUserId } = data;
 
+    // 🔒 SOLUTION: Wrap everything in a database transaction to prevent orphaned requests
+    const result = await prisma.$transaction(async (tx) => {
+
     console.log('Creating request with data:', { templateId, templateName, type, formData, selectedUserId });
 
     // Determine the actual user ID for the request
@@ -214,8 +217,8 @@ export async function POST(request: Request) {
       console.log('Creating request for logged-in user ID:', actualUserId);
     }
 
-    // Fetch template to get field information for priority mapping
-    const templateForFields = await prisma.template.findUnique({
+    // Fetch template to get field information for priority mapping (using transaction)
+    const templateForFields = await tx.template.findUnique({
       where: { id: parseInt(templateId) },
       select: {
         id: true,
@@ -266,7 +269,7 @@ export async function POST(request: Request) {
         // Map the priority value
         const mappedPriority = PRIORITY_MAPPING[requestPriority.toLowerCase()] || requestPriority;
         
-        slaData = await prisma.sLAIncident.findFirst({
+        slaData = await tx.sLAIncident.findFirst({
           where: {
             priority: mappedPriority as any,
             status: 'active'
@@ -293,8 +296,8 @@ export async function POST(request: Request) {
       console.log('📋 Service request - Status:', requestStatus, 'Priority (field ID', priorityFieldId + '):', requestPriority);
     }
 
-    // Fetch template to get approval workflow configuration
-    const template = await prisma.template.findUnique({
+    // Fetch template to get approval workflow configuration (using transaction)
+    const template = await tx.template.findUnique({
       where: { id: parseInt(templateId) },
       select: {
         id: true,
@@ -309,8 +312,8 @@ export async function POST(request: Request) {
 
     console.log('Template approval workflow:', template.approvalWorkflow);
 
-    // Fetch user details for automatic approver assignment
-    const requestUser = await prisma.users.findUnique({
+    // Fetch user details for automatic approver assignment (using transaction)
+    const requestUser = await tx.users.findUnique({
       where: { id: actualUserId }, // Use the determined user ID
       select: {
         id: true,
@@ -358,7 +361,7 @@ export async function POST(request: Request) {
       departmentName: requestUser?.userDepartment?.name || 'N/A'
     });
 
-    // Create the request in the database
+    // Create the request in the database (using transaction)
     // Create Philippine time that will be stored correctly in UTC database
     const now = new Date();
     const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); 
@@ -421,7 +424,7 @@ export async function POST(request: Request) {
       console.log('🔍 ===== END SLA CALCULATION DEBUG =====');
     }
     
-    const newRequest = await prisma.request.create({
+    const newRequest = await tx.request.create({
       data: {
         templateId: String(templateId),
         status: requestStatus,
@@ -471,7 +474,7 @@ export async function POST(request: Request) {
     console.log('🔍 Request type check - type:', type, 'isIncident:', type === 'incident');
     if (type !== 'incident') {
       try {
-        const requestWithUser = await prisma.request.findUnique({
+        const requestWithUser = await tx.request.findUnique({
           where: { id: newRequest.id },
           include: {
             user: {
@@ -510,7 +513,7 @@ export async function POST(request: Request) {
         console.log('Technician submission: Request created by', technicianName, 'for', actorName);
       }
       
-      await addHistory(prisma as any, {
+      await addHistory(tx as any, {
         requestId: newRequest.id,
         action: "Created",
         actorName: actorName,
@@ -527,7 +530,7 @@ export async function POST(request: Request) {
       
       // Add history entry for SLA assignment if available
       if (slaData) {
-        await addHistory(prisma as any, {
+        await addHistory(tx as any, {
           requestId: newRequest.id,
           action: "SLA Applied",
           actorName: "System",
@@ -538,7 +541,7 @@ export async function POST(request: Request) {
       }
 
       // Add history entry for incident opened
-      await addHistory(prisma as any, {
+      await addHistory(tx as any, {
         requestId: newRequest.id,
         action: "Opened",
         actorName: "System",
@@ -551,7 +554,7 @@ export async function POST(request: Request) {
       console.log('🔍 INCIDENT notification check - type:', type, 'isIncident:', type === 'incident', 'notificationsSent:', notificationsSent);
       if (!notificationsSent) {
         try {
-          const requestWithUser = await prisma.request.findUnique({
+          const requestWithUser = await tx.request.findUnique({
             where: { id: newRequest.id },
             include: {
               user: {
@@ -586,11 +589,11 @@ export async function POST(request: Request) {
         console.log('🔧 No technician assigned, attempting auto-assignment');
         
         // Find available technician based on template support groups or global load balancing
-        const availableTechnician = await findAvailableTechnician(templateId);
+        const availableTechnician = await findAvailableTechnician(templateId, tx);
         
         if (availableTechnician) {
-          // Update the request with assigned technician
-          await prisma.request.update({
+          // Update the request with assigned technician (using transaction)
+          await tx.request.update({
             where: { id: newRequest.id },
             data: {
               formData: {
@@ -623,7 +626,7 @@ export async function POST(request: Request) {
           });
 
           // Add history entry for auto-assignment
-          await addHistory(prisma as any, {
+          await addHistory(tx as any, {
             requestId: newRequest.id,
             action: "Auto-Assigned",
             actorName: "System",
@@ -634,7 +637,7 @@ export async function POST(request: Request) {
 
           // 📧 For incidents: Send technician assignment notifications immediately
           try {
-            const requestWithUser = await prisma.request.findUnique({
+            const requestWithUser = await tx.request.findUnique({
               where: { id: newRequest.id },
               include: {
                 user: {
@@ -722,7 +725,7 @@ export async function POST(request: Request) {
                   }
                   
                   actualApproverId = userIdToCheck;
-                  const templateApprover = await prisma.users.findUnique({
+                  const templateApprover = await tx.users.findUnique({
                     where: { id: actualApproverId },
                     select: {
                       id: true,
@@ -739,9 +742,9 @@ export async function POST(request: Request) {
                   }
                 }
                 
-                // Create auto-approved record
+                // Create auto-approved record (using transaction)
                 if (actualApproverId) {
-                  await prisma.requestApproval.create({
+                  await tx.requestApproval.create({
                     data: {
                       requestId: newRequest.id,
                       level: levelNumber,
@@ -765,7 +768,7 @@ export async function POST(request: Request) {
           }
 
           // Add history entry for auto-approvals
-          await addHistory(prisma as any, {
+          await addHistory(tx as any, {
             requestId: newRequest.id,
             action: "Auto-Approved",
             actorName: "System",
@@ -845,8 +848,8 @@ export async function POST(request: Request) {
                   // Mark as processed to avoid future duplicates
                   processedApproverIds.add(numericApproverId);
                   
-                  // Fetch user details for the selected approver
-                  const selectedApprover = await prisma.users.findUnique({
+                  // Fetch user details for the selected approver (using transaction)
+                  const selectedApprover = await tx.users.findUnique({
                     where: { id: numericApproverId },
                     select: {
                       id: true,
@@ -857,7 +860,7 @@ export async function POST(request: Request) {
                   });
                   
                   if (selectedApprover) {
-                    const createdSelected = await prisma.requestApproval.create({
+                    const createdSelected = await tx.requestApproval.create({
                       data: {
                         requestId: newRequest.id,
                         level: levelNumber,
@@ -956,7 +959,7 @@ export async function POST(request: Request) {
                       }
                       
                       actualApproverId = userIdToCheck;
-                      const templateApprover = await prisma.users.findUnique({
+                      const templateApprover = await tx.users.findUnique({
                         where: { id: actualApproverId },
                         select: {
                           id: true,
@@ -983,8 +986,8 @@ export async function POST(request: Request) {
                     const now = new Date();
                     const philippineTime = now; // No conversion needed - server is already GMT+8
                     
-                    // Get approver email for the database record
-                    const approverUser = await prisma.users.findUnique({
+                    // Get approver email for the database record (using transaction)
+                    const approverUser = await tx.users.findUnique({
                       where: { id: actualApproverId },
                       select: {
                         emp_email: true,
@@ -993,7 +996,7 @@ export async function POST(request: Request) {
                       }
                     });
                     
-                    const createdApprover = await prisma.requestApproval.create({
+                    const createdApprover = await tx.requestApproval.create({
                       data: {
                         requestId: newRequest.id,
                         level: levelNumber,
@@ -1044,7 +1047,7 @@ export async function POST(request: Request) {
               
               // 📧 STANDARD HISTORY ENTRY 2: Approvals Initiated - Level 1 (Priority 2)
               if (levelApproverNames.length > 0) {
-                await addHistory(prisma as any, {
+                await addHistory(tx as any, {
                   requestId: newRequest.id,
                   action: "Approvals Initiated",
                   actorName: "System",
@@ -1130,7 +1133,7 @@ export async function POST(request: Request) {
                     }
                     
                     actualApproverId = userIdToCheck;
-                    const templateApprover = await prisma.users.findUnique({
+                    const templateApprover = await tx.users.findUnique({
                       where: { id: actualApproverId },
                       select: {
                         id: true,
@@ -1153,8 +1156,8 @@ export async function POST(request: Request) {
                   // ⚠️ For levels > 1: Create in dormant state (pending_approval but no email notification)
                   // These will be activated and emails sent when previous level completes
                   if (actualApproverId) {
-                    // Get approver email and ensure we have the correct name
-                    const approverUser = await prisma.users.findUnique({
+                    // Get approver email and ensure we have the correct name (using transaction)
+                    const approverUser = await tx.users.findUnique({
                       where: { id: actualApproverId },
                       select: {
                         emp_fname: true,
@@ -1168,7 +1171,7 @@ export async function POST(request: Request) {
                       approverName = `${approverUser.emp_fname} ${approverUser.emp_lname}`;
                     }
                     
-                    const createdOther = await prisma.requestApproval.create({
+                    const createdOther = await tx.requestApproval.create({
                       data: {
                         requestId: newRequest.id,
                         level: levelNumber,
@@ -1231,7 +1234,15 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, request: newRequest });
+    // Return the created request
+    return { success: true, request: newRequest };
+
+    }, {
+      maxWait: 10000, // 10 seconds max wait
+      timeout: 30000, // 30 seconds timeout
+    });
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Error creating request:', error);
     

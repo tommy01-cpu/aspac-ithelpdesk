@@ -2346,7 +2346,13 @@ export default function RequestPage() {
                   </>
                 )}
               </Button>
-              <Button type="button" variant="outline" onClick={() => router.back()} className="border-slate-300 text-slate-700 hover:bg-slate-50">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => router.back()} 
+                disabled={submitting}
+                className="border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 Cancel
               </Button>
             </div>

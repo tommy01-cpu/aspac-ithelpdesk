@@ -175,8 +175,22 @@ class SafeBackgroundServiceManager {
    * Run approval reminders with safety layers
    */
   private async runApprovalReminders(): Promise<void> {
+    const startTime = new Date();
+    const timestamp = startTime.toLocaleString('en-US', { 
+      timeZone: 'Asia/Manila', 
+      year: 'numeric', 
+      month: '2-digit', 
+      day: '2-digit', 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit', 
+      hour12: false 
+    });
+    
     try {
-      console.log('📧 8:00 AM - Triggering approval reminders...');
+      console.log(`📧 [${timestamp}] 8:00 AM - Triggering approval reminders...`);
+      console.log(`📧 [${timestamp}] NEXTAUTH_URL: ${process.env.NEXTAUTH_URL}`);
+      console.log(`📧 [${timestamp}] NODE_ENV: ${process.env.NODE_ENV}`);
 
       // SAFETY LAYER: Timeout protection
       const timeoutPromise = new Promise((_, reject) => 
@@ -187,10 +201,43 @@ class SafeBackgroundServiceManager {
 
       const result = await Promise.race([reminderPromise, timeoutPromise]);
 
-      console.log('✅ Approval reminders completed:', result);
+      const endTime = new Date();
+      const duration = endTime.getTime() - startTime.getTime();
+      const endTimestamp = endTime.toLocaleString('en-US', { 
+        timeZone: 'Asia/Manila', 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit', 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit', 
+        hour12: false 
+      });
+
+      console.log(`✅ [${endTimestamp}] Approval reminders completed in ${duration}ms:`, result);
 
     } catch (error) {
-      console.error('❌ Approval reminders failed (system protected):', error);
+      const errorTime = new Date();
+      const errorTimestamp = errorTime.toLocaleString('en-US', { 
+        timeZone: 'Asia/Manila', 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit', 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit', 
+        hour12: false 
+      });
+      
+      console.error(`❌ [${errorTimestamp}] Approval reminders failed (system protected):`, error);
+      
+      // Log more diagnostic info
+      console.error(`❌ [${errorTimestamp}] Error details:`, {
+        name: (error as any)?.name,
+        message: (error as any)?.message,
+        cause: (error as any)?.cause,
+        stack: (error as any)?.stack?.split('\n').slice(0, 5).join('\n') // First 5 lines only
+      });
     }
   }
 

@@ -67,6 +67,30 @@ export default function GlobalNotificationPanel() {
     }
   };
 
+  const deleteAllNotifications = async () => {
+    if (!confirm('Are you sure you want to delete ALL notifications? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/notifications', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deleteAll: true })
+      });
+
+      if (response.ok) {
+        setNotifications([]);
+        toast({ title: 'Success', description: 'All notifications deleted successfully' });
+      } else {
+        toast({ title: 'Error', description: 'Failed to delete all notifications', variant: 'destructive' });
+      }
+    } catch (error) {
+      console.error('Error deleting all notifications:', error);
+      toast({ title: 'Error', description: 'Failed to delete all notifications', variant: 'destructive' });
+    }
+  };
+
   const deleteNotification = async (notificationId: string) => {
     if (!confirm('Are you sure you want to delete this notification? This action cannot be undone.')) {
       return;
@@ -154,6 +178,16 @@ export default function GlobalNotificationPanel() {
             >
               Mark all read
             </Button>
+            {notifications.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={deleteAllNotifications}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              >
+                Delete all
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"

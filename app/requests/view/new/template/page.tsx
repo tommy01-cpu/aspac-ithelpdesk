@@ -723,9 +723,17 @@ export default function RequestForm() {
               <div className="flex gap-4 pt-6">
                 <Button
                   type="submit"
-                  className="flex-1 bg-slate-600 hover:bg-slate-700 text-white"
+                  disabled={loading}
+                  className="flex-1 bg-slate-600 hover:bg-slate-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {template?.type === 'SERVICE' ? 'Submit Request' : 'Report Incident'}
+                  {loading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      {template?.type === 'SERVICE' ? 'Submitting Request...' : 'Reporting Incident...'}
+                    </>
+                  ) : (
+                    template?.type === 'SERVICE' ? 'Submit Request' : 'Report Incident'
+                  )}
                 </Button>
               </div>
             </CardContent>
