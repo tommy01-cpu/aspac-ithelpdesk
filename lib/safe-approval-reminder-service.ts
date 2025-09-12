@@ -135,10 +135,35 @@ class SafeApprovalReminderService {
     try {
       console.log('🔔 Starting direct approval reminders process...');
       
-      // Use appropriate URL based on environment
-      const baseUrl = process.env.NODE_ENV === 'production' 
-        ? (process.env.API_BASE_URL || process.env.NEXTAUTH_URL)
-        : 'http://localhost:3001';
+      // Get all requests that are currently in approval status - with timeout protection
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database timeout')), 15000)
+      );
+
+      const requestsForApproval = await Promise.race([
+        prisma.request.findMany({
+          where: {
+            status: 'for_approval'
+          },
+          include: {
+            approvals: {
+              include: {
+                approver: true
+              },
+              orderBy: {
+                level: 'asc'
+              }
+            },
+            user: true
+          }
+        }),
+        timeoutPromise
+      ]) as any[];
+
+      console.log(`📋 Found ${requestsForApproval.length} requests in approval status`);
+
+      // Filter to get only the current level pending approvals
+      const currentLevelApprovals = [];
       
       for (const request of requestsForApproval) {
         // Find the current approval level (first pending approval in sequence)
