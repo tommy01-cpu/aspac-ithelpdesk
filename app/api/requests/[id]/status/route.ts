@@ -20,7 +20,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: 'Invalid request id' }, { status: 400 });
     }
 
-    const { status, notes, attachmentIds, sendEmail: shouldSendEmail, emailTemplate, sendAppNotification } = await request.json();
+    const { status, notes, attachmentIds, sendEmail: shouldSendEmail, emailTemplate, sendAppNotification, excludeTechnician } = await request.json();
     
     // Handle different status mappings
     let actualStatus = status;
@@ -119,7 +119,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
               Requester_Email: requestWithUser.user.emp_email || '',
               Request_Title: requestSubject,
               Emails_To_Notify: ccEmailRecipients.join(', '),
-              Request_URL: `${process.env.API_BASE_URL || process.env.NEXTAUTH_URL}/requests/view/${requestId}`
+              Request_URL: `${process.env.API_BASE_URL || process.env.NEXTAUTH_URL}/requests/view/${requestId}`,
+              Request_Link: `${process.env.API_BASE_URL || process.env.NEXTAUTH_URL}/requests/view/${requestId}`,
+              // For reopened requests, use N/A for approval-related fields
+              Request_Approval_Status: 'N/A (Status Change)',
+              Request_Approval_Comment: 'Request has been reopened for further work'
             };
 
             // Handle different email templates
@@ -239,6 +243,15 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           } else if (typeof emailNotifyField === 'string' && emailNotifyField.trim() && 
                      emailNotifyField !== requestWithUser.user.emp_email) {
             additionalEmails = [emailNotifyField.trim()];
+          }
+
+          // If excludeTechnician is true, filter out the assigned technician email
+          if (excludeTechnician) {
+            const assignedTechnicianEmail = formData?.assignedTechnicianEmail;
+            if (assignedTechnicianEmail) {
+              additionalEmails = additionalEmails.filter(email => email !== assignedTechnicianEmail);
+              console.log('🚫 Excluded technician email from app notifications:', assignedTechnicianEmail);
+            }
           }
 
           // Create notifications for additional users
