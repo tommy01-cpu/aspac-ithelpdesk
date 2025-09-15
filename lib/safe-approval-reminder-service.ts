@@ -1,6 +1,38 @@
 import { prisma } from './prisma';
 import { sendEmailWithTemplateId, getTemplateIdByType, sendEmail } from './database-email-templates';
 
+// Import holiday checking function from SLA calculator
+async function isHoliday(date: Date): Promise<boolean> {
+  try {
+    const holidays = await prisma.holiday.findMany({
+      where: {
+        isActive: true
+      },
+      select: {
+        date: true
+      }
+    });
+    
+    const pht = new Date(date.getTime() + (8 * 60 * 60 * 1000)); // Convert to PHT
+    const y = pht.getFullYear();
+    const m = (pht.getMonth() + 1).toString().padStart(2, '0');
+    const d = pht.getDate().toString().padStart(2, '0');
+    const key = `${y}-${m}-${d}`;
+    
+    const holidayDates = holidays.map(h => {
+      if (h.date instanceof Date) {
+        return h.date.toISOString().split('T')[0];
+      }
+      return String(h.date).slice(0, 10);
+    });
+    
+    return holidayDates.includes(key);
+  } catch (error) {
+    console.warn('Failed to check holiday status, assuming not a holiday:', error);
+    return false;
+  }
+}
+
 /**
  * Safe background service for approval reminders
  * Designed to NOT affect the main system even if it fails
@@ -133,6 +165,44 @@ class SafeApprovalReminderService {
    */
   private async processApprovalRemindersDirectly(): Promise<any> {
     try {
+      const today = new Date();
+      const phtTime = new Date(today.getTime() + (8 * 60 * 60 * 1000)); // Philippine Time
+      const dayOfWeek = phtTime.getDay(); // 0 = Sunday, 1 = Monday, etc.
+      const dateString = phtTime.toLocaleDateString('en-PH', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+
+      console.log(`📅 Today is ${dateString} (PHT)`);
+
+      // Check if today is Sunday (day 0)
+      if (dayOfWeek === 0) {
+        console.log('🚫 Skipping approval reminders - Today is Sunday');
+        return {
+          success: true,
+          message: 'Approval reminders skipped - Sunday',
+          remindersSent: 0,
+          totalPendingApprovals: 0,
+          skippedReason: 'Sunday'
+        };
+      }
+
+      // Check if today is a holiday
+      const isHolidayToday = await isHoliday(today);
+      if (isHolidayToday) {
+        console.log('🚫 Skipping approval reminders - Today is a holiday');
+        return {
+          success: true,
+          message: 'Approval reminders skipped - Holiday',
+          remindersSent: 0,
+          totalPendingApprovals: 0,
+          skippedReason: 'Holiday'
+        };
+      }
+
+      console.log('✅ Today is a working day - proceeding with approval reminders');
       console.log('🔔 Starting direct approval reminders process...');
       
       // Get all requests that are currently in approval status - with timeout protection
