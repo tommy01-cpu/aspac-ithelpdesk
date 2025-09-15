@@ -701,6 +701,11 @@ export default function RequestViewPage() {
       if (requestData.status && resStatus === 'open') {
         setResStatus(requestData.status);
       }
+      
+      // Auto-enable edit mode for "open" status requests (technicians only)
+      if (session?.user?.isTechnician && requestData.status?.toLowerCase() === 'open') {
+        setIsEditingResolution(true);
+      }
     }
   }, [requestData, session?.user?.isTechnician]);
 
@@ -2759,9 +2764,15 @@ export default function RequestViewPage() {
                           const resBlock = fd.resolution || {};
                           const html = String(resBlock.closureComments || fd.closureComments || '').trim();
                           const hasExistingResolution = html.length > 0;
-                          const isResolved = requestData?.status?.toLowerCase() === 'resolved';
+                          const currentStatus = requestData?.status?.toLowerCase();
                           
-                          if (hasExistingResolution && !isEditingResolution && isResolved) {
+                          // If status is "open", don't show any buttons (use "Resolve Request" button at bottom instead)
+                          if (currentStatus === 'open') {
+                            return null;
+                          }
+                          
+                          // For non-open statuses with existing resolution, show Edit button
+                          if (hasExistingResolution && !isEditingResolution) {
                             return (
                               <Button
                                 variant="outline"
@@ -2773,8 +2784,10 @@ export default function RequestViewPage() {
                                 Edit
                               </Button>
                             );
-                          } else if (isEditingResolution) {
-                            // Show Save/Cancel buttons when editing
+                          }
+                          
+                          // For non-open statuses in edit mode, show Save/Cancel
+                          if (isEditingResolution) {
                             return (
                               <div className="flex items-center gap-2">
                                 <Button
@@ -3020,8 +3033,11 @@ export default function RequestViewPage() {
           const resAtts: AttachmentFile[] = (resolutionAttachments || []).filter(a => 
             !attachmentsToDelete.includes(a.id)
           );
-          const hasExistingResolution = html.length > 0 || resAtts.length > 0 || closureCode.length > 0 || requestClosureComments.length > 0;                          // Show existing resolution in read-only mode if not editing
-                          if (hasExistingResolution && !isEditingResolution) {
+          const hasExistingResolution = html.length > 0 || resAtts.length > 0 || closureCode.length > 0 || requestClosureComments.length > 0;
+                          const currentStatus = requestData?.status?.toLowerCase();
+                          
+                          // Show existing resolution in read-only mode if not editing, BUT always show edit mode for "open" status
+                          if (hasExistingResolution && !isEditingResolution && currentStatus !== 'open') {
                             return (
                               <div className="space-y-4">
                                 {/* Resolution Content */}
@@ -4258,11 +4274,11 @@ export default function RequestViewPage() {
                       <Button
                         variant="outline"
                         onClick={() => {
-                          // Check if current status is resolved or closed
-                          if (requestData?.status === 'resolved' || requestData?.status === 'closed') {
+                          // Check if current status is closed (still prevent closed status changes)
+                          if (requestData?.status === 'closed') {
                             toast({
                               title: "Status Change Not Allowed",
-                              description: "Cannot change status from resolved or closed state.",
+                              description: "Cannot change status from closed state.",
                               variant: "destructive"
                             });
                             return;
@@ -5410,7 +5426,7 @@ export default function RequestViewPage() {
                   <option value="">Select Status</option>
                   {/* <option value="on_hold">On Hold</option> */}
                   <option value="cancelled">Cancelled</option>
-                  {/* <option value="open">Open</option> */}
+                  <option value="open">Open</option>
                 </select>
               </div>
             </div>
@@ -5442,7 +5458,7 @@ export default function RequestViewPage() {
                   try {
                     setIsUpdatingStatus(true);
                     
-                    // Prepare request body with notifications for cancelled status
+                    // Prepare request body with notifications
                     const requestBody: any = {
                       status: selectedStatus
                     };
@@ -5454,6 +5470,13 @@ export default function RequestViewPage() {
                       requestBody.sendAppNotification = true;
                     }
                     
+                    // Add notifications when status is changed to open (exclude technician)
+                    if (selectedStatus === 'open') {
+                      // Only send app notification, no email
+                      requestBody.sendAppNotification = true;
+                      requestBody.excludeTechnician = true; // Don't notify the assigned technician
+                    }
+                    
                     const response = await fetch(`/api/requests/${requestId}/status`, {
                       method: 'POST',
                       headers: {
@@ -5463,9 +5486,14 @@ export default function RequestViewPage() {
                     });
                     
                     if (response.ok) {
-                      const notificationMessage = selectedStatus === 'cancelled' 
-                        ? `Request status has been changed to ${statusLabels[selectedStatus]}. Notification emails sent and app notifications created.`
-                        : `Request status has been changed to ${statusLabels[selectedStatus]}.`;
+                      let notificationMessage = '';
+                      if (selectedStatus === 'cancelled') {
+                        notificationMessage = `Request status has been changed to ${statusLabels[selectedStatus]}. Notification emails sent and app notifications created.`;
+                      } else if (selectedStatus === 'open') {
+                        notificationMessage = `Request status has been changed to ${statusLabels[selectedStatus]}. Requester has been notified.`;
+                      } else {
+                        notificationMessage = `Request status has been changed to ${statusLabels[selectedStatus]}.`;
+                      }
                         
                       toast({
                         title: "Status Updated",

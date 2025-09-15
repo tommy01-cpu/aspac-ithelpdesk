@@ -87,7 +87,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         attachments: allAttachments, // Store attachments only in resolution block
         resolvedById: actor.id,
         resolvedBy: `${actor.emp_fname} ${actor.emp_lname}`.trim(),
-        resolvedAt: existingResolution.resolvedAt || new Date().toISOString(), // Keep original resolved time if updating
+        resolvedAt: new Date().toISOString(), // Always update resolved time when resolving
       },
     } as any;
 
