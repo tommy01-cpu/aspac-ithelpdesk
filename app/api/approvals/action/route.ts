@@ -308,13 +308,21 @@ export async function POST(request: NextRequest) {
       };
 
       // Helper to send approval notification when request is fully approved
+      // Use a flag to prevent duplicate notifications within the same approval action
+      let approvalNotificationSent = false;
       const sendApprovalNotificationIfNeeded = async (finalApprovalComments?: string) => {
         try {
+          if (approvalNotificationSent) {
+            console.log('🚫 Approval notification already sent, skipping duplicate');
+            return;
+          }
+          
           const allApprovals = await prisma.requestApproval.findMany({ where: { requestId: approval.requestId } });
           const allFullyApproved = allApprovals.length > 0 && allApprovals.every(a => a.status === ApprovalStatus.approved);
           
           if (allFullyApproved) {
             await sendApprovalOutcomeNotification(approval.requestId, 'approved', finalApprovalComments);
+            approvalNotificationSent = true;
             console.log('✅ Approval notification sent to requester');
           }
         } catch (emailError) {
@@ -652,12 +660,7 @@ export async function POST(request: NextRequest) {
                       await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
 
                       // 🎯 FIRST: Send approval notification to requester
-                      try {
-                        await sendApprovalOutcomeNotification(approval.requestId, 'approved', comments);
-                        console.log('✅ Approval notification sent to requester FIRST');
-                      } catch (emailError) {
-                        console.error('❌ Failed to send approval notification:', emailError);
-                      }
+                      await sendApprovalNotificationIfNeeded(comments);
 
                       // 📧 SECOND: Send technician assignment notifications after approval notification
                       console.log('🔍 DEBUG: Checking for technician assignment notification...');
@@ -874,12 +877,7 @@ export async function POST(request: NextRequest) {
                   });
 
                   // 🎯 FIRST: Send approval notification to requester (main success path)
-                  try {
-                    await sendApprovalOutcomeNotification(approval.requestId, 'approved', comments);
-                    console.log('✅ Approval notification sent to requester FIRST (main success path)');
-                  } catch (emailError) {
-                    console.error('❌ Failed to send approval notification (main success path):', emailError);
-                  }
+                  await sendApprovalNotificationIfNeeded(comments);
 
                   // 📧 SECOND: Send technician assignment notifications after approval notification
                   if (slaResult?.results?.assignment?.success && slaResult?.results?.assignment?.technician?.id) {
@@ -1130,12 +1128,7 @@ export async function POST(request: NextRequest) {
                 } catch {}
 
                 // 🎯 FIRST: Send approval notification to requester (fallback path)
-                try {
-                  await sendApprovalOutcomeNotification(approval.requestId, 'approved', comments);
-                  console.log('✅ Approval notification sent to requester FIRST (fallback path)');
-                } catch (emailError) {
-                  console.error('❌ Failed to send approval notification (fallback path):', emailError);
-                }
+                await sendApprovalNotificationIfNeeded(comments);
 
                 // 📧 SECOND: Send technician assignment notifications after approval notification
                 if (assignedTechnicianData) {

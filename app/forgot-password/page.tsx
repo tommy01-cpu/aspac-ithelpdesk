@@ -45,7 +45,7 @@ export default function ForgotPasswordPage() {
             <div className="flex items-center justify-center mb-6">
             <div className="w-16 h-16 bg-gray-600 rounded-2xl flex items-center justify-center mr-4 shadow-2xl p-2">
                 <img 
-                  src="/aspac-logo.png" 
+                  src="http://hris.aspacphils.com.ph/HRIS-Plus-Version-2.0/contents/images/aspac-white.png" 
                   alt="ASPAC Logo" 
                   className="w-full h-full object-contain"
                 />

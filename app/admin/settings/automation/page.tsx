@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Bot, Users, Zap, GitBranch, AlertTriangle, Bell } from 'lucide-react';
+import { ArrowLeft, Bot, Users, Database } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import Link from 'next/link';
@@ -10,6 +10,7 @@ import { SessionWrapper } from '@/components/session-wrapper';
 
 // Import the individual tab components
 import TechnicianAutoAssignTab from './technician-auto-assign/page';
+import AutoBackupTab from './auto-backup/page';
 
 interface TabItem {
   id: string;
@@ -26,31 +27,31 @@ const OverviewTab = () => (
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center gap-3 mb-2">
-            <Bot className="w-5 h-5 text-green-600" />
-            <h3 className="font-semibold text-slate-700">Active Rules</h3>
-          </div>
-          <div className="text-3xl font-bold text-green-600">12</div>
-          <p className="text-slate-600 text-sm">automation rules running</p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <Zap className="w-5 h-5 text-blue-600" />
-            <h3 className="font-semibold text-slate-700">Auto-Assigned Today</h3>
+            <Users className="w-5 h-5 text-blue-600" />
+            <h3 className="font-semibold text-slate-700">Auto-Assignment</h3>
           </div>
           <div className="text-3xl font-bold text-blue-600">47</div>
-          <p className="text-slate-600 text-sm">tickets assigned automatically</p>
+          <p className="text-slate-600 text-sm">tickets assigned today</p>
         </CardContent>
       </Card>
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center gap-3 mb-2">
-            <GitBranch className="w-5 h-5 text-purple-600" />
-            <h3 className="font-semibold text-slate-700">Active Workflows</h3>
+            <Database className="w-5 h-5 text-green-600" />
+            <h3 className="font-semibold text-slate-700">Backup Status</h3>
           </div>
-          <div className="text-3xl font-bold text-purple-600">8</div>
-          <p className="text-slate-600 text-sm">automated workflows</p>
+          <div className="text-3xl font-bold text-green-600">✓</div>
+          <p className="text-slate-600 text-sm">last backup successful</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3 mb-2">
+            <Bot className="w-5 h-5 text-purple-600" />
+            <h3 className="font-semibold text-slate-700">Active Services</h3>
+          </div>
+          <div className="text-3xl font-bold text-purple-600">2</div>
+          <p className="text-slate-600 text-sm">automation services running</p>
         </CardContent>
       </Card>
     </div>
@@ -60,9 +61,7 @@ const OverviewTab = () => (
 const automationTabs: TabItem[] = [
   { id: 'overview', label: 'Overview', icon: Bot, component: OverviewTab },
   { id: 'technician-auto-assign', label: 'Technician Auto Assign', icon: Users, component: TechnicianAutoAssignTab },
-  { id: 'workflows', label: 'Workflow Automation', icon: GitBranch },
-  { id: 'escalation', label: 'Escalation Rules', icon: AlertTriangle },
-  { id: 'notifications', label: 'Notification Automation', icon: Bell },
+  { id: 'auto-backup', label: 'Auto Backup', icon: Database, component: AutoBackupTab },
 ];
 
 export default function AutomationConfigurationPage() {

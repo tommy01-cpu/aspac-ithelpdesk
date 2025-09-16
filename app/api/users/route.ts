@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
     const role = searchParams.get('role');
     const search = searchParams.get('search') || '';
     const excludeExistingTechnicians = searchParams.get('excludeExistingTechnicians') === 'true';
-    const limit = parseInt(searchParams.get('limit') || '50');
+    // Removed limit to return all users
 
     // Build where clause based on filters
     let whereClause: any = {};
@@ -39,7 +39,6 @@ export async function GET(req: NextRequest) {
     // Fetch users with their roles using Prisma includes
     const users = await prisma.users.findMany({
       where: whereClause,
-      take: limit,
       orderBy: { emp_fname: 'asc' },
       include: {
         user_roles: {

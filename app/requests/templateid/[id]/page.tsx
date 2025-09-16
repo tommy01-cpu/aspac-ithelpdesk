@@ -97,6 +97,36 @@ function formatDurationFromHours(totalHours: number): string {
 }
 
 // Enhanced Rich Text Editor Component with Image Upload
+interface User {
+  id: number;
+  emp_code?: string;
+  emp_fname?: string;
+  emp_mid?: string;
+  emp_lname?: string;
+  emp_suffix?: string;
+  emp_email?: string;
+  emp_cell?: string;
+  post_des?: string;
+  emp_status?: string;
+  department?: string;
+  departmentId?: number;
+  created_at?: string;
+  profile_image?: string;
+  description?: string;
+  landline_no?: string;
+  local_no?: string;
+  reportingToId?: number;
+  reportingTo?: {
+    id: number;
+    emp_fname: string;
+    emp_lname: string;
+    emp_code: string;
+  };
+  isServiceApprover?: boolean;
+  requester_view_permission?: string;
+  roles?: string[];
+}
+
 interface RichTextEditorProps {
   value?: string;
   onChange?: (value: string) => void;
@@ -275,16 +305,19 @@ const ApproverTagSelect: React.FC<ApproverTagSelectProps> = ({
   useEffect(() => {
     if (searchInput.trim()) {
       const filtered = users
-        .filter(user => 
-          !selectedApproverIds.includes(String(user.id)) &&
-          (
+        .filter(user => {
+          const isNotSelected = !selectedApproverIds.includes(String(user.id));
+          const matchesSearch = (
             user.emp_fname?.toLowerCase().includes(searchInput.toLowerCase()) ||
             user.emp_lname?.toLowerCase().includes(searchInput.toLowerCase()) ||
             user.email?.toLowerCase().includes(searchInput.toLowerCase()) ||
             user.department?.toLowerCase().includes(searchInput.toLowerCase())
-          )
-        )
+          );
+          
+          return isNotSelected && matchesSearch;
+        })
         .slice(0, 5);
+        
       setSuggestions(filtered);
       setShowSuggestions(true);
     } else {
@@ -1005,6 +1038,12 @@ export default function RequestPage() {
       if (response.ok) {
         const template = await response.json();
         
+        // Debug: Log the complete template structure
+        console.log('🔍 TEMPLATE DEBUG - Complete template data:', template);
+        console.log('🔍 TEMPLATE DEBUG - Template keys:', Object.keys(template));
+        console.log('🔍 TEMPLATE DEBUG - ApprovalWorkflow exists?', !!template.approvalWorkflow);
+        console.log('🔍 TEMPLATE DEBUG - ApprovalWorkflow data:', template.approvalWorkflow);
+        
         // Parse fields if they come as a JSON string
         if (template.fields && typeof template.fields === 'string') {
           try {
@@ -1012,6 +1051,17 @@ export default function RequestPage() {
           } catch (parseError) {
             console.error('Error parsing template fields:', parseError);
             template.fields = [];
+          }
+        }
+        
+        // Parse approvalWorkflow if it comes as a JSON string
+        if (template.approvalWorkflow && typeof template.approvalWorkflow === 'string') {
+          try {
+            template.approvalWorkflow = JSON.parse(template.approvalWorkflow);
+            console.log('🔧 TEMPLATE DEBUG - Parsed approvalWorkflow from JSON:', template.approvalWorkflow);
+          } catch (parseError) {
+            console.error('Error parsing template approvalWorkflow:', parseError);
+            template.approvalWorkflow = null;
           }
         }
         
@@ -1134,6 +1184,174 @@ export default function RequestPage() {
     }
   };
 
+  // Auto-populate first level approvers based on template approval workflow
+  const autoPopulateFirstLevelApprovers = async (template: any) => {
+    console.log('🔄 Starting auto-population of first level approvers...');
+    console.log('  - Template:', template?.name);
+    console.log('  - Current user:', session?.user);
+    
+    // Check for approvalWorkflow in different possible field names
+    let approvalWorkflow = template?.approvalWorkflow || 
+                          template?.approval_workflow || 
+                          template?.approvalConfig ||
+                          template?.approval_config;
+    
+    console.log('🔍 APPROVAL DEBUG - Raw approvalWorkflow:', approvalWorkflow);
+    console.log('🔍 APPROVAL DEBUG - Type:', typeof approvalWorkflow);
+    
+    // Try to parse if it's a string
+    if (typeof approvalWorkflow === 'string') {
+      try {
+        approvalWorkflow = JSON.parse(approvalWorkflow);
+        console.log('🔧 APPROVAL DEBUG - Parsed from JSON:', approvalWorkflow);
+      } catch (error) {
+        console.error('❌ APPROVAL DEBUG - Failed to parse JSON:', error);
+        approvalWorkflow = null;
+      }
+    }
+    
+    if (!approvalWorkflow || !session?.user?.id) {
+      console.log('❌ No approval workflow or user session');
+      console.log('  - approvalWorkflow exists:', !!approvalWorkflow);
+      console.log('  - session.user.id exists:', !!session?.user?.id);
+      return;
+    }
+
+    try {
+      const approvalConfig = approvalWorkflow;
+      console.log('📋 Approval config:', approvalConfig);
+
+      // Get Level 1 approvers (order: 1 or the lowest order)
+      let level1Approvers: any[] = [];
+      
+      if (approvalConfig.levels && Array.isArray(approvalConfig.levels)) {
+        // Find level with order: 1 or the lowest order
+        const sortedLevels = approvalConfig.levels.sort((a: any, b: any) => a.order - b.order);
+        const firstLevel = sortedLevels[0];
+        console.log('📌 First level data:', firstLevel);
+        level1Approvers = firstLevel?.approvers || [];
+      }
+
+      console.log('📋 Level 1 approvers from template:', level1Approvers);
+
+      if (level1Approvers.length === 0) {
+        console.log('ℹ️ No Level 1 approvers found in template');
+        return;
+      }
+
+      const resolvedApproverIds: string[] = [];
+      const currentUserId = parseInt(session.user.id);
+
+      for (const approver of level1Approvers) {
+        console.log('🔍 Processing approver:', approver);
+        console.log('🔍 Approver ID:', approver.id, 'Type:', typeof approver.id);
+
+        if (approver.id === -1) {
+          console.log('👤 Processing reporting_to approver (ID: -1)...');
+          console.log('🔍 Current user ID:', currentUserId);
+          console.log('🔍 All users count:', allUsers.length);
+          
+          // Get the requester's reporting_to from users table
+          const currentUser = allUsers.find(user => user.id === currentUserId);
+          console.log('🔍 Found current user:', currentUser);
+          
+          if (currentUser?.reporting_to) {
+            console.log('✅ Found reporting_to:', currentUser.reporting_to);
+            resolvedApproverIds.push(String(currentUser.reporting_to));
+          } else if (currentUser?.reportingToId) {
+            console.log('✅ Found reportingToId:', currentUser.reportingToId);
+            resolvedApproverIds.push(String(currentUser.reportingToId));
+          } else {
+            console.log('❌ No reporting_to or reportingToId found for current user');
+            console.log('🔍 User properties:', Object.keys(currentUser || {}));
+          }
+
+        } else if (approver.id === -2) {
+          console.log('🏢 Processing department_head approver (ID: -2)...');
+          console.log('🔍 Current user ID:', currentUserId);
+          
+          // Get the requester's department then get the departmentHeadId
+          const currentUser = allUsers.find(user => user.id === currentUserId);
+          console.log('🔍 Found current user:', currentUser);
+          
+          if (currentUser?.departmentId) {
+            console.log('🔍 Fetching department details for departmentId:', currentUser.departmentId);
+            
+            try {
+              const deptResponse = await fetch(`/api/departments/${currentUser.departmentId}`);
+              console.log('🔍 Department API response status:', deptResponse.status);
+              
+              if (deptResponse.ok) {
+                const department = await deptResponse.json();
+                console.log('🏢 Department details:', department);
+                
+                if (department.departmentHeadId) {
+                  console.log('✅ Found departmentHeadId:', department.departmentHeadId);
+                  resolvedApproverIds.push(String(department.departmentHeadId));
+                } else {
+                  console.log('❌ No departmentHeadId found in department');
+                }
+              } else {
+                const errorText = await deptResponse.text();
+                console.log('❌ Failed to fetch department details:', errorText);
+              }
+            } catch (error) {
+              console.log('❌ Error fetching department:', error);
+            }
+          } else {
+            console.log('❌ No departmentId found for current user');
+            console.log('🔍 User properties:', Object.keys(currentUser || {}));
+          }
+
+        } else if (typeof approver.id === 'number' && approver.id > 0) {
+          // Direct user ID
+          console.log('🆔 Processing direct user ID approver:', approver.id);
+          resolvedApproverIds.push(String(approver.id));
+        }
+      }
+
+      console.log('🎯 Final resolved approver IDs:', resolvedApproverIds);
+
+      // Remove duplicates
+      const uniqueApproverIds = Array.from(new Set(resolvedApproverIds));
+
+      // Find the "Select Approvers" field and auto-populate it
+      const approverField = template.fields?.find((field: any) => 
+        field.id === '12' || 
+        (field.type === 'input-list' && field.label.toLowerCase().includes('approver'))
+      );
+
+      if (approverField && uniqueApproverIds.length > 0) {
+        console.log('📝 Auto-populating approver field:', approverField.id);
+        
+        setFormData(prev => {
+          const currentValue = prev[approverField.id];
+          const currentApprovers = Array.isArray(currentValue) ? currentValue : 
+                                 (currentValue ? [currentValue] : []);
+          
+          // Merge template approvers with existing approvers (remove duplicates)
+          const mergedApprovers = Array.from(new Set([...currentApprovers, ...uniqueApproverIds]));
+          
+          console.log('🔄 Merging approvers:', {
+            existing: currentApprovers,
+            template: uniqueApproverIds,
+            merged: mergedApprovers
+          });
+          
+          return {
+            ...prev,
+            [approverField.id]: mergedApprovers
+          };
+        });
+      } else {
+        console.log('❌ No approver field found or no resolved approvers');
+      }
+
+    } catch (error) {
+      console.error('❌ Error in auto-populate approvers:', error);
+    }
+  };
+
   const fetchSupportGroups = async () => {
     try {
       const response = await fetch('/api/support-groups?limit=100');
@@ -1165,191 +1383,11 @@ export default function RequestPage() {
       const response = await fetch('/api/users');
       if (response.ok) {
         const data = await response.json();
-        setAllUsers(data.users || data || []);
+        const users = data.users || data || [];
+        setAllUsers(users);
       }
     } catch (error) {
       console.error('Error fetching users:', error);
-    }
-  };
-
-  // Function to get first level approvers from template and auto-populate the Select Approvers field
-  const autoPopulateFirstLevelApprovers = async (template: TemplateData) => {
-    console.log('🔍 Auto-populating first level approvers...');
-    console.log('Template data:', template);
-    
-    // Start with an empty set of approver IDs
-    let approverIdsToAdd: string[] = [];
-    
-    // ❌ DISABLED: Dynamic approver auto-population
-    // This was causing reporting managers and department heads to be auto-added
-    // User wants only template approvers to show up
-    /*
-    // 1. First, get dynamic approvers from current user's data (reporting to, department head)
-    if (session?.user?.id) {
-      console.log('📋 Fetching current user data for dynamic approvers...');
-      try {
-        const userResponse = await fetch(`/api/users/${session.user.id}`);
-        if (userResponse.ok) {
-          const userData = await userResponse.json();
-          console.log('👤 Current user data:', userData.user);
-          
-          const currentUser = userData.user;
-          
-          // Add reporting manager if exists
-          if (currentUser.reportingToId) {
-            approverIdsToAdd.push(String(currentUser.reportingToId));
-            console.log('✅ Added reporting manager ID:', currentUser.reportingToId);
-          }
-          
-          // ❌ DISABLED: Do not auto-add department head to selected approvers
-          // This was causing both selected approvers AND department head to appear in Level 1
-          // The department head should only appear in Level 2+ from templates
-        }
-      } catch (error) {
-        console.error('❌ Error fetching user data for dynamic approvers:', error);
-      }
-    }
-    */
-    
-    // 2. Get ONLY template first level approvers (no dynamic approvers)
-    const templateAny = template as any;
-    if (templateAny.approvalWorkflow) {
-      const approvalConfig = templateAny.approvalWorkflow;
-      console.log('📋 Approval config:', approvalConfig);
-
-      if (approvalConfig.levels && Array.isArray(approvalConfig.levels) && approvalConfig.levels.length > 0) {
-        // Get the first level (Level 1)
-        const firstLevel = approvalConfig.levels[0];
-        console.log('📌 First level data:', firstLevel);
-
-        if (firstLevel.approvers && Array.isArray(firstLevel.approvers) && firstLevel.approvers.length > 0) {
-          // Process template Level 1 approvers, including special types like reporting_to
-          console.log('🔍 Processing first level approvers:', firstLevel.approvers);
-          
-          for (const approver of firstLevel.approvers) {
-            console.log('📋 Processing approver:', approver);
-            
-            let resolvedApproverId: string | null = null;
-            
-            // Handle different approver formats
-            if (typeof approver === 'object' && approver.id) {
-              const approverId = approver.id;
-              console.log('🔍 Object approver ID:', approverId);
-              
-              // Check if it's a special approver type
-              const approverValue = String(approverId).toLowerCase();
-              
-              if (approverValue === 'reporting_to' || approverValue === '-1') {
-                // Resolve reporting_to to actual user ID
-                if (session?.user?.id) {
-                  try {
-                    const userResponse = await fetch(`/api/users/${session.user.id}`);
-                    if (userResponse.ok) {
-                      const userData = await userResponse.json();
-                      const currentUser = userData.user;
-                      
-                      if (currentUser.reportingToId) {
-                        resolvedApproverId = String(currentUser.reportingToId);
-                        console.log('✅ Resolved reporting_to to user ID:', resolvedApproverId);
-                      } else {
-                        console.log('⚠️ No reporting manager found for current user');
-                      }
-                    }
-                  } catch (error) {
-                    console.error('❌ Error fetching user data for reporting_to:', error);
-                  }
-                }
-              } else if (!isNaN(Number(approverId)) && Number(approverId) > 0) {
-                // Regular numeric user ID
-                resolvedApproverId = String(approverId);
-                console.log('✅ Using numeric user ID:', resolvedApproverId);
-              }
-            } else if (typeof approver === 'number' && approver > 0) {
-              resolvedApproverId = String(approver);
-              console.log('✅ Using numeric approver:', resolvedApproverId);
-            } else if (typeof approver === 'string') {
-              const approverValue = approver.toLowerCase();
-              
-              if (approverValue === 'reporting_to' || approverValue === '-1') {
-                // Resolve reporting_to to actual user ID
-                if (session?.user?.id) {
-                  try {
-                    const userResponse = await fetch(`/api/users/${session.user.id}`);
-                    if (userResponse.ok) {
-                      const userData = await userResponse.json();
-                      const currentUser = userData.user;
-                      
-                      if (currentUser.reportingToId) {
-                        resolvedApproverId = String(currentUser.reportingToId);
-                        console.log('✅ Resolved string reporting_to to user ID:', resolvedApproverId);
-                      } else {
-                        console.log('⚠️ No reporting manager found for current user');
-                      }
-                    }
-                  } catch (error) {
-                    console.error('❌ Error fetching user data for string reporting_to:', error);
-                  }
-                }
-              } else if (!isNaN(Number(approver)) && Number(approver) > 0) {
-                resolvedApproverId = approver;
-                console.log('✅ Using string numeric ID:', resolvedApproverId);
-              }
-            }
-            
-            // Add resolved approver ID if valid
-            if (resolvedApproverId) {
-              approverIdsToAdd.push(resolvedApproverId);
-              console.log('✅ Added resolved approver ID:', resolvedApproverId);
-            }
-          }
-          
-          console.log('📋 All resolved first level approver IDs:', approverIdsToAdd);
-        } else {
-          console.log('❌ No approvers found in first level');
-        }
-      } else {
-        console.log('❌ No approval levels found');
-      }
-    } else {
-      console.log('❌ No approval workflow found in template');
-    }
-
-    // 3. Remove duplicates from the combined list
-    const uniqueApproverIds = Array.from(new Set(approverIdsToAdd));
-    console.log('🔗 Template approver IDs only:', uniqueApproverIds);
-    console.log('📊 Found', uniqueApproverIds.length, 'template approvers (no dynamic approvers)');
-
-    // 4. Find the "Select Approvers" field and auto-populate it with template approvers only
-    const approverField = template.fields?.find((field: FormField) => 
-      field.id === '12' || 
-      (field.type === 'input-list' && field.label.toLowerCase().includes('approver'))
-    );
-
-    if (approverField && uniqueApproverIds.length > 0) {
-      console.log('📝 Found approver field:', approverField);
-      
-      // Only auto-populate if the field is empty or has default value
-      setFormData(prev => {
-        const currentValue = prev[approverField.id];
-        const isEmpty = !currentValue || 
-                       (Array.isArray(currentValue) && currentValue.length === 0) ||
-                       (typeof currentValue === 'string' && currentValue.trim() === '');
-        
-        if (isEmpty) {
-          console.log('✅ Auto-populating approver field with template approvers only');
-          return {
-            ...prev,
-            [approverField.id]: uniqueApproverIds
-          };
-        } else {
-          console.log('ℹ️ Approver field already has values, not auto-populating');
-          return prev;
-        }
-      });
-    } else if (!approverField) {
-      console.log('⚠️ Select Approvers field not found in template');
-    } else {
-      console.log('ℹ️ No approvers to add (neither dynamic nor template approvers found)');
     }
   };
 
@@ -1453,9 +1491,42 @@ export default function RequestPage() {
       // Validate required fields
       const templateFields = Array.isArray(templateData?.fields) ? templateData?.fields : [];
       const requiredFields = templateFields?.filter(field => field.required && !field.technicianOnly);
-      const missingFields = requiredFields?.filter(field => !formData[field.id] || formData[field.id] === '');
+      
+      const missingFields = requiredFields?.filter(field => {
+        const value = formData[field.id];
+        
+        // Check for null or undefined
+        if (value === null || value === undefined) return true;
+        
+        // For arrays (like email lists, approvers)
+        if (Array.isArray(value) && value.length === 0) return true;
+        
+        // For strings and rich text fields
+        if (typeof value === 'string') {
+          // Trim whitespace
+          const trimmedValue = value.trim();
+          
+          // If empty after trimming
+          if (trimmedValue === '') return true;
+          
+          // For rich text fields (like Description), check if content is effectively empty
+          if (field.type === 'richtext' || field.label.toLowerCase().includes('description')) {
+            // Remove HTML tags and check if actual text content is empty
+            const textContent = trimmedValue
+              .replace(/<[^>]*>/g, '') // Remove HTML tags
+              .replace(/&nbsp;/g, ' ') // Replace non-breaking spaces
+              .replace(/\s+/g, ' ') // Normalize whitespace
+              .trim();
+            
+            if (textContent === '') return true;
+          }
+        }
+        
+        return false;
+      });
       
       if (missingFields && missingFields.length > 0) {
+        setSubmitting(false); // Stop loading state
         toast({
           title: "Missing Required Fields",
           description: `Please fill in: ${missingFields.map(f => f.label).join(', ')}`,
@@ -1588,13 +1659,21 @@ export default function RequestPage() {
         }
       }
 
-      toast({
-        title: "Request Submitted Successfully",
-        description: `Your ${requestType} request has been submitted with ID: ${result.request?.id || 'N/A'}`,
-      });
-
-      // Redirect to the requests page
+      // Redirect first, then stop loading state
       router.push('/requests/view');
+      
+      // Stop loading state after redirect
+      setTimeout(() => {
+        setSubmitting(false);
+      }, 50);
+      
+      // Show success toast after redirect
+      setTimeout(() => {
+        toast({
+          title: "Request Submitted Successfully",
+          description: `Your ${requestType} request has been submitted with ID: ${result.request?.id || 'N/A'}`,
+        });
+      }, 100);
       
     } catch (error) {
       console.error('Error submitting request:', error);
@@ -1604,7 +1683,6 @@ export default function RequestPage() {
         description: errorMessage,
         variant: "destructive"
       });
-    } finally {
       setSubmitting(false);
     }
   };

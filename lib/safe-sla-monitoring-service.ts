@@ -321,20 +321,13 @@ class SafeSLAMonitoringService {
 
       const now = new Date();
       const dueDate = new Date(slaDueDate);
+      const requestType = this.getRequestType(request);
       
-      // Get SLA incident configuration to check escalation settings
-      const slaId = formData?.slaId || formData?.slaid;
-      let slaIncident = null;
-      
-      if (slaId) {
-        try {
-          slaIncident = await prisma.sLAIncident.findUnique({
-            where: { id: parseInt(slaId) }
-          });
-        } catch (error) {
-          console.warn(`Failed to fetch SLA incident for ID ${slaId}:`, error);
-        }
-      }
+      console.log(`Request ${request.id}: Type=${requestType}, SLA Config:`, {
+        name: slaService?.name,
+        escalationLevels: slaService?.escalationLevels?.length || 0,
+        autoEscalate: slaService?.autoEscalate
+      });
 
       // PRIORITY: Check proactive escalations (BEFORE due date) first
       const escalationHistory = formData?.history?.escalations || [];
@@ -343,7 +336,7 @@ class SafeSLAMonitoringService {
         now,
         dueDate,
         escalationHistory,
-        slaIncident
+        slaService
       );
 
       if (shouldSendEscalation.shouldSend) {
@@ -380,8 +373,8 @@ class SafeSLAMonitoringService {
         return { isBreached: false };
       }
 
-      // Only send post-due-date notifications if no escalation system is configured
-      if (!slaIncident?.resolutionEscalationEnabled) {
+      // Only send post-due-date notifications if no proactive escalation system is configured
+      if (!slaService?.autoEscalate && !slaService?.resolutionEscalationEnabled && (!slaService?.escalationLevels || slaService.escalationLevels.length === 0)) {
         const hoursOverdue = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
         const slaHours = parseFloat(formData?.slaHours || '0');
         
@@ -422,7 +415,7 @@ class SafeSLAMonitoringService {
     now: Date,
     dueDate: Date,
     escalationHistory: any[],
-    slaIncident: any
+    slaConfig: any
   ): Promise<{
     shouldSend: boolean;
     reason?: string;
@@ -430,20 +423,81 @@ class SafeSLAMonitoringService {
     escalateType?: string;
     triggerTime?: Date;
   }> {
-    if (!slaIncident?.resolutionEscalationEnabled) {
+    // Check if escalation is enabled
+    if (!slaConfig?.autoEscalate && !slaConfig?.resolutionEscalationEnabled) {
+      console.log(`Request ${requestId}: No escalation enabled for SLA config`);
       return { shouldSend: false };
     }
 
     const sentLevels = escalationHistory.map(h => h.level);
 
+    // For service requests, use escalationLevels array
+    if (slaConfig.escalationLevels && slaConfig.escalationLevels.length > 0) {
+      return this.checkServiceEscalationLevels(requestId, now, dueDate, sentLevels, slaConfig);
+    }
+
+    // For incident requests, use the incident-style escalation fields
+    return this.checkIncidentEscalationLevels(requestId, now, dueDate, sentLevels, slaConfig);
+  }
+
+  /**
+   * Check escalation for service requests using escalationLevels array
+   */
+  private checkServiceEscalationLevels(
+    requestId: number,
+    now: Date,
+    dueDate: Date,
+    sentLevels: number[],
+    slaConfig: any
+  ): { shouldSend: boolean; reason?: string; level?: number; escalateType?: string; triggerTime?: Date; } {
+    for (const escalationLevel of slaConfig.escalationLevels) {
+      if (!escalationLevel.enabled || sentLevels.includes(escalationLevel.level)) {
+        continue;
+      }
+
+      const escalateType = escalationLevel.timing || escalationLevel.escalateType || 'before';
+      const escalationTriggerTime = this.calculateEscalationTriggerTime(
+        dueDate,
+        0, // days
+        escalationLevel.timeToEscalate || 1, // hours
+        0, // minutes
+        escalateType
+      );
+
+      if (now >= escalationTriggerTime) {
+        console.log(`Service escalation Level ${escalationLevel.level} triggered for request ${requestId}`);
+        return {
+          shouldSend: true,
+          reason: `Level ${escalationLevel.level} escalation due (${escalateType} due date)`,
+          level: escalationLevel.level,
+          escalateType,
+          triggerTime: escalationTriggerTime
+        };
+      }
+    }
+
+    return { shouldSend: false };
+  }
+
+  /**
+   * Check escalation for incident requests using incident-style fields
+   */
+  private checkIncidentEscalationLevels(
+    requestId: number,
+    now: Date,
+    dueDate: Date,
+    sentLevels: number[],
+    slaConfig: any
+  ): { shouldSend: boolean; reason?: string; level?: number; escalateType?: string; triggerTime?: Date; } {
+    
     // Check Level 1 escalation - ALWAYS before due date
-    if (!sentLevels.includes(1) && slaIncident.resolutionEscalationEnabled) {
+    if (!sentLevels.includes(1) && slaConfig.resolutionEscalationEnabled) {
       const escalateType = 'before'; // Force to 'before' for proactive escalation
       const escalationTriggerTime = this.calculateEscalationTriggerTime(
         dueDate,
-        slaIncident.escalateDays || 0,
-        slaIncident.escalateHours || 1, // Default to 1 hour before if not set
-        slaIncident.escalateMinutes || 0,
+        slaConfig.escalateDays || 0,
+        slaConfig.escalateHours || 1, // Default to 1 hour before if not set
+        slaConfig.escalateMinutes || 0,
         escalateType
       );
 
@@ -459,13 +513,13 @@ class SafeSLAMonitoringService {
     }
 
     // Check Level 2 escalation - ALWAYS before due date
-    if (!sentLevels.includes(2) && slaIncident.level2Enabled) {
+    if (!sentLevels.includes(2) && slaConfig.level2Enabled) {
       const escalateType = 'before'; // Force to 'before' for proactive escalation
       const escalationTriggerTime = this.calculateEscalationTriggerTime(
         dueDate,
-        slaIncident.level2Days || 0,
-        slaIncident.level2Hours || 2, // Default to 2 hours before if not set
-        slaIncident.level2Minutes || 0,
+        slaConfig.level2Days || 0,
+        slaConfig.level2Hours || 2, // Default to 2 hours before if not set
+        slaConfig.level2Minutes || 0,
         escalateType
       );
 
@@ -481,13 +535,13 @@ class SafeSLAMonitoringService {
     }
 
     // Check Level 3 escalation - ALWAYS before due date
-    if (!sentLevels.includes(3) && slaIncident.level3Enabled) {
+    if (!sentLevels.includes(3) && slaConfig.level3Enabled) {
       const escalateType = 'before'; // Force to 'before' for proactive escalation
       const escalationTriggerTime = this.calculateEscalationTriggerTime(
         dueDate,
-        slaIncident.level3Days || 0,
-        slaIncident.level3Hours || 4, // Default to 4 hours before if not set
-        slaIncident.level3Minutes || 0,
+        slaConfig.level3Days || 0,
+        slaConfig.level3Hours || 4, // Default to 4 hours before if not set
+        slaConfig.level3Minutes || 0,
         escalateType
       );
 
@@ -503,13 +557,13 @@ class SafeSLAMonitoringService {
     }
 
     // Check Level 4 escalation - ALWAYS before due date
-    if (!sentLevels.includes(4) && slaIncident.level4Enabled) {
+    if (!sentLevels.includes(4) && slaConfig.level4Enabled) {
       const escalateType = 'before'; // Force to 'before' for proactive escalation
       const escalationTriggerTime = this.calculateEscalationTriggerTime(
         dueDate,
-        slaIncident.level4Days || 0,
-        slaIncident.level4Hours || 6, // Default to 6 hours before if not set
-        slaIncident.level4Minutes || 0,
+        slaConfig.level4Days || 0,
+        slaConfig.level4Hours || 6, // Default to 6 hours before if not set
+        slaConfig.level4Minutes || 0,
         escalateType
       );
 
@@ -597,7 +651,7 @@ class SafeSLAMonitoringService {
         return this.getDefaultSLAByPriority(request.priority || 'Low');
       }
 
-      // Find SLA service based on template ID
+      // Find template to determine request type
       const template = await prisma.template.findFirst({
         where: { id: templateId },
         include: {
@@ -609,18 +663,129 @@ class SafeSLAMonitoringService {
         }
       });
 
-      // If template has SLA service, use it
-      if (template?.slaService) {
-        return template.slaService;
+      if (!template) {
+        console.warn(`Template not found for ID ${templateId}`);
+        return this.getDefaultSLAByPriority(request.priority || 'Low');
       }
 
-      // Fallback: Use default SLA rules based on request priority
-      return this.getDefaultSLAByPriority(request.priority);
+      // Determine if this is an incident or service request
+      const requestType = template.type?.toLowerCase();
+      
+      if (requestType === 'incident') {
+        // For incidents, look up SLA from sla_incident table based on priority
+        return await this.getSLAIncidentForRequest(request, template);
+      } else {
+        // For services, use the template's linked SLA service
+        if (template.slaService) {
+          return {
+            ...template.slaService,
+            requestType: 'service'
+          };
+        }
+      }
+
+      // Fallback: Use default SLA rules based on request priority and type
+      return this.getDefaultSLAByPriority(request.priority, requestType as 'incident' | 'service');
 
     } catch (error) {
       console.error('Error getting SLA service:', error);
       return this.getDefaultSLAByPriority(request.priority || 'Low');
     }
+  }
+
+  /**
+   * Get SLA incident configuration for incident-type requests
+   */
+  private async getSLAIncidentForRequest(request: any, template: any): Promise<any> {
+    try {
+      const requestPriority = request.priority || 'Medium';
+      
+      // Find SLA incident configuration by priority
+      const prioritySLA = await prisma.prioritySLA.findFirst({
+        where: {
+          priority: requestPriority,
+          isActive: true
+        },
+        include: {
+          slaIncident: true
+        }
+      });
+
+      if (prioritySLA?.slaIncident) {
+        return {
+          ...prioritySLA.slaIncident,
+          requestType: 'incident',
+          // Map incident SLA fields to service SLA structure for compatibility
+          responseTime: prioritySLA.slaIncident.responseHours || 8,
+          escalationTime: prioritySLA.slaIncident.escalateHours || 1,
+          autoEscalate: prioritySLA.slaIncident.resolutionEscalationEnabled || false,
+          escalationLevels: this.mapIncidentEscalationLevels(prioritySLA.slaIncident)
+        };
+      }
+
+      // Fallback to default incident SLA
+      return this.getDefaultSLAByPriority(requestPriority, 'incident');
+    } catch (error) {
+      console.error('Error getting SLA incident:', error);
+      return this.getDefaultSLAByPriority(request.priority || 'Medium', 'incident');
+    }
+  }
+
+  /**
+   * Map SLA incident escalation levels to service escalation format
+   */
+  private mapIncidentEscalationLevels(slaIncident: any): any[] {
+    const levels = [];
+    
+    // Level 1 escalation
+    if (slaIncident.resolutionEscalationEnabled) {
+      levels.push({
+        level: 1,
+        timeToEscalate: (slaIncident.escalateDays * 24) + (slaIncident.escalateHours || 1),
+        escalationGroup: JSON.stringify(slaIncident.escalateTo || {}),
+        enabled: true,
+        timing: 'before',
+        escalateType: slaIncident.escalateType || 'before'
+      });
+    }
+
+    // Level 2 escalation
+    if (slaIncident.level2Enabled) {
+      levels.push({
+        level: 2,
+        timeToEscalate: (slaIncident.level2Days * 24) + (slaIncident.level2Hours || 2),
+        escalationGroup: JSON.stringify(slaIncident.level2EscalateTo || {}),
+        enabled: true,
+        timing: 'before',
+        escalateType: slaIncident.escalateType || 'before'
+      });
+    }
+
+    // Level 3 escalation
+    if (slaIncident.level3Enabled) {
+      levels.push({
+        level: 3,
+        timeToEscalate: (slaIncident.level3Days * 24) + (slaIncident.level3Hours || 4),
+        escalationGroup: JSON.stringify(slaIncident.level3EscalateTo || {}),
+        enabled: true,
+        timing: 'before',
+        escalateType: slaIncident.escalateType || 'before'
+      });
+    }
+
+    // Level 4 escalation
+    if (slaIncident.level4Enabled) {
+      levels.push({
+        level: 4,
+        timeToEscalate: (slaIncident.level4Days * 24) + (slaIncident.level4Hours || 8),
+        escalationGroup: JSON.stringify(slaIncident.level4EscalateTo || {}),
+        enabled: true,
+        timing: 'before',
+        escalateType: slaIncident.escalateType || 'before'
+      });
+    }
+
+    return levels;
   }
 
   /**

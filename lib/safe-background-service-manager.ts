@@ -1,6 +1,7 @@
 import { checkAndGenerateHolidays } from '@/lib/recurring-holidays-service';
 import { safeApprovalReminderService } from '@/lib/safe-approval-reminder-service';
 import { safeSLAMonitoringService } from '@/lib/safe-sla-monitoring-service';
+import { databaseBackupService } from '@/lib/backup-service';
 
 // Immediate log to confirm file is loaded
 console.log('🚀 LOADING: SafeBackgroundServiceManager module loaded!');
@@ -17,6 +18,7 @@ class SafeBackgroundServiceManager {
   private approvalScheduler: NodeJS.Timeout | null = null;
   private slaScheduler: NodeJS.Timeout | null = null;
   private autoCloseScheduler: NodeJS.Timeout | null = null;
+  private backupScheduler: NodeJS.Timeout | null = null;
 
   private constructor() {}
 
@@ -75,6 +77,15 @@ class SafeBackgroundServiceManager {
           status: 'running', 
           type: 'auto-close-scheduler',
           service: safeSLAMonitoringService 
+        });
+      });
+
+      await this.initializeServiceSafely('backup', () => {
+        this.startBackupScheduler();
+        this.services.set('backup', { 
+          status: 'running', 
+          type: 'backup-scheduler',
+          service: databaseBackupService 
         });
       });
 
@@ -401,6 +412,77 @@ class SafeBackgroundServiceManager {
       console.error('❌ Auto-close failed (system protected):', error);
     }
   }
+
+  /**
+   * Start database backup scheduler
+   */
+  private startBackupScheduler(): void {
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    
+    if (isDevelopment) {
+      console.log('💾 Database backup scheduler started (dev mode)');
+    } else {
+      console.log('💾 Starting database backup scheduler...');
+    }
+    
+    this.scheduleNextBackup();
+  }
+
+  /**
+   * Schedule next backup based on backup_settings configuration
+   */
+  private scheduleNextBackup(): void {
+    try {
+      // Check backup schedule from database every hour
+      const intervalMs = 60 * 60 * 1000; // 1 hour
+      
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      
+      if (isDevelopment) {
+        console.log(`💾 Next backup schedule check in 1 hour`);
+      }
+
+      this.backupScheduler = setTimeout(async () => {
+        await this.checkAndRunBackup();
+        this.scheduleNextBackup(); // Schedule next check
+      }, intervalMs);
+
+    } catch (error) {
+      console.error('❌ Error scheduling backup (will retry in 1 hour):', error);
+      
+      // Fallback: retry in 1 hour if scheduling fails
+      this.backupScheduler = setTimeout(() => {
+        this.scheduleNextBackup();
+      }, 60 * 60 * 1000); // 1 hour
+    }
+  }
+
+  /**
+   * Check if backup should run and execute if needed
+   */
+  private async checkAndRunBackup(): Promise<void> {
+    try {
+      console.log('💾 Checking if backup should run...');
+
+      // SAFETY LAYER: Timeout protection
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Backup timeout')), 10 * 60 * 1000) // 10 minutes max
+      );
+
+      const backupPromise = databaseBackupService.checkAndExecuteBackup();
+
+      const result = await Promise.race([backupPromise, timeoutPromise]) as { executed: boolean; message: string };
+
+      if (result.executed) {
+        console.log('✅ Database backup completed:', result);
+      } else {
+        console.log('ℹ️ Backup not needed at this time:', result);
+      }
+
+    } catch (error) {
+      console.error('❌ Database backup failed (system protected):', error);
+    }
+  }
   private startHolidayScheduler(): void {
     const isDevelopment = process.env.NODE_ENV === 'development';
     
@@ -553,6 +635,14 @@ class SafeBackgroundServiceManager {
         };
       }
 
+      // Check backup service
+      if (this.services.has('backup')) {
+        status.services.backup = {
+          status: this.backupScheduler ? 'running' : 'stopped',
+          details: 'Database backup based on backup_settings configuration'
+        };
+      }
+
     } catch (error) {
       console.error('Error getting service status (system protected):', error);
       status.services.error = { status: 'error', details: 'Status check failed' };
@@ -587,6 +677,12 @@ class SafeBackgroundServiceManager {
         case 'auto-close':
           if (this.services.has('auto-close')) {
             return await safeSLAMonitoringService.manualTriggerAutoClose();
+          }
+          break;
+
+        case 'backup':
+          if (this.services.has('backup')) {
+            return await databaseBackupService.triggerBackup();
           }
           break;
 
@@ -633,6 +729,13 @@ class SafeBackgroundServiceManager {
         clearTimeout(this.autoCloseScheduler);
         this.autoCloseScheduler = null;
         console.log('✅ Auto-close scheduler stopped');
+      }
+
+      // Stop backup scheduler
+      if (this.backupScheduler) {
+        clearTimeout(this.backupScheduler);
+        this.backupScheduler = null;
+        console.log('✅ Backup scheduler stopped');
       }
 
       // Stop other services
