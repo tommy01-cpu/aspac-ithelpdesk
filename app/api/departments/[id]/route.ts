@@ -1,6 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const { id } = params;
+    
+    if (!id) {
+      return NextResponse.json({ error: 'Department ID is required' }, { status: 400 });
+    }
+
+    // Get department with head information using raw SQL
+    const departmentWithHead = await prisma.$queryRaw`
+      SELECT 
+        d.id, 
+        d.name, 
+        d.description, 
+        d."departmentHeadId", 
+        d."isActive", 
+        d."createdAt", 
+        d."updatedAt",
+        u.id as "headId",
+        u.first_name as "headFirstName",
+        u.last_name as "headLastName", 
+        u.employee_id as "headEmployeeCode",
+        u.corporate_email as "headEmail",
+        u.job_title as "headJobTitle"
+      FROM departments d
+      LEFT JOIN users u ON d."departmentHeadId" = u.id
+      WHERE d.id = ${parseInt(id)}
+    ` as any[];
+
+    if (departmentWithHead.length === 0) {
+      return NextResponse.json(
+        { error: 'Department not found' },
+        { status: 404 }
+      );
+    }
+
+    const departmentData = departmentWithHead[0];
+
+    // Transform the response
+    const response = {
+      id: departmentData.id,
+      name: departmentData.name,
+      description: departmentData.description,
+      departmentHeadId: departmentData.departmentHeadId,
+      isActive: departmentData.isActive,
+      createdAt: departmentData.createdAt,
+      updatedAt: departmentData.updatedAt,
+      departmentHead: departmentData.headId ? {
+        id: departmentData.headId.toString(),
+        name: `${departmentData.headFirstName || ''} ${departmentData.headLastName || ''}`.trim(),
+        firstName: departmentData.headFirstName,
+        lastName: departmentData.headLastName,
+        employeeCode: departmentData.headEmployeeCode || '',
+        email: departmentData.headEmail || '',
+        jobTitle: departmentData.headJobTitle || ''
+      } : null
+    };
+
+    return NextResponse.json(response);
+  } catch (error) {
+    console.error('Error fetching department:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const { id } = params;

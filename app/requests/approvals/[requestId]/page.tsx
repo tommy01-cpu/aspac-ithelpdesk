@@ -385,6 +385,7 @@ export default function ApprovalDetailsPage() {
   // Detect and auto-approve ONLY the immediate next level where the approver already approved in a previous level
   const maybeAutoApproveDuplicates = async (all: any[]) => {
     if (autoApproveInProgress || !Array.isArray(all) || all.length === 0) return;
+    
     // Build map of approver -> lowest approved level
     const keyOf = (a: any) => (a.approverEmail || a.approver?.emp_email || a.approverId || a.approverName || '').toString().toLowerCase();
     const approvedByApprover: Record<string, number> = {};
@@ -413,35 +414,50 @@ export default function ApprovalDetailsPage() {
     });
 
     if (duplicates.length === 0) return;
+    
+    console.log(`🔄 Auto-approving ${duplicates.length} duplicate approver(s) at level ${nextLevel}`);
     setAutoApproveInProgress(true);
 
     // Try to approve each duplicate approval record
     const note = 'Auto approved by System since the approver has already approved in one of the previous levels.';
-    await Promise.all(duplicates.map(async (a) => {
+    const approvalPromises = duplicates.map(async (a) => {
       try {
+        console.log(`🤖 Auto-approving duplicate for ${keyOf(a)} at level ${a.level}`);
         const res = await fetch('/api/approvals/action', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ approvalId: a.id, action: 'approve', comments: note })
         });
         if (!res.ok) {
-          // Ignore errors silently to avoid blocking other updates
-          console.warn('Auto-approve failed for', a.id);
+          console.warn('Auto-approve failed for', a.id, await res.text());
+          return { success: false, id: a.id };
         }
+        return { success: true, id: a.id };
       } catch (e) {
         console.warn('Auto-approve error for', a.id, e);
+        return { success: false, id: a.id };
       }
-    }));
-
-    // Refresh approvals and history to reflect changes
-    if (selectedApproval) {
-      await fetchApprovals(selectedApproval.requestId);
-      await fetchHistory(selectedApproval.requestId);
-    }
-    toast({
-      title: 'Auto-approved duplicates',
-      description: `${duplicates.length} approval(s) auto-approved`,
     });
+
+    const results = await Promise.all(approvalPromises);
+    const successCount = results.filter(r => r.success).length;
+    
+    console.log(`✅ Auto-approved ${successCount}/${duplicates.length} duplicate approvals`);
+
+    // Only refresh and show toast if we actually approved something
+    if (successCount > 0) {
+      // Refresh approvals and history to reflect changes
+      if (selectedApproval) {
+        await fetchApprovals(selectedApproval.requestId);
+        await fetchHistory(selectedApproval.requestId);
+      }
+      
+      toast({
+        title: 'Auto-approved duplicates',
+        description: `${successCount} approval(s) auto-approved`,
+      });
+    }
+    
     setAutoApproveInProgress(false);
   };
 
@@ -1266,8 +1282,8 @@ export default function ApprovalDetailsPage() {
                                     .replace(/^[\s]*[•\-\*]\s+(.+)$/gm, '<li>$1</li>')
                                     // Convert numbered lists
                                     .replace(/^[\s]*(\d+)[\.\)]\s+(.+)$/gm, '<li>$2</li>')
-                                    // Wrap consecutive list items in ul tags
-                                    .replace(/(<li>.*<\/li>(?:\s*<li>.*<\/li>)*)/gs, '<ul>$1</ul>')
+                                    // Wrap consecutive list items in ul tags (using alternative regex approach)
+                                    .replace(/(<li>.*<\/li>(\s*<li>.*<\/li>)*)/g, '<ul>$1</ul>')
                                     // Convert double line breaks to paragraphs
                                     .replace(/\n\s*\n/g, '</p><p>')
                                     // Convert single line breaks to br tags

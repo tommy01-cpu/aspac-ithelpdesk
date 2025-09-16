@@ -706,6 +706,27 @@ export const sendApprovalOutcomeNotification = async (
     console.log(`=== SENDING APPROVAL OUTCOME NOTIFICATION ===`);
     console.log(`Request ID: ${requestId}, Action: ${action}`);
 
+    // Check if we already sent an approval outcome notification for this request
+    // to prevent duplicates from auto-approval scenarios
+    const existingNotification = await prisma.notification.findFirst({
+      where: {
+        data: {
+          path: ['requestId'],
+          equals: requestId.toString()
+        },
+        type: action === 'approved' ? 'REQUEST_APPROVED' : 'REQUEST_REJECTED',
+        createdAt: {
+          // Only check for notifications sent in the last 5 minutes to allow for legitimate retries
+          gte: new Date(Date.now() - 5 * 60 * 1000)
+        }
+      }
+    });
+
+    if (existingNotification) {
+      console.log(`🚫 Duplicate ${action} notification prevented for request ${requestId} - notification already sent at ${existingNotification.createdAt}`);
+      return true; // Return true to not cause errors in calling code
+    }
+
     // Get request data including user details
     const requestData = await prisma.request.findUnique({
       where: { id: requestId },

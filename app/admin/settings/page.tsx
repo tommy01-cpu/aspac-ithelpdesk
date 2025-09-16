@@ -30,6 +30,9 @@ export default function AdminSettingsPage() {
       case 'Technician Auto Assign':
         router.push('/admin/settings/automation');
         break;
+      case 'Auto Backup':
+        router.push('/admin/settings/automation/auto-backup');
+        break;
       // Service Desk Configuration items
       case 'Departments':
         router.push('/admin/settings/service-desk?tab=departments');
@@ -154,7 +157,7 @@ export default function AdminSettingsPage() {
       bgColor: "bg-orange-50",
       iconColor: "text-orange-600",
       items: [
-        "Service Level Agreements", "Technician Auto Assign"
+        "Service Level Agreements", "Technician Auto Assign", "Auto Backup"
       ]
     }
   ];
