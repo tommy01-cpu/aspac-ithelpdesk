@@ -1,0 +1,13 @@
+# Explicitly include Dockerfile and .dockerignore
+!Dockerfile
+!.dockerignore
+
+# Use the same defaults as gcloud
+.git
+.gitignore
+node_modules/
+**/.git
+**/.gitignore
+**/node_modules
+.env*
+.next
