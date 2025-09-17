@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { 
   Settings, 
   Users, 
-  Building2, 
+  Building2,
   AlertTriangle, 
   CheckCircle2, 
   Zap, 
@@ -16,7 +16,8 @@ import {
   FileText,
   X,
   ChevronRight,
-  Database
+  Database,
+  HardDrive
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -158,6 +159,15 @@ const settingsCategories: SettingsCategory[] = [
         path: '/admin/settings/database',
         badge: 'New',
         badgeVariant: 'default'
+      },
+      {
+        id: 'auto-backup',
+        title: 'Auto Backup',
+        description: 'Configure automatic database backups',
+        icon: HardDrive,
+        path: '/admin/settings/automation?tab=auto-backup',
+        badge: 'Active',
+        badgeVariant: 'outline'
       }
     ]
   }

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
-import { Save, Database, Clock, FolderOpen } from "lucide-react";
+import { Save, Database, Clock, FolderOpen, Play } from "lucide-react";
 
 interface BackupSettings {
   id: number;
@@ -22,6 +22,7 @@ export default function AutoBackupPage() {
   const [settings, setSettings] = useState<BackupSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [formData, setFormData] = useState({
     backup_directory: "C:\\BackupDB",
     backup_time: "00:00",
@@ -112,6 +113,44 @@ export default function AutoBackupPage() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleManualBackupTest = async () => {
+    try {
+      setTesting(true);
+      
+      toast({
+        title: "Starting Manual Backup",
+        description: "Initiating backup test... This may take a few minutes.",
+      });
+
+      const response = await fetch('/api/admin/backup-test', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        toast({
+          title: "Backup Test Successful",
+          description: data.details || "Manual backup completed successfully",
+        });
+      } else {
+        throw new Error(data.error || 'Manual backup failed');
+      }
+    } catch (error) {
+      console.error('Error running manual backup test:', error);
+      toast({
+        title: "Backup Test Failed",
+        description: error instanceof Error ? error.message : "Failed to execute manual backup",
+        variant: "destructive"
+      });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -222,7 +261,18 @@ export default function AutoBackupPage() {
         {/* Information Card */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Backup Information</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg">Backup Information</CardTitle>
+              <Button 
+                onClick={handleManualBackupTest} 
+                disabled={testing || !formData.is_enabled}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <Play className="h-4 w-4" />
+                {testing ? "Running Test..." : "Test Backup Now"}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">

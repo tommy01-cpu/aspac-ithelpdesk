@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       // Branch: service templates use Template.slaService; incident templates use priority mapping (PrioritySLA -> SLAIncident)
       let slaHours: number | null = null;
       let useOperationalHours: boolean | undefined = undefined;
-      let slaSource: 'template' | 'incident-priority' | 'fallback' = 'fallback';
+      let slaSource: 'service' | 'incident-priority' | 'fallback' = 'fallback';
       let slaId: number | undefined = undefined;
 
       // Resolve template ID from param or request record
@@ -100,6 +100,15 @@ export async function POST(request: NextRequest) {
             },
           });
 
+          // Debug logging for template and SLA service details
+          console.log('🔍 Template Debug Info:', {
+            templateId: tplId,
+            templateType: template?.type,
+            hasSlaService: !!template?.slaService,
+            slaServiceId: template?.slaService?.id,
+            slaServiceName: template?.slaService?.name
+          });
+
           if (template?.type === 'service' && template?.slaService) {
             // Service template: use attached SLA service with breakdown fields
             const slaService = template.slaService;
@@ -108,6 +117,15 @@ export async function POST(request: NextRequest) {
             const days = slaService.resolutionDays ?? 0;
             const hours = slaService.resolutionHours ?? 0; 
             const minutes = slaService.resolutionMinutes ?? 0;
+            
+            console.log('🔍 SLA Service Breakdown:', {
+              id: slaService.id,
+              name: slaService.name,
+              resolutionDays: days,
+              resolutionHours: hours,
+              resolutionMinutes: minutes,
+              hasValidTime: days > 0 || hours > 0 || minutes > 0
+            });
             
             if (days > 0 || hours > 0 || minutes > 0) {
               // Always use operational hours for service SLA calculation
@@ -121,11 +139,22 @@ export async function POST(request: NextRequest) {
                 useOperationalHours = false;
               }
               
-              slaSource = 'template';
+              slaSource = 'service'; // Changed from 'template' to 'service' to match expectations
               slaId = slaService.id;
-              console.log(`Using service SLA breakdown: ${days}d ${hours}h ${minutes}m -> ${slaHours}h (ID: ${slaService.id}, operational: ${useOperationalHours})`);
+              console.log(`✅ Using service SLA breakdown: ${days}d ${hours}h ${minutes}m -> ${slaHours}h (ID: ${slaService.id}, operational: ${useOperationalHours})`);
+            } else {
+              console.log('⚠️ Service SLA has zero resolution time, falling back to priority-based calculation');
             }
-          } else if (template?.type === 'incident') {
+          } else {
+            console.log('⚠️ Template conditions not met for service SLA:', {
+              isServiceType: template?.type === 'service',
+              hasSlaService: !!template?.slaService,
+              templateType: template?.type,
+              willUseFallback: true
+            });
+          }
+          
+          if (template?.type === 'incident') {
             // Incident template: look up priority-based incident SLA
             const formData = requestDetails.formData as any;
             const priorityKey = (formData?.priority || formData?.['2'] || '').toString().trim().toLowerCase();
