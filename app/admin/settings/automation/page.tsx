@@ -59,7 +59,6 @@ const OverviewTab = () => (
 );
 
 const automationTabs: TabItem[] = [
-  { id: 'overview', label: 'Overview', icon: Bot, component: OverviewTab },
   { id: 'technician-auto-assign', label: 'Technician Auto Assign', icon: Users, component: TechnicianAutoAssignTab },
   { id: 'auto-backup', label: 'Auto Backup', icon: Database, component: AutoBackupTab },
 ];

@@ -297,6 +297,7 @@ class SafeSLAMonitoringService {
     slaService?: any;
     actualElapsed?: number;
     slaLimit?: number;
+    escalationLevel?: number;
   }> {
     try {
       // Skip SLA monitoring if SLA is currently stopped
@@ -360,11 +361,12 @@ class SafeSLAMonitoringService {
           breachType: 'proactive-escalation',
           slaService,
           actualElapsed: Math.max(0, slaHours - hoursUntilDue),
-          slaLimit: slaHours
+          slaLimit: slaHours,
+          escalationLevel: shouldSendEscalation.level // Add escalation level for formData history
         };
       }
 
-      // Secondary check: Only after due date if no proactive escalations configured
+      // ENFORCE: NO reactive escalations after due date - All escalations must be BEFORE due date
       const isBreached = now > dueDate;
       
       if (!isBreached) {
@@ -373,31 +375,15 @@ class SafeSLAMonitoringService {
         return { isBreached: false };
       }
 
-      // Only send post-due-date notifications if no proactive escalation system is configured
-      if (!slaService?.autoEscalate && !slaService?.resolutionEscalationEnabled && (!slaService?.escalationLevels || slaService.escalationLevels.length === 0)) {
-        const hoursOverdue = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
-        const slaHours = parseFloat(formData?.slaHours || '0');
-        
-        console.log(`⚠️ Request ${request.id} SLA BREACHED (reactive fallback):`, {
-          dueDate: dueDate.toLocaleString(),
-          now: now.toLocaleString(),
-          hoursOverdue: hoursOverdue.toFixed(2),
-          slaHours,
-          note: 'No proactive escalation configured'
-        });
-
-        return {
-          isBreached: true,
-          hoursOverdue,
-          breachType: 'resolution',
-          slaService,
-          actualElapsed: hoursOverdue + slaHours,
-          slaLimit: slaHours
-        };
-      }
-
-      // If escalation system is configured but no escalations sent, just log the breach
-      console.log(`📝 Request ${request.id} passed due date but proactive escalations should have been sent earlier`);
+      // If we reach here, the due date has passed but no proactive escalations were configured or sent
+      // According to the new requirement, we should NOT send escalations after due date
+      const hoursOverdue = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
+      console.log(`⚠️ Request ${request.id} SLA DUE DATE PASSED - No escalations sent (escalations must be BEFORE due date):`, {
+        dueDate: dueDate.toLocaleString(),
+        now: now.toLocaleString(),
+        hoursOverdue: hoursOverdue.toFixed(2),
+        note: 'Escalations should be configured to trigger BEFORE due date'
+      });
       return { isBreached: false };
 
     } catch (error) {
@@ -423,10 +409,12 @@ class SafeSLAMonitoringService {
     escalateType?: string;
     triggerTime?: Date;
   }> {
-    // Check if escalation is enabled
-    if (!slaConfig?.autoEscalate && !slaConfig?.resolutionEscalationEnabled) {
-      console.log(`Request ${requestId}: No escalation enabled for SLA config`);
-      return { shouldSend: false };
+    // Check if escalation is enabled OR use default escalation schedule
+    // If no escalation config exists, use default proactive escalation schedule
+    if (!slaConfig?.autoEscalate && !slaConfig?.resolutionEscalationEnabled && 
+        (!slaConfig?.escalationLevels || slaConfig.escalationLevels.length === 0)) {
+      console.log(`Request ${requestId}: No escalation config found, using DEFAULT proactive escalation schedule`);
+      return this.checkDefaultEscalationSchedule(requestId, now, dueDate, escalationHistory);
     }
 
     const sentLevels = escalationHistory.map(h => h.level);
@@ -438,6 +426,51 @@ class SafeSLAMonitoringService {
 
     // For incident requests, use the incident-style escalation fields
     return this.checkIncidentEscalationLevels(requestId, now, dueDate, sentLevels, slaConfig);
+  }
+
+  /**
+   * Check default escalation schedule when no SLA escalation config exists
+   * Provides proactive escalations BEFORE due date
+   */
+  private checkDefaultEscalationSchedule(
+    requestId: number,
+    now: Date,
+    dueDate: Date,
+    escalationHistory: any[]
+  ): { shouldSend: boolean; reason?: string; level?: number; escalateType?: string; triggerTime?: Date; } {
+    const sentLevels = escalationHistory.map(h => h.level);
+    
+    // Default escalation schedule (all BEFORE due date):
+    // Level 1: 6 hours before due date
+    // Level 2: 2 hours before due date  
+    // Level 3: 30 minutes before due date
+    const defaultEscalations = [
+      { level: 1, hoursBeforeDue: 6, description: '6 hours before due date' },
+      { level: 2, hoursBeforeDue: 2, description: '2 hours before due date' },
+      { level: 3, hoursBeforeDue: 0.5, description: '30 minutes before due date' }
+    ];
+    
+    for (const escalation of defaultEscalations) {
+      if (sentLevels.includes(escalation.level)) {
+        continue; // Already sent this level
+      }
+      
+      // Calculate trigger time
+      const triggerTime = new Date(dueDate.getTime() - (escalation.hoursBeforeDue * 60 * 60 * 1000));
+      
+      if (now >= triggerTime && now < dueDate) {
+        console.log(`🎯 Default escalation Level ${escalation.level} triggered for request ${requestId} (${escalation.description})`);
+        return {
+          shouldSend: true,
+          reason: `Default Level ${escalation.level} escalation (${escalation.description})`,
+          level: escalation.level,
+          escalateType: 'before',
+          triggerTime
+        };
+      }
+    }
+    
+    return { shouldSend: false };
   }
 
   /**
@@ -455,7 +488,8 @@ class SafeSLAMonitoringService {
         continue;
       }
 
-      const escalateType = escalationLevel.timing || escalationLevel.escalateType || 'before';
+      // ENFORCE: All escalations must be BEFORE due date (override any 'after' configuration)
+      const escalateType = 'before'; // Force to 'before' regardless of configuration
       const escalationTriggerTime = this.calculateEscalationTriggerTime(
         dueDate,
         0, // days
@@ -464,7 +498,8 @@ class SafeSLAMonitoringService {
         escalateType
       );
 
-      if (now >= escalationTriggerTime) {
+      // ENFORCE: Only send escalations BEFORE due date (proactive escalations only)
+      if (now >= escalationTriggerTime && now < dueDate) {
         console.log(`Service escalation Level ${escalationLevel.level} triggered for request ${requestId}`);
         return {
           shouldSend: true,
@@ -501,7 +536,7 @@ class SafeSLAMonitoringService {
         escalateType
       );
 
-      if (now >= escalationTriggerTime) {
+      if (now >= escalationTriggerTime && now < dueDate) {
         return {
           shouldSend: true,
           reason: `Level 1 escalation time reached (BEFORE due date)`,
@@ -523,7 +558,7 @@ class SafeSLAMonitoringService {
         escalateType
       );
 
-      if (now >= escalationTriggerTime) {
+      if (now >= escalationTriggerTime && now < dueDate) {
         return {
           shouldSend: true,
           reason: `Level 2 escalation time reached (BEFORE due date)`,
@@ -545,7 +580,7 @@ class SafeSLAMonitoringService {
         escalateType
       );
 
-      if (now >= escalationTriggerTime) {
+      if (now >= escalationTriggerTime && now < dueDate) {
         return {
           shouldSend: true,
           reason: `Level 3 escalation time reached (BEFORE due date)`,
@@ -567,7 +602,7 @@ class SafeSLAMonitoringService {
         escalateType
       );
 
-      if (now >= escalationTriggerTime) {
+      if (now >= escalationTriggerTime && now < dueDate) {
         return {
           shouldSend: true,
           reason: `Level 4 escalation time reached (BEFORE due date)`,
@@ -912,7 +947,7 @@ class SafeSLAMonitoringService {
         sla_resolution_time: slaStatus.slaService?.resolutionHours?.toString() || 'N/A',
         request_priority: this.getRequestPriority(request),
         request_summary: this.getRequestSummary(request),
-        escalation_level: '1',
+        escalation_level: (slaStatus.escalationLevel || 1).toString(), // Use escalation level from slaStatus
         dashboard_url: `${process.env.NEXTAUTH_URL}/dashboard`,
         priority_sla_rules: this.formatPrioritySLARules(request.priority)
       };
@@ -926,6 +961,16 @@ class SafeSLAMonitoringService {
         } else {
           console.log(`✅ SLA escalation email sent to ${email}`);
         }
+      }
+
+      // Update escalation history to prevent re-sending (for all escalation types)
+      try {
+        const escalationLevel = slaStatus.escalationLevel || parseInt(variables.escalation_level) || 1;
+        await this.updateEscalationHistory(request.id, escalationLevel);
+        console.log(`📝 Updated escalation history for request ${request.id}, level ${escalationLevel}`);
+      } catch (historyError) {
+        console.error(`⚠️ Failed to update escalation history for request ${request.id}:`, historyError);
+        // Don't fail the entire escalation if history update fails
       }
 
       // Note: History logging removed for escalations per user request

@@ -9,6 +9,11 @@ import { sendApprovalOutcomeNotification, sendClarificationRequestNotification, 
 import { prisma } from '@/lib/prisma';
 import { formatStatusForDisplay } from '@/lib/status-colors';
 
+// Disable SSL verification for development environment
+if (process.env.NODE_ENV === 'development') {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -229,9 +234,9 @@ export async function POST(request: NextRequest) {
         // Trigger SLA and write consolidated Updated entry
         try {
           const templateId = finalRequest.templateId ? parseInt(finalRequest.templateId) : undefined;
-          const origin = new URL(request.url).origin;
+          const baseUrl = process.env.API_BASE_URL || new URL(request.url).origin;
           const cookie = request.headers.get('cookie') || '';
-          const response = await fetch(`${origin}/api/requests/${approval.requestId}/sla-assignment`, {
+          const response = await fetch(`${baseUrl}/api/requests/${approval.requestId}/sla-assignment`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -239,6 +244,8 @@ export async function POST(request: NextRequest) {
             },
             redirect: 'manual',
             body: JSON.stringify({ requestId: approval.requestId, templateId }),
+            // Add timeout to prevent hanging
+            signal: AbortSignal.timeout(30000) // 30 second timeout
           });
 
           const isJson = (response.headers.get('content-type') || '').includes('application/json');
@@ -624,16 +631,18 @@ export async function POST(request: NextRequest) {
 
                   try {
                     const templateId = finalRequest.templateId ? parseInt(finalRequest.templateId) : undefined;
-                    const origin = new URL(request.url).origin;
+                    const baseUrl = process.env.API_BASE_URL || new URL(request.url).origin;
                     const cookie = request.headers.get('cookie') || '';
-                    const response = await fetch(`${origin}/api/requests/${approval.requestId}/sla-assignment`, {
+                    const response = await fetch(`${baseUrl}/api/requests/${approval.requestId}/sla-assignment`, {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',
                         cookie,
                       },
                       redirect: 'manual',
-                      body: JSON.stringify({ requestId: approval.requestId, templateId })
+                      body: JSON.stringify({ requestId: approval.requestId, templateId }),
+                      // Add timeout to prevent hanging
+                      signal: AbortSignal.timeout(30000) // 30 second timeout
                     });
 
                     const isJson = (response.headers.get('content-type') || '').includes('application/json');
@@ -814,8 +823,8 @@ export async function POST(request: NextRequest) {
               
               console.log(`Triggering SLA and assignment for request ${approval.requestId}, template ${templateId}`);
               
-              // Use environment variable for API base URL
-              const baseUrl = process.env.API_BASE_URL ;
+              // Use environment variable for API base URL, fallback to localhost for development
+              const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
                 
               console.log('🔧 Using SLA assignment base URL:', baseUrl);
               
@@ -830,7 +839,11 @@ export async function POST(request: NextRequest) {
                   templateId: templateId
                 }),
                 // Add timeout to prevent hanging
-                signal: AbortSignal.timeout(30000) // 30 second timeout
+                signal: AbortSignal.timeout(30000), // 30 second timeout
+                // For development with self-signed certificates
+                ...(process.env.NODE_ENV !== 'production' && {
+                  // Add any development-specific options here if needed
+                })
               });
 
               if (response.ok) {

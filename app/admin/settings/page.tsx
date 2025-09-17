@@ -31,7 +31,7 @@ export default function AdminSettingsPage() {
         router.push('/admin/settings/automation');
         break;
       case 'Auto Backup':
-        router.push('/admin/settings/automation/auto-backup');
+        router.push('/admin/settings/automation?tab=auto-backup');
         break;
       // Service Desk Configuration items
       case 'Departments':
