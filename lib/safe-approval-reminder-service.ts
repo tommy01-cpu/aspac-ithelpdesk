@@ -166,20 +166,23 @@ class SafeApprovalReminderService {
   private async processApprovalRemindersDirectly(): Promise<any> {
     try {
       const today = new Date();
-      const phtTime = new Date(today.getTime() + (8 * 60 * 60 * 1000)); // Philippine Time
+      const phtTime = new Date(today.toLocaleString('en-US', { timeZone: 'Asia/Manila' })); // Better PHT conversion
       const dayOfWeek = phtTime.getDay(); // 0 = Sunday, 1 = Monday, etc.
       const dateString = phtTime.toLocaleDateString('en-PH', { 
         weekday: 'long', 
         year: 'numeric', 
         month: 'long', 
-        day: 'numeric' 
+        day: 'numeric',
+        timeZone: 'Asia/Manila'
       });
 
-      console.log(`📅 Today is ${dateString} (PHT)`);
+      console.log(`📅 Today is ${dateString} (Day of week: ${dayOfWeek})`);
+      console.log(`📅 Current PHT time: ${phtTime.toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`);
 
-      // Check if today is Sunday (day 0)
-      if (dayOfWeek === 0) {
-        console.log('🚫 Skipping approval reminders - Today is Sunday');
+      // Check if today is Sunday (day 0) - BUT ALLOW OVERRIDE IN DEVELOPMENT
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      if (dayOfWeek === 0 && !isDevelopment) {
+        console.log('🚫 Skipping approval reminders - Today is Sunday (production mode)');
         return {
           success: true,
           message: 'Approval reminders skipped - Sunday',
@@ -187,12 +190,14 @@ class SafeApprovalReminderService {
           totalPendingApprovals: 0,
           skippedReason: 'Sunday'
         };
+      } else if (dayOfWeek === 0 && isDevelopment) {
+        console.log('🔧 DEV MODE: Running approval reminders despite Sunday');
       }
 
-      // Check if today is a holiday
+      // Check if today is a holiday - BUT ALLOW OVERRIDE IN DEVELOPMENT
       const isHolidayToday = await isHoliday(today);
-      if (isHolidayToday) {
-        console.log('🚫 Skipping approval reminders - Today is a holiday');
+      if (isHolidayToday && !isDevelopment) {
+        console.log('🚫 Skipping approval reminders - Today is a holiday (production mode)');
         return {
           success: true,
           message: 'Approval reminders skipped - Holiday',
@@ -200,16 +205,30 @@ class SafeApprovalReminderService {
           totalPendingApprovals: 0,
           skippedReason: 'Holiday'
         };
+      } else if (isHolidayToday && isDevelopment) {
+        console.log('🔧 DEV MODE: Running approval reminders despite holiday');
       }
 
       console.log('✅ Today is a working day - proceeding with approval reminders');
       console.log('🔔 Starting direct approval reminders process...');
       
+      // TEST DATABASE CONNECTION FIRST
+      try {
+        await prisma.$queryRaw`SELECT 1`;
+        console.log('✅ Database connection verified');
+      } catch (dbError) {
+        console.error('❌ Database connection failed:', dbError);
+        throw new Error('Database connection failed');
+      }
+      
       // Get all requests that are currently in approval status - with timeout protection
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Database timeout')), 15000)
+        setTimeout(() => reject(new Error('Database timeout after 30 seconds')), 30000) // Increased timeout
       );
 
+      console.log('🔍 Querying database for approval requests...');
+      
+      // Get requests with for_approval status (the only valid status for pending approvals)
       const requestsForApproval = await Promise.race([
         prisma.request.findMany({
           where: {
@@ -231,6 +250,10 @@ class SafeApprovalReminderService {
       ]) as any[];
 
       console.log(`📋 Found ${requestsForApproval.length} requests in approval status`);
+      
+      if (requestsForApproval.length > 0) {
+        console.log('📊 Sample request statuses:', requestsForApproval.slice(0, 3).map(r => ({ id: r.id, status: r.status })));
+      }
 
       // Filter to get only the current level pending approvals
       const currentLevelApprovals = [];
@@ -238,7 +261,8 @@ class SafeApprovalReminderService {
       for (const request of requestsForApproval) {
         // Find the current approval level (first pending approval in sequence)
         const currentApproval = request.approvals.find((approval: any) => 
-          approval.status === 'pending_approval'
+          approval.status === 'pending_approval' ||  // Valid ApprovalStatus from schema
+          !approval.actedOn  // If no action taken yet (fallback)
         );
         
         if (currentApproval && currentApproval.approver) {
@@ -257,11 +281,27 @@ class SafeApprovalReminderService {
       console.log(`📊 Found ${pendingApprovals.length} pending approvals to process`);
 
       if (pendingApprovals.length === 0) {
+        // Log additional debug info
+        console.log('🔍 No pending approvals found. Checking possible reasons:');
+        console.log('   - Total requests in approval status:', requestsForApproval.length);
+        
+        if (requestsForApproval.length > 0) {
+          const sampleApprovals = requestsForApproval[0]?.approvals;
+          if (sampleApprovals && sampleApprovals.length > 0) {
+            console.log('   - Sample approval statuses:', sampleApprovals.map((a: any) => ({ level: a.level, status: a.status, hasApprover: !!a.approver })));
+          }
+        }
+        
         return {
           success: true,
           message: 'No pending approvals found',
           remindersSent: 0,
-          totalPendingApprovals: 0
+          totalPendingApprovals: 0,
+          debugInfo: {
+            totalRequestsInApproval: requestsForApproval.length,
+            searchedStatuses: ['for_approval'], // Only valid RequestStatus
+            validApprovalStatuses: ['pending_approval'] // Valid ApprovalStatus
+          }
         };
       }
 

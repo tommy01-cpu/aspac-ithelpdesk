@@ -58,31 +58,75 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // Get requests resolved today
-    const resolvedToday = await prisma.request.count({
+    // Get requests due today assigned to current technician (open requests with slaDueDate = today)
+    const dueTodayRequests = await prisma.request.count({
       where: {
-        status: 'resolved',
-        updatedAt: {
-          gte: today,
-          lt: tomorrow
+        OR: [
+          {
+            formData: {
+              path: ['assignedTechnicianId'],
+              equals: technician.id
+            }
+          },
+          {
+            formData: {
+              path: ['assignedTechnicianId'],
+              equals: technician.id.toString()
+            }
+          }
+        ],
+        status: {
+          in: ['open', 'on_hold'] // Active statuses only
+        },
+        formData: {
+          path: ['slaDueDate'],
+          gte: today.toISOString(),
+          lt: tomorrow.toISOString()
         }
       }
     });
 
-    // Get overdue requests (basic check for requests older than 3 days without resolution)
-    const threeDaysAgo = new Date();
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-    
+    // Get ALL overdue requests in system (not filtered by technician)
     const overdueRequests = await prisma.request.count({
       where: {
-        status: 'open', // Only use 'open' since that's what exists
-        createdAt: {
-          lt: threeDaysAgo
+        status: {
+          in: ['open', 'on_hold'] // Active statuses only
+        },
+        formData: {
+          path: ['slaDueDate'],
+          lt: today.toISOString()
         }
       }
     });
 
-    // Get requests assigned to current technician (only open and on-hold, not resolved)
+    // Get MY overdue requests assigned to current technician 
+    const myOverdueRequests = await prisma.request.count({
+      where: {
+        OR: [
+          {
+            formData: {
+              path: ['assignedTechnicianId'],
+              equals: technician.id
+            }
+          },
+          {
+            formData: {
+              path: ['assignedTechnicianId'],
+              equals: technician.id.toString()
+            }
+          }
+        ],
+        status: {
+          in: ['open', 'on_hold'] // Active statuses only
+        },
+        formData: {
+          path: ['slaDueDate'],
+          lt: today.toISOString()
+        }
+      }
+    });
+
+    // Get requests assigned to current technician (open, on_hold only - exclude resolved)
     const myAssignedRequests = await prisma.request.count({
       where: {
         OR: [
@@ -100,7 +144,7 @@ export async function GET(request: NextRequest) {
           }
         ],
         status: {
-          in: ['open', 'on_hold'] // Only count active statuses (not resolved)
+          in: ['open', 'on_hold'] // Only active statuses (exclude resolved)
         }
       }
     });
@@ -179,8 +223,9 @@ export async function GET(request: NextRequest) {
     const stats = {
       totalRequests,
       pendingRequests,
-      resolvedToday,
-      overdueRequests,
+      overdueRequests, // System-wide overdue requests
+      myOverdueRequests, // Personal overdue requests for My Summary
+      resolvedToday: dueTodayRequests, // Return due today count in resolvedToday field for dashboard display
       myAssignedRequests,
       needClarification,
       avgResolutionTime,

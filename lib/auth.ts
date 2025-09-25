@@ -101,7 +101,9 @@ export const authOptions: NextAuthOptions = {
     })
   ],
   session: {
-    strategy: 'jwt'
+    strategy: 'jwt',
+    maxAge: 24 * 60 * 60, // 24 hours
+    updateAge: 60 * 60, // Update session every hour
   },
   callbacks: {
     async jwt({ token, user }) {
@@ -130,10 +132,33 @@ export const authOptions: NextAuthOptions = {
         session.user.requiresPasswordChange = token.requiresPasswordChange as boolean | undefined;
       }
       return session;
+    },
+    async redirect({ url, baseUrl }) {
+      console.log('🔄 NextAuth redirect callback:', { url, baseUrl });
+      
+      // Always redirect to clean login URL for any login-related redirect
+      if (url.includes('/login') || url === `${baseUrl}/`) {
+        console.log('🔄 Redirecting to clean login URL');
+        return `${baseUrl}/login`;
+      }
+      
+      // For any other URL, allow it
+      if (url.startsWith(baseUrl)) {
+        return url;
+      }
+      
+      // Fallback to home page
+      return baseUrl;
     }
   },
   pages: {
     signIn: '/login',
+    signOut: '/login',
     error: '/login'
+  },
+  events: {
+    async signOut() {
+      console.log('🔄 SignOut event triggered');
+    }
   }
 };

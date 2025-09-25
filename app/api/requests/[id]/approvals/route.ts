@@ -31,7 +31,7 @@ export async function GET(
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Get all approvals for this request
+    // Get all approvals for this request with proper user lookup
     const approvals = await prisma.requestApproval.findMany({
       where: {
         requestId: requestId
@@ -39,6 +39,7 @@ export async function GET(
       include: {
         approver: {
           select: {
+            id: true,
             emp_fname: true,
             emp_lname: true,
             emp_email: true
@@ -61,21 +62,72 @@ export async function GET(
       return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
     };
 
-    // Format the approvals data
-    const formattedApprovals = approvals.map((approval: any) => ({
-      id: approval.id.toString(),
-      level: approval.level,
-      levelName: approval.name || `Level ${approval.level}`,
-      approverId: approval.approverId,
-      approverName: approval.approver 
-        ? `${approval.approver.emp_fname} ${approval.approver.emp_lname}`
-        : approval.approverEmail || 'Unknown Approver',
-      approverEmail: approval.approver?.emp_email || approval.approverEmail || '',
-      status: approval.status,
-      sentOn: approval.sentOn ? formatStoredPhilippineTime(approval.sentOn) : null,
-      actedOn: approval.actedOn ? formatStoredPhilippineTime(approval.actedOn) : null,
-      comments: approval.comments
-    }));
+    // Format the approvals data - ONLY use approverId to get user data from users table
+    const formattedApprovals = await Promise.all(
+      approvals.map(async (approval: any) => {
+        let userData = {
+          name: 'Unknown Approver',
+          email: ''
+        };
+        
+        // Only use approverId to get user data - ignore stored approverName/approverEmail
+        if (approval.approverId) {
+          if (approval.approver) {
+            // Use the included approver relation
+            userData = {
+              name: `${approval.approver.emp_fname} ${approval.approver.emp_lname}`,
+              email: approval.approver.emp_email
+            };
+          } else {
+            // If approver relation is null, do a direct lookup using approverId
+            console.log(`Looking up user data for approverId ${approval.approverId}`);
+            try {
+              const user = await prisma.users.findUnique({
+                where: { id: approval.approverId },
+                select: {
+                  emp_fname: true,
+                  emp_lname: true,
+                  emp_email: true
+                }
+              });
+              
+              if (user) {
+                userData = {
+                  name: `${user.emp_fname} ${user.emp_lname}`,
+                  email: user.emp_email || ''
+                };
+              } else {
+                console.warn(`User not found for approverId ${approval.approverId}`);
+                // Keep default unknown values - don't use stored data
+              }
+            } catch (error) {
+              console.error(`Error looking up user for approverId ${approval.approverId}:`, error);
+              // Keep default unknown values - don't use stored data
+            }
+          }
+        }
+        // If no approverId, keep default unknown values - don't use stored data
+
+        return {
+          id: approval.id.toString(),
+          level: approval.level,
+          levelName: approval.name || `Level ${approval.level}`,
+          approverId: approval.approverId,
+          approverName: userData.name,
+          approverEmail: userData.email,
+          // Also include the approver relation object for frontend compatibility
+          approver: approval.approverId && userData.name !== 'Unknown Approver' ? {
+            emp_fname: userData.name.split(' ')[0] || '',
+            emp_lname: userData.name.split(' ').slice(1).join(' ') || '',
+            emp_email: userData.email
+          } : null,
+          status: approval.status,
+          sentOn: approval.sentOn ? formatStoredPhilippineTime(approval.sentOn) : null,
+          actedOn: approval.actedOn ? formatStoredPhilippineTime(approval.actedOn) : null,
+          comments: approval.comments
+        };
+      })
+    );
 
     return NextResponse.json({ 
       success: true,
@@ -245,7 +297,7 @@ export async function POST(
       // Don't fail the approval addition if notifications fail
     }
 
-    // Format the response
+    // Format the response with actual user data (name and email only)
     const formattedApprovals = newApprovals.map((approval: any) => ({
       id: approval.id.toString(),
       level: approval.level,
@@ -253,8 +305,8 @@ export async function POST(
       approverId: approval.approverId,
       approverName: approval.approver 
         ? `${approval.approver.emp_fname} ${approval.approver.emp_lname}`
-        : approval.approverEmail || 'Unknown Approver',
-      approverEmail: approval.approver?.emp_email || approval.approverEmail || '',
+        : 'Unknown Approver',
+      approverEmail: approval.approver?.emp_email || '',
       status: approval.status,
       actedOn: approval.actedOn ? approval.actedOn.toISOString() : null,
       comments: approval.comments

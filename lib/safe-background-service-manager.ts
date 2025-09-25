@@ -1,6 +1,7 @@
 import { checkAndGenerateHolidays } from '@/lib/recurring-holidays-service';
 import { safeApprovalReminderService } from '@/lib/safe-approval-reminder-service';
 import { safeSLAMonitoringService } from '@/lib/safe-sla-monitoring-service';
+import { BackupApproverService } from '@/lib/backup-approver-service';
 
 // Immediate log to confirm file is loaded
 console.log('🚀 LOADING: SafeBackgroundServiceManager module loaded!');
@@ -17,6 +18,7 @@ class SafeBackgroundServiceManager {
   private approvalScheduler: NodeJS.Timeout | null = null;
   private slaScheduler: NodeJS.Timeout | null = null;
   private autoCloseScheduler: NodeJS.Timeout | null = null;
+  private backupApproverScheduler: NodeJS.Timeout | null = null;
 
   private constructor() {}
 
@@ -75,6 +77,15 @@ class SafeBackgroundServiceManager {
           status: 'running', 
           type: 'auto-close-scheduler',
           service: safeSLAMonitoringService 
+        });
+      });
+
+      await this.initializeServiceSafely('backup-approver', () => {
+        this.startBackupApproverScheduler();
+        this.services.set('backup-approver', { 
+          status: 'running', 
+          type: 'backup-approver-scheduler',
+          service: BackupApproverService 
         });
       });
 
@@ -152,9 +163,23 @@ class SafeBackgroundServiceManager {
 
       const isDevelopment = process.env.NODE_ENV === 'development';
       
-      // Always log in development for debugging
-      console.log(`⏰ [${isDevelopment ? 'DEV' : 'PROD'}] Next approval reminder scheduled for: ${next8AM.toLocaleString()}`);
+      // Always log scheduling information for debugging
+      console.log(`⏰ [${isDevelopment ? 'DEV' : 'PROD'}] CURRENT TIME: ${now.toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`);
+      console.log(`⏰ [${isDevelopment ? 'DEV' : 'PROD'}] Next approval reminder scheduled for: ${next8AM.toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`);
       console.log(`⏰ Time until next run: ${Math.round(timeUntil8AM / 1000 / 60)} minutes`);
+
+      // FOR TESTING: Uncomment to run in 2 minutes instead of 8AM
+      // if (isDevelopment) {
+      //   const testTime = new Date(now.getTime() + (2 * 60 * 1000)); // 2 minutes from now
+      //   const testTimeUntil = testTime.getTime() - now.getTime();
+      //   console.log(`🧪 [DEV] TESTING MODE: Running approval reminder in 2 minutes at ${testTime.toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`);
+      //   
+      //   this.approvalScheduler = setTimeout(() => {
+      //     this.runApprovalReminders();
+      //     this.scheduleNext8AM(); // Schedule next day
+      //   }, testTimeUntil);
+      //   return;
+      // }
 
       this.approvalScheduler = setTimeout(() => {
         this.runApprovalReminders();
@@ -261,16 +286,16 @@ class SafeBackgroundServiceManager {
    */
   private scheduleNextSLACheck(): void {
     try {
-      // Set to 30 minutes for production use
-      const intervalMs = 30 * 60 * 1000; // 30 minutes
-      
       const isDevelopment = process.env.NODE_ENV === 'development';
+      const now = new Date();
       
-      if (isDevelopment) {
-        console.log(`⏰ Next SLA check scheduled in 30 minutes`);
-      } else {
-        console.log(`⏰ Next SLA check scheduled in 30 minutes`);
-      }
+      // Set to 30 minutes for production use, but shorter in dev for testing
+      const intervalMs = isDevelopment ? 5 * 60 * 1000 : 30 * 60 * 1000; // 5 min dev, 30 min prod
+      const nextRun = new Date(now.getTime() + intervalMs);
+      
+      console.log(`⏰ [${isDevelopment ? 'DEV' : 'PROD'}] CURRENT TIME: ${now.toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`);
+      console.log(`⏰ [${isDevelopment ? 'DEV' : 'PROD'}] Next SLA check scheduled for: ${nextRun.toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`);
+      console.log(`⏰ Interval: ${isDevelopment ? '5 minutes (dev)' : '30 minutes (prod)'}`);
 
       this.slaScheduler = setTimeout(() => {
         this.runSLAMonitoring();
@@ -402,6 +427,128 @@ class SafeBackgroundServiceManager {
     }
   }
 
+  /**
+   * Start backup approver scheduler - runs daily at 12:01 AM
+   */
+  private startBackupApproverScheduler(): void {
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    
+    console.log(`🔄 [${isDevelopment ? 'DEV' : 'PROD'}] Backup approver scheduler started (12:01 AM daily)...`);
+    
+    this.scheduleNextBackupApproverCheck();
+  }
+
+  /**
+   * Schedule next backup approver check - runs daily at 12:01 AM
+   */
+  private scheduleNextBackupApproverCheck(): void {
+    try {
+      const now = new Date();
+      const nextRun = new Date(now);
+      
+      // Set to 12:01 AM
+      nextRun.setHours(0, 1, 0, 0);
+      
+      // If 12:01 AM already passed today, schedule for tomorrow
+      if (nextRun < now) {
+        nextRun.setDate(nextRun.getDate() + 1);
+      }
+
+      const timeUntilRun = nextRun.getTime() - now.getTime();
+
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      
+      if (isDevelopment) {
+        console.log(`⏰ [DEV] Next backup approver check scheduled for: ${nextRun.toLocaleString()}`);
+        console.log(`⏰ Time until next run: ${Math.round(timeUntilRun / 1000 / 60)} minutes`);
+      } else {
+        console.log(`⏰ Next backup approver reversion scheduled for: ${nextRun.toLocaleString()}`);
+        console.log(`⏰ Time until next run: ${Math.round(timeUntilRun / 1000 / 60)} minutes`);
+      }
+
+      this.backupApproverScheduler = setTimeout(() => {
+        this.runBackupApproverCheck();
+        this.scheduleNextBackupApproverCheck(); // Schedule next day
+      }, timeUntilRun);
+
+    } catch (error) {
+      console.error('❌ Error scheduling backup approver check (will retry in 1 hour):', error);
+      
+      // Fallback: retry in 1 hour if scheduling fails
+      this.backupApproverScheduler = setTimeout(() => {
+        this.scheduleNextBackupApproverCheck();
+      }, 60 * 60 * 1000); // 1 hour
+    }
+  }
+
+  /**
+   * Run backup approver check with safety layers
+   */
+  private async runBackupApproverCheck(): Promise<void> {
+    const startTime = new Date();
+    const timestamp = startTime.toLocaleString('en-US', { 
+      timeZone: 'Asia/Manila', 
+      year: 'numeric', 
+      month: '2-digit', 
+      day: '2-digit', 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit', 
+      hour12: false 
+    });
+    
+    try {
+      console.log(`🔄 [${timestamp}] 12:01 AM - Checking expired backup approver configurations...`);
+
+      // SAFETY LAYER: Timeout protection
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Backup approver check timeout')), 5 * 60 * 1000) // 5 minutes max
+      );
+
+      const checkPromise = BackupApproverService.processExpiredBackupConfigurations();
+
+      const result = await Promise.race([checkPromise, timeoutPromise]);
+
+      const endTime = new Date();
+      const duration = endTime.getTime() - startTime.getTime();
+      const endTimestamp = endTime.toLocaleString('en-US', { 
+        timeZone: 'Asia/Manila', 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit', 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit', 
+        hour12: false 
+      });
+
+      console.log(`✅ [${endTimestamp}] Backup approver check completed in ${duration}ms:`, result);
+
+    } catch (error) {
+      const errorTime = new Date();
+      const errorTimestamp = errorTime.toLocaleString('en-US', { 
+        timeZone: 'Asia/Manila', 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit', 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit', 
+        hour12: false 
+      });
+      
+      console.error(`❌ [${errorTimestamp}] Backup approver check failed (system protected):`, error);
+      
+      // Log more diagnostic info
+      console.error(`❌ [${errorTimestamp}] Error details:`, {
+        name: (error as any)?.name,
+        message: (error as any)?.message,
+        cause: (error as any)?.cause,
+        stack: (error as any)?.stack?.split('\n').slice(0, 5).join('\n') // First 5 lines only
+      });
+    }
+  }
+
   private startHolidayScheduler(): void {
     const isDevelopment = process.env.NODE_ENV === 'development';
     
@@ -418,10 +565,10 @@ class SafeBackgroundServiceManager {
       const now = new Date();
       const nextMidnight = new Date(now);
       
-      // Set to 9:38 AM for testing
-      nextMidnight.setHours(16,45, 0, 0);
+      // Set to 12:00 AM (midnight)
+      nextMidnight.setHours(0, 0, 0, 0);
       
-      // If 3:25 PM already passed today, schedule for tomorrow
+      // If midnight already passed today, schedule for tomorrow
       if (nextMidnight < now) {
         nextMidnight.setDate(nextMidnight.getDate() + 1);
       }
@@ -431,7 +578,8 @@ class SafeBackgroundServiceManager {
       const isDevelopment = process.env.NODE_ENV === 'development';
       
       // Always log in development for debugging
-      console.log(`⏰ [${isDevelopment ? 'DEV' : 'PROD'}] Next holiday generation scheduled for: ${nextMidnight.toLocaleString()}`);
+      console.log(`⏰ [${isDevelopment ? 'DEV' : 'PROD'}] CURRENT TIME: ${now.toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`);
+      console.log(`⏰ [${isDevelopment ? 'DEV' : 'PROD'}] Next holiday generation scheduled for: ${nextMidnight.toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`);
       console.log(`⏰ Time until next holiday run: ${Math.round(timeUntilMidnight / 1000 / 60)} minutes`);
 
       this.holidayScheduler = setTimeout(() => {
@@ -554,6 +702,14 @@ class SafeBackgroundServiceManager {
         };
       }
 
+      // Check backup approver service
+      if (this.services.has('backup-approver')) {
+        status.services.backupApprover = {
+          status: this.backupApproverScheduler ? 'running' : 'stopped',
+          details: 'Processes expired backup approver configurations at 12:01 AM daily'
+        };
+      }
+
     } catch (error) {
       console.error('Error getting service status (system protected):', error);
       status.services.error = { status: 'error', details: 'Status check failed' };
@@ -588,6 +744,12 @@ class SafeBackgroundServiceManager {
         case 'auto-close':
           if (this.services.has('auto-close')) {
             return await safeSLAMonitoringService.manualTriggerAutoClose();
+          }
+          break;
+
+        case 'backup-approver':
+          if (this.services.has('backup-approver')) {
+            return await BackupApproverService.processExpiredBackupConfigurations();
           }
           break;
 
@@ -634,6 +796,13 @@ class SafeBackgroundServiceManager {
         clearTimeout(this.autoCloseScheduler);
         this.autoCloseScheduler = null;
         console.log('✅ Auto-close scheduler stopped');
+      }
+
+      // Stop backup approver scheduler
+      if (this.backupApproverScheduler) {
+        clearTimeout(this.backupApproverScheduler);
+        this.backupApproverScheduler = null;
+        console.log('✅ Backup approver scheduler stopped');
       }
 
       // Stop other services

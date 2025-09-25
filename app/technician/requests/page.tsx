@@ -329,6 +329,12 @@ export default function MyRequestsPage() {
   
   const [currentPage, setCurrentPage] = useState(1);
   
+  // Check if user came from dashboard with specific filters (hide filter controls)
+  const isDashboardFilter = searchParams?.get('assignedToCurrentUser') === 'true' ||
+                           searchParams?.get('assignedTechnicianId') ||
+                           searchParams?.get('filter') === 'overdue' ||
+                           searchParams?.get('filter') === 'due-today';
+  
   // Simple view mode: my assigned requests vs all requests
   const [viewMode, setViewMode] = useState<'assigned' | 'all'>('assigned');
 
@@ -337,6 +343,7 @@ export default function MyRequestsPage() {
     const urlStatus = searchParams?.get('status');
     const urlAssignedTechnicianId = searchParams?.get('assignedTechnicianId');
     const urlAssignedToCurrentUser = searchParams?.get('assignedToCurrentUser');
+    const urlFilter = searchParams?.get('filter');
     
     // Set status filter from URL
     if (urlStatus) {
@@ -345,6 +352,14 @@ export default function MyRequestsPage() {
         setStatusFilter('all');
       } else {
         setStatusFilter(urlStatus);
+      }
+    }
+
+    // Handle special filters (overdue, due-today)
+    if (urlFilter) {
+      if (urlFilter === 'overdue' || urlFilter === 'due-today') {
+        // These filters should show open requests, so set status accordingly
+        setStatusFilter('open');
       }
     }
   }, [searchParams]);
@@ -377,19 +392,23 @@ export default function MyRequestsPage() {
       if (viewMode === 'assigned') {
         // Get URL filtering parameters for technician-specific filtering
         const urlStatus = searchParams?.get('status');
+        const urlFilter = searchParams?.get('filter');
         const urlAssignedTechnicianId = searchParams?.get('assignedTechnicianId');
         const urlAssignedToCurrentUser = searchParams?.get('assignedToCurrentUser');
         
         if (urlStatus) {
           queryParams += `&status=${urlStatus}`;
         }
+        if (urlFilter) {
+          queryParams += `&filter=${urlFilter}`;
+        }
         if (urlAssignedTechnicianId) {
           queryParams += `&assignedTechnicianId=${urlAssignedTechnicianId}`;
         }
         if (urlAssignedToCurrentUser) {
           queryParams += `&assignedToCurrentUser=${urlAssignedToCurrentUser}`;
-        } else {
-          // Default to current user's assigned requests when in "assigned" mode
+        } else if (!urlAssignedTechnicianId) {
+          // Only default to current user's assigned requests when no specific technician is requested
           queryParams += `&assignedToCurrentUser=true`;
         }
       }
@@ -443,7 +462,9 @@ export default function MyRequestsPage() {
       (request.formData?.['8'] && request.formData['8'].toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
       (request.user && `${request.user.emp_fname} ${request.user.emp_lname}`.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
     
-    const matchesStatus = statusFilter === 'all' || request.status === statusFilter;
+    // Skip status filtering when we have special filters like 'overdue' from URL
+    const urlFilter = searchParams?.get('filter');
+    const matchesStatus = statusFilter === 'all' || urlFilter || request.status === statusFilter;
     
     // Check type filter - get type from formData[4] first, then fallback to request.type
     const requestType = (request.formData?.['4']?.toLowerCase() || request.type?.toLowerCase() || 'service');
@@ -454,7 +475,34 @@ export default function MyRequestsPage() {
     const { status: currentApprovalStatus } = getCurrentApprovalStatus(request.approvals);
     const matchesApprovalStatus = approvalStatusFilter === 'ALL' || currentApprovalStatus === approvalStatusFilter;
 
-    return matchesSearch && matchesStatus && matchesType && matchesApprovalStatus;
+    // Check special filters (overdue, due-today)
+    let matchesSpecialFilter = true;
+    
+    if (urlFilter && (urlFilter === 'overdue' || urlFilter === 'due-today')) {
+      // Only check for open/on_hold requests for these filters
+      if (request.status !== 'open' && request.status !== 'on_hold') {
+        matchesSpecialFilter = false;
+      } else if (request.formData?.slaDueDate) {
+        const dueDate = new Date(request.formData.slaDueDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        if (urlFilter === 'overdue') {
+          // Overdue: due date is before today
+          matchesSpecialFilter = dueDate < today;
+        } else if (urlFilter === 'due-today') {
+          // Due today: due date is today
+          matchesSpecialFilter = dueDate >= today && dueDate < tomorrow;
+        }
+      } else {
+        // If no due date, don't match these filters
+        matchesSpecialFilter = false;
+      }
+    }
+
+    return matchesSearch && matchesStatus && matchesType && matchesApprovalStatus && matchesSpecialFilter;
   });
 
   const getStatusIcon = (status: string) => {
@@ -550,103 +598,142 @@ export default function MyRequestsPage() {
                 {searchParams?.get('assignedToCurrentUser') === 'true' && (
                   <div className="bg-blue-100 border border-blue-400 text-blue-700 px-3 sm:px-4 py-2 sm:py-3 rounded text-sm">
                     <strong>Showing: My Assigned Requests</strong>
+                    <span className="ml-2 text-xs sm:text-sm"></span>
                     {searchParams.get('status') && (
                       <span className="ml-2 text-xs sm:text-sm">({searchParams.get('status')!.replace(',', ', ')})</span>
                     )}
                   </div>
                 )}
-                {searchParams?.get('assignedTechnicianId') && searchParams?.get('assignedToCurrentUser') !== 'true' && (
-                  <div className="bg-blue-100 border border-blue-400 text-blue-700 px-3 sm:px-4 py-2 sm:py-3 rounded text-sm">
-                    <strong>Showing: Requests assigned to {searchParams.get('technicianName') || `technician ID ${searchParams.get('assignedTechnicianId')}`}</strong>
+                {searchParams?.get('assignedTechnicianId') && searchParams?.get('technicianName') && (
+                  <div className="bg-green-100 border border-green-400 text-green-700 px-3 sm:px-4 py-2 sm:py-3 rounded text-sm">
+                    <strong>Showing: Requests assigned to {searchParams.get('technicianName')}</strong>
                     {searchParams.get('status') && (
                       <span className="ml-2 text-xs sm:text-sm">({searchParams.get('status')!.replace(',', ', ')})</span>
                     )}
+                    {searchParams.get('filter') === 'overdue' && (
+                      <span className="ml-2 text-xs sm:text-sm">(overdue requests)</span>
+                    )}
+                  </div>
+                )}
+                {searchParams?.get('filter') === 'overdue' && !searchParams?.get('assignedTechnicianId') && (
+                  <div className="bg-red-100 border border-red-400 text-red-700 px-3 sm:px-4 py-2 sm:py-3 rounded text-sm">
+                    <strong>🚨 Showing: All Overdue Requests</strong>
+                    <span className="ml-2 text-xs sm:text-sm">(requests past their due date)</span>
+                  </div>
+                )}
+                {searchParams?.get('filter') === 'due-today' && (
+                  <div className="bg-orange-100 border border-orange-400 text-orange-700 px-3 sm:px-4 py-2 sm:py-3 rounded text-sm">
+                    <strong>📅 Showing: Requests Due Today</strong>
+                    <span className="ml-2 text-xs sm:text-sm">(Open requests due today)</span>
                   </div>
                 )}
 
-                {/* Filters */}
-                <div className="flex-shrink-0">
-                  {/* Enhanced Filters */}
-                  <div className="flex flex-col gap-3">
-                    {/* View Mode Filters + Search Row */}
-                    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                      {/* View Mode Filters - Responsive */}
-                      <div className="flex items-center gap-2">
-                        <Filter className="h-4 w-4 text-gray-500" />
-                        <Select value={viewMode} onValueChange={(value: 'assigned' | 'all') => setViewMode(value)}>
-                          <SelectTrigger className="w-full sm:w-60 bg-white/50">
-                            <SelectValue />
+                {/* Filters - Hidden when coming from dashboard */}
+                {!isDashboardFilter && (
+                  <div className="flex-shrink-0">
+                    {/* Enhanced Filters */}
+                    <div className="flex flex-col gap-3">
+                      {/* View Mode Filters + Search Row */}
+                      <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                        {/* View Mode Filters - Responsive */}
+                        <div className="flex items-center gap-2">
+                          <Filter className="h-4 w-4 text-gray-500" />
+                          <Select value={viewMode} onValueChange={(value: 'assigned' | 'all') => setViewMode(value)}>
+                            <SelectTrigger className="w-full sm:w-60 bg-white/50">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="assigned">My Assigned Requests</SelectItem>
+                              <SelectItem value="all">All Requests</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        
+                        <div className="hidden sm:block w-px h-6 bg-gray-300 mx-1"></div>
+                        
+                        {/* Search Input */}
+                        <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                          <Input
+                            placeholder="Search requests..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onBlur={() => {
+                              // Trigger immediate search on blur if there's a difference
+                              if (searchTerm !== debouncedSearchTerm) {
+                                setDebouncedSearchTerm(searchTerm);
+                              }
+                            }}
+                            className="pl-10 bg-white/50"
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Other Filters - Mobile Responsive */}
+                      <div className="grid grid-cols-2 sm:flex gap-2">
+                        <Select value={statusFilter} onValueChange={setStatusFilter}>
+                          <SelectTrigger className="bg-white/50 text-sm">
+                            <SelectValue placeholder="Status" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="assigned">My Assigned Requests</SelectItem>
-                            <SelectItem value="all">All Requests</SelectItem>
+                            <SelectItem value="all">All Status</SelectItem>
+                            <SelectItem value="for_approval">For Approval</SelectItem>
+                            <SelectItem value="open">Open</SelectItem>
+                            <SelectItem value="on_hold">On Hold</SelectItem>
+                            <SelectItem value="resolved">Resolved</SelectItem>
+                            <SelectItem value="closed">Closed</SelectItem>
+                            <SelectItem value="cancelled">Cancelled</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        <Select value={typeFilter} onValueChange={setTypeFilter}>
+                          <SelectTrigger className="bg-white/50 text-sm">
+                            <SelectValue placeholder="Type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Types</SelectItem>
+                            <SelectItem value="service">Service</SelectItem>
+                            <SelectItem value="incident">Incident</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        <Select value={approvalStatusFilter} onValueChange={setApprovalStatusFilter}>
+                          <SelectTrigger className="col-span-2 sm:col-span-1 bg-white/50 text-sm">
+                            <SelectValue placeholder="Approval Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="ALL">All Approvals</SelectItem>
+                            <SelectItem value="pending_approval">Pending Approval</SelectItem>
+                            <SelectItem value="for_clarification">For Clarification</SelectItem>
+                            <SelectItem value="approved">Approved</SelectItem>
+                            <SelectItem value="rejected">Rejected</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
-                      
-                      <div className="hidden sm:block w-px h-6 bg-gray-300 mx-1"></div>
-                      
-                      {/* Search Input */}
-                      <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                        <Input
-                          placeholder="Search requests..."
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                          onBlur={() => {
-                            // Trigger immediate search on blur if there's a difference
-                            if (searchTerm !== debouncedSearchTerm) {
-                              setDebouncedSearchTerm(searchTerm);
-                            }
-                          }}
-                          className="pl-10 bg-white/50"
-                        />
-                      </div>
-                    </div>
-                    
-                    {/* Other Filters - Mobile Responsive */}
-                    <div className="grid grid-cols-2 sm:flex gap-2">
-                      <Select value={statusFilter} onValueChange={setStatusFilter}>
-                        <SelectTrigger className="bg-white/50 text-sm">
-                          <SelectValue placeholder="Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Status</SelectItem>
-                          <SelectItem value="for_approval">For Approval</SelectItem>
-                          <SelectItem value="open">Open</SelectItem>
-                          <SelectItem value="on_hold">On Hold</SelectItem>
-                          <SelectItem value="resolved">Resolved</SelectItem>
-                          <SelectItem value="closed">Closed</SelectItem>
-                          <SelectItem value="cancelled">Cancelled</SelectItem>
-                        </SelectContent>
-                      </Select>
-
-                      <Select value={typeFilter} onValueChange={setTypeFilter}>
-                        <SelectTrigger className="bg-white/50 text-sm">
-                          <SelectValue placeholder="Type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Types</SelectItem>
-                          <SelectItem value="service">Service</SelectItem>
-                          <SelectItem value="incident">Incident</SelectItem>
-                        </SelectContent>
-                      </Select>
-
-                      <Select value={approvalStatusFilter} onValueChange={setApprovalStatusFilter}>
-                        <SelectTrigger className="col-span-2 sm:col-span-1 bg-white/50 text-sm">
-                          <SelectValue placeholder="Approval Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ALL">All Approvals</SelectItem>
-                          <SelectItem value="pending_approval">Pending Approval</SelectItem>
-                          <SelectItem value="for_clarification">For Clarification</SelectItem>
-                          <SelectItem value="approved">Approved</SelectItem>
-                          <SelectItem value="rejected">Rejected</SelectItem>
-                        </SelectContent>
-                      </Select>
                     </div>
                   </div>
-                </div>
+                )}
+                
+                {/* Show search only when filters are hidden */}
+                {isDashboardFilter && (
+                  <div className="flex-shrink-0">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                      <Input
+                        placeholder="Search requests..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onBlur={() => {
+                          // Trigger immediate search on blur if there's a difference
+                          if (searchTerm !== debouncedSearchTerm) {
+                            setDebouncedSearchTerm(searchTerm);
+                          }
+                        }}
+                        className="pl-10 bg-white/50"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Requests Table - Fixed height to ensure scrolling */}
                 <div className="bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-lg overflow-hidden" 

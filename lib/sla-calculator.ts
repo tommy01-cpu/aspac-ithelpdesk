@@ -1005,3 +1005,24 @@ export async function getSLAStatus(
     remainingMinutes,
   };
 }
+
+/**
+ * Format a Date object for Philippine Time storage in database
+ * This ensures consistent timezone handling regardless of system timezone
+ */
+export function formatDateForPhilippineStorage(date: Date): string {
+  // Convert the date to Philippine time components
+  const phTimeString = date.toLocaleString('en-CA', { 
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit', 
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  
+  // Convert from "YYYY-MM-DD, HH:MM:SS" to "YYYY-MM-DD HH:MM:SS" format
+  return phTimeString.replace(', ', ' ');
+}

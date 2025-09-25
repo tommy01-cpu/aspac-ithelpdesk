@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { addHistory } from '@/lib/history';
-import { calculateSLADueDate, getOperationalHours } from '@/lib/sla-calculator';
+import { calculateSLADueDate, getOperationalHours, formatDateForPhilippineStorage } from '@/lib/sla-calculator';
 import { autoAssignTechnician } from '@/lib/load-balancer';
 
 // Temporary inline function to avoid import issues
@@ -239,21 +239,52 @@ export async function POST(request: NextRequest) {
       
       if ((requestDetails.formData as any)?.type === 'service') {
         // Service requests: Use the updatedAt time from when status was changed to "open" by approval action
-        // This ensures perfect synchronization between updatedAt and slaStartAt
-        slaStartAt = new Date(requestDetails.updatedAt);
-        console.log('📅 Service request - SLA starts from approval completion time (updatedAt):', slaStartAt.toISOString());
+        // CRITICAL FIX: Ensure we always work in Philippine time regardless of server timezone
+        const updatedAtUTC = new Date(requestDetails.updatedAt);
+        
+        // Convert to Philippine time: Create a new Date that represents the same moment in Philippine time
+        // This ensures SLA calculation always starts from the correct Philippine time
+        slaStartAt = new Date(updatedAtUTC.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+        console.log('📅 Service request - Original updatedAt (UTC):', updatedAtUTC.toISOString());
+        console.log('📅 Service request - SLA starts from (PH time):', slaStartAt.toISOString());
+        console.log('📅 Service request - SLA starts from (PH local):', slaStartAt.toLocaleString('en-PH', { timeZone: 'Asia/Manila' }));
       } else {
         // Incident requests: SLA starts now (when becoming "open")
-        slaStartAt = new Date();
-        console.log('📅 Incident request - SLA starts now:', slaStartAt.toISOString());
+        // CRITICAL FIX: Ensure we always use Philippine time regardless of server timezone
+        const nowUTC = new Date();
+        
+        // Convert to Philippine time: Create a new Date that represents current Philippine time
+        slaStartAt = new Date(nowUTC.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+        console.log('📅 Incident request - Server time (UTC):', nowUTC.toISOString());
+        console.log('📅 Incident request - SLA starts now (PH time):', slaStartAt.toISOString());
+        console.log('📅 Incident request - SLA starts now (PH local):', slaStartAt.toLocaleString('en-PH', { timeZone: 'Asia/Manila' }));
       }
       
-      const slaCalculationTime = new Date(); // Time when calculation was performed
+      // CRITICAL FIX: Ensure calculation time is also in Philippine time for consistency
+      const calculationTimeUTC = new Date();
+      const slaCalculationTime = new Date(calculationTimeUTC.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+      console.log('🕐 SLA calculation time (PH):', slaCalculationTime.toLocaleString('en-PH', { timeZone: 'Asia/Manila' }));
       
       console.log('⏰ SLA Hours:', slaHours);
       console.log('🔧 Use Operational Hours:', useOperationalHours);
       
+      // DEBUG: Check operational hours configuration
+      const opHours = await getOperationalHours();
+      if (opHours) {
+        console.log('🏢 Operational Hours Config:');
+        console.log('  - Working Time Type:', opHours.workingTimeType);
+        console.log('  - Standard Start:', opHours.standardStartTime);
+        console.log('  - Standard End:', opHours.standardEndTime);
+        console.log('  - Working Days Count:', opHours.workingDays?.length);
+      } else {
+        console.log('⚠️ No operational hours configuration found!');
+      }
+      
       // Calculate due date using SLA calculator with proper operational hours setting
+      console.log('🚀 TIMEZONE FIX: Calling calculateSLADueDate with Philippine time');
+      console.log('🚀 Input slaStartAt (PH):', slaStartAt.toLocaleString('en-PH', { timeZone: 'Asia/Manila' }));
+      console.log('🚀 Input slaHours:', slaHours);
+      
       const dueDate = await calculateSLADueDate(slaStartAt, slaHours, { 
         useOperationalHours: useOperationalHours ?? true // Use operational hours by default
       });
@@ -264,6 +295,13 @@ export async function POST(request: NextRequest) {
       }
       
       console.log('✅ Due Date calculated:', dueDate.toISOString());
+      console.log('✅ Due Date (Manila time):', dueDate.toLocaleString('en-PH', { timeZone: 'Asia/Manila' }));
+      
+      // CRITICAL VERIFICATION: Check if due date is within working hours
+      const dueDatePHTime = dueDate.toTimeString().slice(0, 5);
+      console.log('🔍 VERIFICATION: Due date time (24h):', dueDatePHTime);
+      console.log('🔍 VERIFICATION: Working hours 08:00-18:00, due time should be within this range');
+      console.log('🔍 VERIFICATION: Is due time valid?', dueDatePHTime >= '08:00' && dueDatePHTime <= '18:00');
       
       // Convert all dates to Philippine time format WITHOUT Z suffix for formData storage
       // Use the exact same timestamp for both slaStartAt display and database updatedAt
@@ -281,16 +319,8 @@ export async function POST(request: NextRequest) {
       console.log('🕐 SLA Start Time (ISO):', slaStartAt.toISOString());
       console.log('🕐 SLA Start Time (PH String):', slaStartAtPH);
 
-      const slaDueDatePH = new Date(dueDate).toLocaleString('en-PH', { 
-        timeZone: 'Asia/Manila',
-        year: 'numeric',
-        month: '2-digit', 
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      }).replace(/(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})/, '$3-$1-$2 $4:$5:$6');
+      // Use the new utility function for consistent due date formatting
+      const slaDueDatePH = formatDateForPhilippineStorage(dueDate);
 
       const slaCalculatedAtPH = new Date(slaCalculationTime).toLocaleString('en-PH', { 
         timeZone: 'Asia/Manila',
@@ -327,12 +357,13 @@ export async function POST(request: NextRequest) {
 
       // Update request with due date
       console.log('💾 Updating database with SLA data...');
-      console.log('🕐 SLA Start Time (UTC):', slaStartAt.toISOString());
+      console.log('🕐 SLA Start Time (PH):', slaStartAt.toISOString());
       console.log('🕐 FormData slaStartAt (PH String - no Z):', slaStartAtPH);
       console.log('🕐 FormData assignedDate (PH String - no Z):', assignedDatePH);
       
-      // Create Philippine time for database updatedAt (same approach as approval action)
-      const slaStartAtForDB = new Date(slaStartAt.getTime() + (8 * 60 * 60 * 1000));
+      // CRITICAL FIX: Since slaStartAt is now guaranteed to be in Philippine time,
+      // we can use it directly for the database updatedAt field
+      const slaStartAtForDB = slaStartAt;
       console.log('🕐 Database updatedAt (PH):', slaStartAtForDB.toISOString());
       
       // 🔍 DETAILED DEBUG: Values to be saved to database

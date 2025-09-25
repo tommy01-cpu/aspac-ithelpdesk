@@ -28,8 +28,15 @@ export async function GET(request: NextRequest) {
       requesterId: searchParams.get('requesterId'),
       departmentId: searchParams.get('departmentId'),
       priority: searchParams.get('priority'),
+      technicianId: searchParams.get('technicianId'),
       serviceCategoryId: searchParams.get('serviceCategoryId'),
       templateId: searchParams.get('templateId'),
+      createdTimeFrom: searchParams.get('createdTimeFrom'),
+      createdTimeTo: searchParams.get('createdTimeTo'),
+      dueByTimeFrom: searchParams.get('dueByTimeFrom'),
+      dueByTimeTo: searchParams.get('dueByTimeTo'),
+      resolvedTimeFrom: searchParams.get('resolvedTimeFrom'),
+      resolvedTimeTo: searchParams.get('resolvedTimeTo'),
       searchRequestId: searchParams.get('searchRequestId'),
       searchSubject: searchParams.get('searchSubject')
     });
@@ -296,9 +303,11 @@ export async function GET(request: NextRequest) {
       where.createdAt = {};
       if (createdTimeFrom) {
         where.createdAt.gte = new Date(createdTimeFrom);
+        console.log('Setting createdAt >= ', createdTimeFrom, ' (parsed: ', new Date(createdTimeFrom), ')');
       }
       if (createdTimeTo) {
         where.createdAt.lte = new Date(createdTimeTo);
+        console.log('Setting createdAt <= ', createdTimeTo, ' (parsed: ', new Date(createdTimeTo), ')');
       }
     }
 
@@ -327,7 +336,7 @@ export async function GET(request: NextRequest) {
     }
 
     // If user is not technician/admin, apply restrictions
-    if (!user?.technician && !(user?.technician?.isAdmin)) {
+    if (!user?.technician?.isActive) {
       // Check if user is department head of any departments
       const headOfDepartments = await safeQuery(async () => {
         return await prisma.department.findMany({
@@ -581,6 +590,54 @@ export async function GET(request: NextRequest) {
       filteredRequests = filteredRequests.filter(req => req.approvalStatus === approvalStatus);
     }
 
+    // Apply technician filtering if provided
+    if (technicianId) {
+      if (technicianId === 'unassigned') {
+        // Filter for requests with no assigned technician
+        filteredRequests = filteredRequests.filter(req => {
+          const techName = req.technician?.toString().toLowerCase().trim();
+          return !techName || techName === '' || techName === 'unassigned' || techName === 'null';
+        });
+      } else {
+        // We need to find the technician name for the given ID to match against stored data
+        const targetTechnicianId = parseInt(technicianId);
+        
+        // Get the technician's name from the database
+        const technician = await safeQuery(async () => {
+          return await prisma.users.findUnique({
+            where: { id: targetTechnicianId },
+            select: {
+              emp_fname: true,
+              emp_lname: true,
+              emp_code: true
+            }
+          });
+        });
+
+        if (technician) {
+          const technicianFullName = `${technician.emp_fname} ${technician.emp_lname}`.trim();
+          const technicianCode = technician.emp_code;
+          
+          // Filter requests where technician field matches any of the technician identifiers
+          filteredRequests = filteredRequests.filter(req => {
+            const techName = req.technician?.toString().toLowerCase().trim();
+            return techName && (
+              techName === technicianFullName.toLowerCase() ||
+              techName === technician.emp_fname?.toLowerCase() ||
+              techName === technician.emp_lname?.toLowerCase() ||
+              (technicianCode && techName === technicianCode.toLowerCase()) ||
+              // Also check if the technician field contains the full name
+              techName.includes(technicianFullName.toLowerCase()) ||
+              technicianFullName.toLowerCase().includes(techName)
+            );
+          });
+        } else {
+          // If technician not found, filter to show no results for this criteria
+          filteredRequests = [];
+        }
+      }
+    }
+
     if (serviceCategoryId) {
       filteredRequests = filteredRequests.filter(req => {
         // Find the request in the original requests array to get the templateId
@@ -599,6 +656,80 @@ export async function GET(request: NextRequest) {
         return req.template?.toLowerCase().includes(searchTemplate.toLowerCase()) ||
                req.requestType?.toLowerCase().includes(searchTemplate.toLowerCase()) ||
                req.serviceCategory?.toLowerCase().includes(searchTemplate.toLowerCase());
+      });
+    }
+
+    // Apply date filters for Due By Time - exclude N/A values when filtering is active
+    if (dueByTimeFrom || dueByTimeTo) {
+      filteredRequests = filteredRequests.filter(req => {
+        const dueByTime = req.dueByTime;
+        
+        // If there's no due by time (N/A), exclude it when date filter is active
+        if (!dueByTime || dueByTime === null) {
+          return false;
+        }
+        
+        const dueDate = new Date(dueByTime);
+        
+        // Check if the date is valid
+        if (isNaN(dueDate.getTime())) {
+          return false;
+        }
+        
+        // Apply from date filter
+        if (dueByTimeFrom) {
+          const fromDate = new Date(dueByTimeFrom);
+          if (dueDate < fromDate) {
+            return false;
+          }
+        }
+        
+        // Apply to date filter
+        if (dueByTimeTo) {
+          const toDate = new Date(dueByTimeTo + 'T23:59:59.999Z'); // End of day
+          if (dueDate > toDate) {
+            return false;
+          }
+        }
+        
+        return true;
+      });
+    }
+
+    // Apply date filters for Resolved Time - exclude N/A values when filtering is active
+    if (resolvedTimeFrom || resolvedTimeTo) {
+      filteredRequests = filteredRequests.filter(req => {
+        const resolvedTime = req.resolvedTime;
+        
+        // If there's no resolved time (N/A), exclude it when date filter is active
+        if (!resolvedTime || resolvedTime === null) {
+          return false;
+        }
+        
+        const resolvedDate = new Date(resolvedTime);
+        
+        // Check if the date is valid
+        if (isNaN(resolvedDate.getTime())) {
+          return false;
+        }
+        
+        // Apply from date filter
+        if (resolvedTimeFrom) {
+          const fromDate = new Date(resolvedTimeFrom);
+          if (resolvedDate < fromDate) {
+            return false;
+          }
+        }
+        
+        // Apply to date filter
+        if (resolvedTimeTo) {
+          const toDate = new Date(resolvedTimeTo + 'T23:59:59.999Z'); // End of day
+          if (resolvedDate > toDate) {
+            return false;
+          }
+        }
+        
+        return true;
       });
     }
 

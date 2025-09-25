@@ -14,6 +14,264 @@ if (process.env.NODE_ENV === 'development') {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 }
 
+// Helper function to get proper past tense for actions
+function getActionPastTense(action: string): string {
+  switch (action) {
+    case 'approve':
+      return 'Request approved';
+    case 'reject':
+      return 'Request rejected';
+    case 'clarification':
+      return 'Request clarification requested';
+    case 'acknowledge':
+      return 'Request acknowledged';
+    default:
+      return `Request ${action}d`;
+  }
+}
+
+// Helper function to check and progress workflow for auto-approved requests
+async function checkAndProgressWorkflow(requestId: number, currentLevel: number) {
+  try {
+    // Check if all approvals in the current level are complete
+    const levelApprovals = await prisma.requestApproval.findMany({
+      where: {
+        requestId: requestId,
+        level: currentLevel
+      }
+    });
+
+    // Check if all approvals in the current level are approved
+    const allLevelApproved = levelApprovals.every(app => app.status === ApprovalStatus.approved);
+    
+    if (allLevelApproved) {
+      // Create Philippine time
+      const now = new Date();
+      const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+
+      // Check if there are more levels
+      const nextLevelApprovals = await prisma.requestApproval.findMany({
+        where: {
+          requestId: requestId,
+          level: currentLevel + 1
+        }
+      });
+
+      if (nextLevelApprovals.length > 0) {
+        // Activate next level approvals
+        await prisma.requestApproval.updateMany({
+          where: {
+            requestId: requestId,
+            level: currentLevel + 1
+          },
+          data: {
+            status: ApprovalStatus.pending_approval,
+            sentOn: philippineTime,
+            updatedAt: philippineTime
+          }
+        });
+
+        // Add history for next level activation
+        await addHistory(prisma, {
+          requestId: requestId,
+          action: 'Next Level Activated',
+          actorName: 'System',
+          actorType: 'system',
+          details: `Level ${currentLevel + 1} approvals activated`,
+        });
+
+        // Send email notifications to next level approvers with filtering for auto-approvals
+        try {
+          const nextLevelApprovals = await prisma.requestApproval.findMany({
+            where: {
+              requestId: requestId,
+              level: currentLevel + 1,
+              status: ApprovalStatus.pending_approval
+            },
+            include: {
+              approver: {
+                select: {
+                  id: true,
+                  emp_fname: true,
+                  emp_lname: true,
+                  emp_email: true
+                }
+              }
+            }
+          });
+
+          const requestWithUser = await prisma.request.findUnique({
+            where: { id: requestId },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  emp_fname: true,
+                  emp_lname: true,
+                  emp_email: true
+                }
+              }
+            }
+          });
+
+          const templateData = await prisma.template.findUnique({
+            where: { id: parseInt(requestWithUser?.templateId || '0') }
+          });
+
+          // 🔍 PRE-CHECK: Identify which approvers will be auto-approved to avoid sending unnecessary emails
+          const lowerApproved = await prisma.requestApproval.findMany({
+            where: {
+              requestId: requestId,
+              level: { lt: currentLevel + 1 },
+              status: ApprovalStatus.approved,
+            },
+            select: { approverId: true, approverEmail: true }
+          });
+
+          const approvedEmailSet = new Set(
+            lowerApproved
+              .map(a => (a.approverEmail || '').toLowerCase())
+              .filter(e => !!e)
+          );
+          const approvedIdSet = new Set(
+            lowerApproved
+              .map(a => a.approverId)
+              .filter((id): id is number => typeof id === 'number')
+          );
+
+          // Filter out approvers who will be auto-approved (duplicates from previous levels)
+          const approversToNotify = nextLevelApprovals.filter(nextApproval => {
+            const email = (nextApproval.approverEmail || nextApproval.approver?.emp_email || '').toLowerCase();
+            const willBeAutoApproved = (email && approvedEmailSet.has(email)) || 
+                                     (nextApproval.approverId && approvedIdSet.has(nextApproval.approverId));
+            
+            if (willBeAutoApproved) {
+              console.log(`🤖 [checkAndProgressWorkflow] Skipping notification for ${nextApproval.approver?.emp_fname || 'Unknown'} ${nextApproval.approver?.emp_lname || ''} - will be auto-approved`);
+              return false;
+            }
+            return true;
+          });
+
+          // Send notification only to approvers who will NOT be auto-approved
+          for (const nextApproval of approversToNotify) {
+            if (nextApproval.approver && requestWithUser) {
+              await notifyApprovalRequired(requestWithUser, templateData, nextApproval.approver, nextApproval.id);
+              console.log(`✅ [checkAndProgressWorkflow] Approval notification sent to ${nextApproval.approver.emp_fname} ${nextApproval.approver.emp_lname}`);
+            }
+          }
+
+          console.log(`✅ [checkAndProgressWorkflow] Next level approver notifications sent successfully (${approversToNotify.length} notifications, ${nextLevelApprovals.length - approversToNotify.length} auto-approvals)`);
+
+          // Server-side auto-approve the duplicates
+          const duplicates = nextLevelApprovals.filter(a => {
+            const email = (a.approverEmail || a.approver?.emp_email || '').toLowerCase();
+            return (email && approvedEmailSet.has(email)) || (a.approverId && approvedIdSet.has(a.approverId));
+          });
+
+          if (duplicates.length > 0) {
+            const philippineTime = new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
+            await Promise.all(
+              duplicates.map(async (dup) => {
+                // Approve the duplicate
+                await prisma.requestApproval.update({
+                  where: { id: dup.id },
+                  data: {
+                    status: ApprovalStatus.approved,
+                    actedOn: philippineTime,
+                    updatedAt: philippineTime,
+                    comments: dup.comments || 'Auto approved by System since the approver has already approved in one of the previous levels.'
+                  }
+                });
+
+                // History entry reflecting system auto-approval
+                const approverName = dup.approver
+                  ? `${dup.approver.emp_fname} ${dup.approver.emp_lname}`
+                  : (dup.approverEmail || 'Approver');
+                await addHistory(prisma, {
+                  requestId: requestId,
+                  action: 'Approved',
+                  actorName: 'System',
+                  actorType: 'system',
+                  details: `Auto approved by System since the approver (${approverName}) has already approved in one of the previous levels.`,
+                });
+
+                console.log(`🤖 [checkAndProgressWorkflow] Auto-approved ${approverName} in Level ${currentLevel + 1}`);
+              })
+            );
+
+            // Check if after auto-approvals, we need to progress further
+            const refreshedNextLevel = await prisma.requestApproval.findMany({
+              where: { requestId: requestId, level: currentLevel + 1 },
+            });
+            const allNextApproved = refreshedNextLevel.length > 0 && refreshedNextLevel.every(a => a.status === ApprovalStatus.approved);
+
+            if (allNextApproved) {
+              // Recursively progress to next level if all are auto-approved
+              await checkAndProgressWorkflow(requestId, currentLevel + 1);
+            }
+          }
+        } catch (emailError) {
+          console.error('❌ Error sending next level notifications:', emailError);
+        }
+      } else {
+        // No more levels - check if ALL approvals are complete and finalize request
+        const allRequestApprovals = await prisma.requestApproval.findMany({
+          where: { requestId: requestId }
+        });
+
+        if (allRequestApprovals.every(app => app.status === ApprovalStatus.approved)) {
+          // All approvals complete - trigger request finalization
+          await finalizeApprovedRequest(requestId);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error in checkAndProgressWorkflow:', error);
+  }
+}
+
+// Helper function to finalize fully approved requests
+async function finalizeApprovedRequest(requestId: number) {
+  try {
+    const now = new Date();
+    const philippineTime = new Date(now.getTime() + (8 * 60 + 60 * 1000));
+
+    // Get request data
+    const request = await prisma.request.findUnique({
+      where: { id: requestId },
+      include: { user: true }
+    });
+
+    if (!request) return;
+
+    // Update request status to OPEN
+    await prisma.request.update({
+      where: { id: requestId },
+      data: { 
+        status: RequestStatus.open,
+        updatedAt: philippineTime,
+        formData: {
+          ...(request.formData as any || {}),
+          '5': 'approved'
+        }
+      }
+    });
+
+    // Add basic finalization history
+    await addHistory(prisma, {
+      requestId: requestId,
+      action: 'Request Approved',
+      actorName: 'System',
+      actorType: 'system',
+      details: 'All approvals completed - request ready for work',
+    });
+
+    console.log(`✅ Request ${requestId} finalized and set to OPEN`);
+  } catch (error) {
+    console.error('❌ Error finalizing request:', error);
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -133,7 +391,7 @@ export async function POST(request: NextRequest) {
         status: newApprovalStatus,
         actedOn: philippineTime,
         updatedAt: new Date(now.getTime() + (8 * 60 * 60 * 1000)), // Philippine time (+8 hours)
-        comments: comments ? `Request ${action}d by ${user.emp_fname} ${user.emp_lname} on ${philippineTimeString}${comments ? '. Comments: ' + comments : ''}` : `Request ${action}d by ${user.emp_fname} ${user.emp_lname} on ${philippineTimeString}`
+        comments: comments ? `${getActionPastTense(action)} by ${user.emp_fname} ${user.emp_lname} on ${philippineTimeString}${comments ? '. Comments: ' + comments : ''}` : `${getActionPastTense(action)} by ${user.emp_fname} ${user.emp_lname} on ${philippineTimeString}`
       }
     });
 
@@ -208,6 +466,82 @@ export async function POST(request: NextRequest) {
       }
 
     } else if (action === 'approve') {
+      // 🎯 AUTO-APPROVAL FEATURE: If approver approves one request in a level, 
+      // auto-approve all other pending requests in THE SAME LEVEL AND SAME REQUEST ONLY assigned to same approver
+      try {
+        console.log(`🔄 Checking for auto-approval opportunities for approver ${user.id} (${user.emp_fname} ${user.emp_lname}) in level ${approval.level} for REQUEST ${approval.requestId} ONLY`);
+        console.log(`🔍 Current approval details:`, {
+          approvalId: approvalId,
+          requestId: approval.requestId,
+          level: approval.level,
+          approverId: user.id,
+          approverEmail: user.emp_email
+        });
+        
+        // Find other pending approvals for the same approver in the EXACT SAME LEVEL AND SAME REQUEST ONLY
+        const otherPendingApprovals = await prisma.requestApproval.findMany({
+          where: {
+            approverId: user.id,
+            requestId: approval.requestId, // 🎯 CRITICAL: Only same request, not other requests
+            level: approval.level, // 🎯 CRITICAL: Only same level, not all levels
+            status: ApprovalStatus.pending_approval,
+            id: { not: parseInt(approvalId) }, // Exclude the current approval we just processed
+          },
+          include: {
+            request: {
+              select: {
+                id: true,
+                templateId: true,
+                user: {
+                  select: {
+                    emp_fname: true,
+                    emp_lname: true
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        console.log(`📋 Found ${otherPendingApprovals.length} other pending approvals for same approver in Level ${approval.level} within SAME REQUEST ${approval.requestId}:`);
+        otherPendingApprovals.forEach(pa => {
+          console.log(`   - Approval ${pa.id} for Request ${pa.requestId} (Level ${pa.level})`);
+        });
+
+        if (otherPendingApprovals.length > 0) {
+          console.log(`📋 Processing ${otherPendingApprovals.length} auto-approvals for same approver (${user.emp_fname} ${user.emp_lname}) in LEVEL ${approval.level} within REQUEST ${approval.requestId} ONLY...`);
+          
+          // Auto-approve all the other pending approvals within the same request
+          for (const otherApproval of otherPendingApprovals) {
+            await prisma.requestApproval.update({
+              where: { id: otherApproval.id },
+              data: {
+                status: ApprovalStatus.approved,
+                actedOn: philippineTime,
+                updatedAt: philippineTime,
+                comments: `Auto-approved by System because ${user.emp_fname} ${user.emp_lname} approved a similar request in the same level.`
+              }
+            });
+
+            // Add history entry for auto-approval
+            await addHistory(prisma, {
+              requestId: otherApproval.requestId,
+              action: 'Approved',
+              actorName: 'System',
+              actorType: 'system',
+              details: `Auto-approved by System because ${user.emp_fname} ${user.emp_lname} approved another approval in the same request at Level ${approval.level}.`,
+            });
+
+            console.log(`✅ Auto-approved approval ${otherApproval.id} in Level ${approval.level} within same request ${otherApproval.requestId}`);
+          }
+        } else {
+          console.log(`ℹ️ No other pending approvals found for approver ${user.id} (${user.emp_fname} ${user.emp_lname}) in Level ${approval.level} within request ${approval.requestId}`);
+        }
+      } catch (autoApprovalError) {
+        console.error('❌ Error during level-specific auto-approval process:', autoApprovalError);
+        // Don't fail the main approval if auto-approval fails
+      }
+
       // Helper to finalize request if all approvals are approved
       const finalizeIfAllApproved = async () => {
         const allApprovals = await prisma.requestApproval.findMany({ where: { requestId: approval.requestId } });
@@ -430,8 +764,42 @@ export async function POST(request: NextRequest) {
               where: { id: parseInt(requestWithUser?.templateId || '0') }
             });
 
-            // Send notification to each next level approver
-            for (const nextApproval of nextLevelApprovals) {
+            // 🔍 PRE-CHECK: Identify which approvers will be auto-approved to avoid sending unnecessary emails
+            const lowerApproved = await prisma.requestApproval.findMany({
+              where: {
+                requestId: approval.requestId,
+                level: { lt: approval.level + 1 },
+                status: ApprovalStatus.approved,
+              },
+              select: { approverId: true, approverEmail: true }
+            });
+
+            const approvedEmailSet = new Set(
+              lowerApproved
+                .map(a => (a.approverEmail || '').toLowerCase())
+                .filter(e => !!e)
+            );
+            const approvedIdSet = new Set(
+              lowerApproved
+                .map(a => a.approverId)
+                .filter((id): id is number => typeof id === 'number')
+            );
+
+            // Filter out approvers who will be auto-approved (duplicates from previous levels)
+            const approversToNotify = nextLevelApprovals.filter(nextApproval => {
+              const email = (nextApproval.approverEmail || nextApproval.approver?.emp_email || '').toLowerCase();
+              const willBeAutoApproved = (email && approvedEmailSet.has(email)) || 
+                                       (nextApproval.approverId && approvedIdSet.has(nextApproval.approverId));
+              
+              if (willBeAutoApproved) {
+                console.log(`🤖 Skipping notification for ${nextApproval.approver?.emp_fname || 'Unknown'} ${nextApproval.approver?.emp_lname || ''} - will be auto-approved`);
+                return false;
+              }
+              return true;
+            });
+
+            // Send notification only to approvers who will NOT be auto-approved
+            for (const nextApproval of approversToNotify) {
               if (nextApproval.approver && requestWithUser) {
                 await notifyApprovalRequired(
                   requestWithUser, 
@@ -443,7 +811,7 @@ export async function POST(request: NextRequest) {
               }
             }
 
-            console.log('✅ Next level approver notifications sent successfully');
+            console.log(`✅ Next level approver notifications sent successfully (${approversToNotify.length} notifications, ${nextLevelApprovals.length - approversToNotify.length} auto-approvals)`);
           } catch (emailError) {
             console.error('❌ Error sending next level approver notification:', emailError);
             // Don't fail the approval process for email issues
@@ -452,7 +820,7 @@ export async function POST(request: NextRequest) {
           // Server-side auto-approve ONLY the immediate next level duplicates:
           // If an approver in the next level already approved in any previous level, auto-approve their entry.
           try {
-            // Collect approvers who approved in lower levels
+            // Re-get the data for auto-approval (in case something changed)
             const lowerApproved = await prisma.requestApproval.findMany({
               where: {
                 requestId: approval.requestId,

@@ -7,6 +7,7 @@ import { getDatabaseTimestamp } from '@/lib/server-time-utils';
 import { addHistory } from '@/lib/history';
 import { calculateSLADueDate } from '@/lib/sla-calculator';
 import { notifyRequestCreated, notifyApprovalRequired, notifyRequestAssigned } from '@/lib/notifications';
+import { BackupApproverRoutingService } from '@/lib/backup-approver-routing-service';
 
 // Helper function to format timestamp for history display
 function formatTimestampForHistory(timestamp: Date | string): string {
@@ -40,6 +41,124 @@ const APPROVAL_STATUS = {
   REJECTED: 'rejected',
   APPROVED: 'approved',
 } as const;
+
+// Helper function to create approval with backup routing
+async function createApprovalWithRouting(
+  tx: any,
+  requestId: number,
+  originalApprovalData: {
+    level: number;
+    name: string;
+    approverId: number;
+    approverName: string;
+    approverEmail: string;
+    sentOn?: Date;
+    createdAt: Date;
+    status?: string;
+    isAutoApproval?: boolean;
+    comments?: string;
+    actedOn?: Date;
+  }
+): Promise<any> {
+  try {
+    // Check if there's an active backup approver for this approver
+    const backupConfig = await tx.backup_approvers.findFirst({
+      where: {
+        original_approver_id: originalApprovalData.approverId,
+        is_active: true,
+        start_date: { lte: new Date() },
+        end_date: { gte: new Date() }
+      },
+      include: {
+        original_approver: {
+          select: {
+            id: true,
+            emp_fname: true,
+            emp_lname: true,
+            emp_email: true
+          }
+        },
+        backup_approver: {
+          select: {
+            id: true,
+            emp_fname: true,
+            emp_lname: true,
+            emp_email: true
+          }
+        }
+      }
+    });
+
+    let finalApprovalData = originalApprovalData;
+    let isRouted = false;
+
+    // If backup approver exists, use backup approver for the approval
+    if (backupConfig) {
+      finalApprovalData = {
+        ...originalApprovalData,
+        approverId: backupConfig.backup_approver.id,
+        approverName: `${backupConfig.backup_approver.emp_fname} ${backupConfig.backup_approver.emp_lname}`,
+        approverEmail: backupConfig.backup_approver.emp_email
+      };
+      isRouted = true;
+      
+      console.log(`✅ Backup approver found: ${backupConfig.original_approver.emp_fname} ${backupConfig.original_approver.emp_lname} → ${backupConfig.backup_approver.emp_fname} ${backupConfig.backup_approver.emp_lname}`);
+    }
+
+    // Create the approval record
+    const createdApproval = await tx.requestApproval.create({
+      data: {
+        requestId,
+        ...finalApprovalData,
+      },
+    });
+
+    // If approval was routed to backup, add redirect info and diversion record
+    if (isRouted && backupConfig) {
+      // Create diversion record for tracking
+      await tx.approval_diversions.create({
+        data: {
+          request_id: requestId,
+          original_approver_id: originalApprovalData.approverId,
+          backup_approver_id: backupConfig.backup_approver.id,
+          backup_config_id: backupConfig.id,
+          diversion_type: 'automatic',
+          diverted_at: new Date()
+        }
+      });
+
+      console.log(`📝 Successfully routed approval for request ${requestId} to backup approver`);
+      
+      // Return approval with redirect information for later history creation
+      return {
+        ...createdApproval,
+        redirectInfo: {
+          originalApprover: {
+            id: originalApprovalData.approverId,
+            name: `${backupConfig.original_approver.emp_fname} ${backupConfig.original_approver.emp_lname}`
+          },
+          backupApprover: {
+            id: backupConfig.backup_approver.id,
+            name: `${backupConfig.backup_approver.emp_fname} ${backupConfig.backup_approver.emp_lname}`
+          },
+          level: originalApprovalData.level
+        }
+      };
+    }
+
+    return createdApproval;
+
+  } catch (error) {
+    console.error('Error creating approval with routing:', error);
+    // Fallback: create approval without routing to prevent blocking request creation
+    return await tx.requestApproval.create({
+      data: {
+        requestId,
+        ...originalApprovalData,
+      },
+    });
+  }
+}
 
 // Helper function to find an available technician for auto-assignment
 async function findAvailableTechnician(templateId: string, tx: any) {
@@ -744,22 +863,18 @@ export async function POST(request: Request) {
                 
                 // Create auto-approved record (using transaction)
                 if (actualApproverId) {
-                  await tx.requestApproval.create({
-                    data: {
-                      requestId: newRequest.id,
-                      level: levelNumber,
-                      name: level.displayName || `Level ${levelNumber}`,
-                      approverId: actualApproverId,
-                      approverName: approverName, // ✅ Add approver name 
-                      approverEmail: level.approver?.emp_email, // ✅ Add approver email
-                      status: APPROVAL_STATUS.APPROVED,
-                      isAutoApproval: true,
-                      comments: 'Automatically approved for incident request',
-                      sentOn: philippineTime,
-                      actedOn: philippineTime,
-                      createdAt: philippineTime,
-                      updatedAt: philippineTime,
-                    }
+                  await createApprovalWithRouting(tx, newRequest.id, {
+                    level: levelNumber,
+                    name: level.displayName || `Level ${levelNumber}`,
+                    approverId: actualApproverId,
+                    approverName: approverName,
+                    approverEmail: level.approver?.emp_email || '',
+                    status: APPROVAL_STATUS.APPROVED,
+                    isAutoApproval: true,
+                    comments: 'Automatically approved for incident request',
+                    sentOn: philippineTime,
+                    actedOn: philippineTime,
+                    createdAt: philippineTime,
                   });
                   console.log(`Auto-approved level ${levelNumber} for: ${approverName}`);
                 }
@@ -790,6 +905,13 @@ export async function POST(request: Request) {
           const templateLevels = approvalConfig.levels;
           console.log('📊 Template levels found:', templateLevels.length);
           
+          // Track redirect information for later history creation
+          const redirectInfos: Array<{
+            originalApprover: { id: number; name: string };
+            backupApprover: { id: number; name: string };
+            level: number;
+          }> = [];
+          
           templateLevels.forEach((level: any, index: number) => {
             console.log(`📌 Level ${index + 1} (${level.displayName || 'Unnamed'}):`, {
               approvers: level.approvers?.length || 0,
@@ -818,8 +940,16 @@ export async function POST(request: Request) {
             
             // For Level 1, prioritize selected approvers over template approvers
             if (levelNumber === 1) {
-              // Track approver IDs to avoid duplicates
+              // Track approver IDs to avoid duplicates (before backup routing)
               const processedApproverIds = new Set<number>();
+              // Track final approver IDs to avoid duplicate approvals after backup routing
+              const finalApproverIds = new Set<number>();
+              // Store consolidated approval data for final approvers
+              const consolidatedApprovals = new Map<number, {
+                approverData: any;
+                originalApprovers: string[];
+                redirectCount: number;
+              }>();
               
               // Check if we have selected approvers from form
               const hasSelectedApprovers = Array.isArray(additionalApprovers) && additionalApprovers.length > 0;
@@ -827,7 +957,7 @@ export async function POST(request: Request) {
               if (hasSelectedApprovers) {
                 console.log('✅ Using selected approvers for Level 1 (completely overriding template approvers)');
                 
-                // Use ONLY selected approvers for Level 1 - completely skip template approvers
+                // First pass: Process all selected approvers and determine final approvers after backup routing
                 for (const approverId of additionalApprovers) {
                   // Convert to number if needed
                   const numericApproverId = typeof approverId === 'string' ? parseInt(approverId) : approverId;
@@ -860,42 +990,112 @@ export async function POST(request: Request) {
                   });
                   
                   if (selectedApprover) {
-                    const createdSelected = await tx.requestApproval.create({
+                    const originalApproverName = `${selectedApprover.emp_fname} ${selectedApprover.emp_lname}`;
+                    
+                    // Check for backup routing for this approver
+                    const backupConfig = await BackupApproverRoutingService.getActiveBackupApprover(selectedApprover.id);
+
+                    let finalApproverId = selectedApprover.id;
+                    let finalApproverName = originalApproverName;
+                    let finalApproverEmail = selectedApprover.emp_email || '';
+                    let isRedirected = false;
+
+                    if (backupConfig.shouldRoute && backupConfig.backupApprover) {
+                      finalApproverId = backupConfig.backupApprover.id;
+                      finalApproverName = backupConfig.backupApprover.name;
+                      finalApproverEmail = backupConfig.backupApprover.email || '';
+                      isRedirected = true;
+                      
+                      console.log(`🔄 Backup routing: ${originalApproverName} → ${finalApproverName}`);
+                    }
+
+                    // Always create individual approval record (no consolidation)
+                    const createdApproval = await tx.requestApproval.create({
                       data: {
                         requestId: newRequest.id,
                         level: levelNumber,
                         name: level.displayName || `Level ${levelNumber}`,
-                        approverId: selectedApprover.id,
-                        approverName: `${selectedApprover.emp_fname} ${selectedApprover.emp_lname}`,
-                        approverEmail: selectedApprover.emp_email,
+                        approverId: finalApproverId,
+                        approverName: finalApproverName,
+                        approverEmail: finalApproverEmail,
                         status: APPROVAL_STATUS.PENDING_APPROVAL,
-                        sentOn: philippineTime, // ✅ Set sentOn since email is sent immediately for Level 1
+                        sentOn: philippineTime,
                         createdAt: philippineTime,
-                        updatedAt: philippineTime,
-                      }
+                      },
                     });
-                    levelApproverNames.push(`${selectedApprover.emp_fname} ${selectedApprover.emp_lname}`);
-                    console.log(`Created selected approver for level ${levelNumber}: ${selectedApprover.emp_fname} ${selectedApprover.emp_lname}`);
-                    
-                    // 📧 Send approval required notification
-                    try {
-                      if (requestUser) {
-                        const requestWithUser = {
-                          id: newRequest.id,
-                          status: newRequest.status,
-                          formData: newRequest.formData,
-                          user: requestUser
-                        };
-                        
-                        await notifyApprovalRequired(requestWithUser, template, selectedApprover, createdSelected.id);
-                        console.log(`✅ Approval notification sent to ${selectedApprover.emp_fname} ${selectedApprover.emp_lname}`);
-                      }
-                    } catch (notificationError) {
-                      console.error(`Error sending approval notification to ${selectedApprover.emp_fname} ${selectedApprover.emp_lname}:`, notificationError);
-                      // Don't fail the request creation if notification fails
+
+                    levelApproverNames.push(originalApproverName);
+                    console.log(`✅ Created individual approval: ${originalApproverName} → ${finalApproverName} (ID: ${createdApproval.id})`);
+
+                    // Track notification for this final approver (consolidate notifications only)
+                    if (consolidatedApprovals.has(finalApproverId)) {
+                      // Add this original approver to existing notification
+                      const existing = consolidatedApprovals.get(finalApproverId)!;
+                      existing.originalApprovers.push(originalApproverName);
+                      existing.redirectCount = isRedirected ? existing.redirectCount + 1 : existing.redirectCount;
+                      console.log(`� Will send ONE notification to ${finalApproverName} for ${existing.originalApprovers.length} approvals`);
+                    } else {
+                      // Track new notification needed
+                      consolidatedApprovals.set(finalApproverId, {
+                        approverData: {
+                          id: finalApproverId,
+                          name: finalApproverName,
+                          email: finalApproverEmail
+                        },
+                        originalApprovers: [originalApproverName],
+                        redirectCount: isRedirected ? 1 : 0
+                      });
+                      console.log(`📧 New notification needed for: ${finalApproverName}`);
+                    }
+
+                    // Store redirect info if redirected
+                    if (isRedirected) {
+                      redirectInfos.push({
+                        originalApprover: {
+                          id: selectedApprover.id,
+                          name: originalApproverName
+                        },
+                        backupApprover: {
+                          id: finalApproverId,
+                          name: finalApproverName
+                        },
+                        level: levelNumber
+                      });
                     }
                   } else {
                     console.warn(`Selected approver with ID ${numericApproverId} not found in database`);
+                  }
+                }
+
+                // Second pass: Send ONE notification per final approver (approvals already created individually)
+                for (const [finalApproverId, consolidationData] of Array.from(consolidatedApprovals.entries())) {
+                  const { approverData, originalApprovers } = consolidationData;
+                  
+                  console.log(`📧 Sending ONE notification to ${approverData.name} for ${originalApprovers.length} individual approvals: ${originalApprovers.join(', ')}`);
+                  
+                  // 📧 Send ONE approval required notification per final approver
+                  try {
+                    if (requestUser) {
+                      const requestWithUser = {
+                        id: newRequest.id,
+                        status: newRequest.status,
+                        formData: newRequest.formData,
+                        user: requestUser
+                      };
+                      
+                      const approverForNotification = {
+                        id: approverData.id,
+                        emp_fname: approverData.name.split(' ')[0] || '',
+                        emp_lname: approverData.name.split(' ').slice(1).join(' ') || '',
+                        emp_email: approverData.email
+                      };
+                      
+                      await notifyApprovalRequired(requestWithUser, template, approverForNotification, undefined);
+                      console.log(`✅ Single notification sent to ${approverData.name} (${approverData.email}) for ${originalApprovers.length} individual approvals`);
+                    }
+                  } catch (notificationError) {
+                    console.error(`Error sending consolidated notification:`, notificationError);
+                    // Don't fail the request creation if notification fails
                   }
                 }
                 
@@ -904,8 +1104,16 @@ export async function POST(request: Request) {
               } else {
                 console.log('📋 No selected approvers found, using template Level 1 approvers (excluding department_head)');
                 
+                // Track final approvers after backup routing for template approvers too
+                const templateConsolidatedApprovals = new Map<number, {
+                  approverData: any;
+                  originalApprovers: string[];
+                  redirectCount: number;
+                }>();
+                
                 // Use template approvers for Level 1 if no selected approvers, but skip department_head
                 if (level.approvers && level.approvers.length > 0) {
+                  // First pass: Process all template approvers and determine final approvers
                   for (const approver of level.approvers) {
                     console.log('Processing template approver:', approver);
                   
@@ -978,14 +1186,13 @@ export async function POST(request: Request) {
                       }
                     }
                   
-                  // Check for duplicates before creating
+                  // Check for duplicates and process backup routing
                   if (actualApproverId && !processedApproverIds.has(actualApproverId)) {
                     processedApproverIds.add(actualApproverId);
                     
-                    // Create Philippine time (server is already in Philippine timezone)
-                    const now = new Date();
-                    const philippineTime = now; // No conversion needed - server is already GMT+8
-                    
+                    // Check for backup routing for this template approver
+                    const backupConfig = await BackupApproverRoutingService.getActiveBackupApprover(actualApproverId);
+
                     // Get approver email for the database record (using transaction)
                     const approverUser = await tx.users.findUnique({
                       where: { id: actualApproverId },
@@ -995,68 +1202,115 @@ export async function POST(request: Request) {
                         emp_lname: true,
                       }
                     });
-                    
-                    const createdApprover = await tx.requestApproval.create({
+
+                    let finalApproverId = actualApproverId;
+                    let finalApproverName = approverName;
+                    let finalApproverEmail = approverUser?.emp_email || '';
+                    let isRedirected = false;
+
+                    if (backupConfig.shouldRoute && backupConfig.backupApprover) {
+                      finalApproverId = backupConfig.backupApprover.id;
+                      finalApproverName = backupConfig.backupApprover.name;
+                      finalApproverEmail = backupConfig.backupApprover.email || '';
+                      isRedirected = true;
+                      
+                      console.log(`🔄 Template backup routing: ${approverName} → ${finalApproverName}`);
+                    }
+
+                    // Always create individual approval record for template approvers too
+                    const createdApproval = await tx.requestApproval.create({
                       data: {
                         requestId: newRequest.id,
                         level: levelNumber,
                         name: level.displayName || `Level ${levelNumber}`,
-                        approverId: actualApproverId,
-                        approverName: approverName, // ✅ Add approver name to database
-                        approverEmail: approverUser?.emp_email, // ✅ Add approver email to database
+                        approverId: finalApproverId,
+                        approverName: finalApproverName,
+                        approverEmail: finalApproverEmail,
                         status: APPROVAL_STATUS.PENDING_APPROVAL,
-                        sentOn: philippineTime, // ✅ Set sentOn since email is sent immediately for Level 1
+                        sentOn: philippineTime,
                         createdAt: philippineTime,
-                        updatedAt: philippineTime,
-                      }
+                      },
                     });
+
                     levelApproverNames.push(approverName);
-                    console.log(`Created template approver for level ${levelNumber}: ${approverName}`);
-                    
-                    // 📧 Send approval required notification
-                    try {
-                      if (approverUser && requestUser) {
-                        const requestWithUser = {
-                          id: newRequest.id,
-                          status: newRequest.status,
-                          formData: newRequest.formData,
-                          user: requestUser
-                        };
-                        
-                        // Use the approverUser we already fetched above
-                        const fullApproverUser = {
+                    console.log(`✅ Created individual template approval: ${approverName} → ${finalApproverName} (ID: ${createdApproval.id})`);
+
+                    // Track notification for this final approver (consolidate notifications only)
+                    if (templateConsolidatedApprovals.has(finalApproverId)) {
+                      // Add this original approver to existing notification
+                      const existing = templateConsolidatedApprovals.get(finalApproverId)!;
+                      existing.originalApprovers.push(approverName);
+                      existing.redirectCount = isRedirected ? existing.redirectCount + 1 : existing.redirectCount;
+                      console.log(`� Template: Will send ONE notification to ${finalApproverName} for ${existing.originalApprovers.length} approvals`);
+                    } else {
+                      // Track new notification needed
+                      templateConsolidatedApprovals.set(finalApproverId, {
+                        approverData: {
+                          id: finalApproverId,
+                          name: finalApproverName,
+                          email: finalApproverEmail
+                        },
+                        originalApprovers: [approverName],
+                        redirectCount: isRedirected ? 1 : 0
+                      });
+                      console.log(`📧 Template: New notification needed for: ${finalApproverName}`);
+                    }
+
+                    // Store redirect info if redirected
+                    if (isRedirected) {
+                      redirectInfos.push({
+                        originalApprover: {
                           id: actualApproverId,
-                          emp_fname: approverUser.emp_fname,
-                          emp_lname: approverUser.emp_lname,
-                          emp_email: approverUser.emp_email,
-                        };
-                        
-                        await notifyApprovalRequired(requestWithUser, template, fullApproverUser, createdApprover.id);
-                        console.log(`✅ Approval notification sent to ${approverName}`);
-                      }
-                    } catch (notificationError) {
-                      console.error(`Error sending approval notification to ${approverName}:`, notificationError);
-                      // Don't fail the request creation if notification fails
+                          name: approverName
+                        },
+                        backupApprover: {
+                          id: finalApproverId,
+                          name: finalApproverName
+                        },
+                        level: levelNumber
+                      });
                     }
                   } else {
                     console.log(`⚠️ Skipping duplicate template approver ID: ${actualApproverId}`);
                   }
                 }
+
+                // Second pass: Send ONE notification per final template approver (approvals already created individually)
+                for (const [finalApproverId, consolidationData] of Array.from(templateConsolidatedApprovals.entries())) {
+                  const { approverData, originalApprovers } = consolidationData;
+                  
+                  console.log(`📧 Sending ONE template notification to ${approverData.name} for ${originalApprovers.length} individual approvals: ${originalApprovers.join(', ')}`);
+                  
+                  // 📧 Send ONE approval required notification per final approver
+                  try {
+                    if (approverData && requestUser) {
+                      const requestWithUser = {
+                        id: newRequest.id,
+                        status: newRequest.status,
+                        formData: newRequest.formData,
+                        user: requestUser
+                      };
+                      
+                      const approverForNotification = {
+                        id: approverData.id,
+                        emp_fname: approverData.name.split(' ')[0] || '',
+                        emp_lname: approverData.name.split(' ').slice(1).join(' ') || '',
+                        emp_email: approverData.email
+                      };
+                      
+                      await notifyApprovalRequired(requestWithUser, template, approverForNotification, undefined);
+                      console.log(`✅ Single template notification sent to ${approverData.name} (${approverData.email}) for ${originalApprovers.length} individual approvals`);
+                    }
+                  } catch (notificationError) {
+                    console.error(`Error sending consolidated template notification:`, notificationError);
+                    // Don't fail the request creation if notification fails
+                  }
+                }
               }
-            }
               
-              // 📧 STANDARD HISTORY ENTRY 2: Approvals Initiated - Level 1 (Priority 2)
-              if (levelApproverNames.length > 0) {
-                await addHistory(tx as any, {
-                  requestId: newRequest.id,
-                  action: "Approvals Initiated",
-                  actorName: "System",
-                  actorType: "system",
-                  details: `Approver(s) : ${levelApproverNames.join(', ')}\nLevel : ${level.displayName || `Level ${levelNumber}`}`,
-                });
-                console.log(`✅ Created history entry: Approvals Initiated - Level ${levelNumber}`);
-              }
-            } else if (levelNumber > 1) {
+              // Level 1 processing complete - history will be created at end of level
+            }
+          } else if (levelNumber > 1) {
               // ⚠️ IMPORTANT: For levels > 1, create approval records in "dormant" state
               // These levels should NOT receive email notifications during request creation
               // They will be activated (and emails sent) when previous level completes
@@ -1171,21 +1425,23 @@ export async function POST(request: Request) {
                       approverName = `${approverUser.emp_fname} ${approverUser.emp_lname}`;
                     }
                     
-                    const createdOther = await tx.requestApproval.create({
-                      data: {
-                        requestId: newRequest.id,
-                        level: levelNumber,
-                        name: level.displayName || `Level ${levelNumber}`,
-                        approverId: actualApproverId,
-                        approverName: approverName, // ✅ Add approver name to database
-                        approverEmail: approverUser?.emp_email, // ✅ Add approver email to database
-                        status: APPROVAL_STATUS.PENDING_APPROVAL,
-                        createdAt: philippineTime, // ✅ Use the same philippineTime as request creation
-                        updatedAt: philippineTime, // ✅ Use the same philippineTime as request creation
-                        // 🔑 Key: Do NOT set sentOn field for dormant levels
-                        // sentOn will be set when the level is activated by approval action
-                      }
+                    const createdOther = await createApprovalWithRouting(tx, newRequest.id, {
+                      level: levelNumber,
+                      name: level.displayName || `Level ${levelNumber}`,
+                      approverId: actualApproverId,
+                      approverName: approverName,
+                      approverEmail: approverUser?.emp_email || '',
+                      status: APPROVAL_STATUS.PENDING_APPROVAL,
+                      createdAt: philippineTime,
+                      // Key: Do NOT set sentOn field for dormant levels
+                      // sentOn will be set when the level is activated by approval action
                     });
+                    
+                    // Collect redirect information for later history creation
+                    if (createdOther.redirectInfo) {
+                      redirectInfos.push(createdOther.redirectInfo);
+                    }
+                    
                     console.log(`Created template approver for level ${levelNumber}: ${approverName}`);
                     
                     // � DO NOT send email notifications for levels > 1 during request creation
@@ -1201,6 +1457,36 @@ export async function POST(request: Request) {
                 }
               }
             }
+
+            // 📧 CREATE "Approvals Initiated" HISTORY ENTRY ONLY FOR LEVEL 1
+            // Level 2+ will get "Next Level Activated" entries that transform to "Approvals Initiated" in the UI
+            if (levelApproverNames.length > 0 && levelNumber === 1) {
+              await addHistory(tx as any, {
+                requestId: newRequest.id,
+                action: "Approvals Initiated",
+                actorName: "System",
+                actorType: "system",
+                details: `Approver(s) : ${levelApproverNames.join(', ')}\nLevel : ${level.displayName || `Level ${levelNumber}`}`,
+              });
+              console.log(`✅ Created "Approvals Initiated" history entry for Level ${levelNumber}`);
+            } else if (levelNumber === 1) {
+              console.log(`⚠️ No approvers found for Level ${levelNumber} - skipping "Approvals Initiated" history entry`);
+            } else {
+              console.log(`ℹ️ Skipping "Approvals Initiated" history entry for Level ${levelNumber} - will be created as "Next Level Activated" when level activates`);
+            }
+          }
+          
+          // 📧 CREATE REDIRECT HISTORY ENTRIES FOR ALL LEVELS
+          // Create simplified redirect history entries for all levels that had backup routing
+          for (const redirectInfo of redirectInfos) {
+            await addHistory(tx as any, {
+              requestId: newRequest.id,
+              action: "Approval Redirected",
+              actorName: "System",
+              actorType: "system",
+              details: `Level ${redirectInfo.level} approval redirected from ${redirectInfo.originalApprover.name} to ${redirectInfo.backupApprover.name}`,
+            });
+            console.log(`✅ Created redirect history entry for Level ${redirectInfo.level}: ${redirectInfo.originalApprover.name} → ${redirectInfo.backupApprover.name}`);
           }
           
           // Do not create automatic history entries - only user actions should be logged

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth';
+import { Prisma } from '@prisma/client';
 
 export async function GET(request: Request) {
   try {
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
     const skip = (page - 1) * limit;
     
     // Get filtering parameters
-    const statusFilter = searchParams.get('status');
+    const statusFilter = searchParams.get('status') || searchParams.get('filter');
     const assignedTechnicianId = searchParams.get('assignedTechnicianId');
     const assignedToCurrentUser = searchParams.get('assignedToCurrentUser');
     const departmentId = searchParams.get('departmentId');
@@ -48,13 +49,14 @@ export async function GET(request: Request) {
     const approvalFilter = searchParams.get('approvals');
     const searchTerm = searchParams.get('search');
 
-    console.log('Filtering parameters:', {
+    console.log('🔍 DEBUG: Filtering parameters:', {
       statusFilter,
       assignedTechnicianId,
       assignedToCurrentUser,
       departmentId,
       departmentHead,
-      approvalFilter
+      approvalFilter,
+      searchTerm
     });
 
     // Get current user's technician record
@@ -75,25 +77,127 @@ export async function GET(request: Request) {
     // Get the current user ID (this is what's stored in assignedTechnicianId)
     const currentUserId = parseInt(session.user.id);
 
-    // Build the where clause for filtering
-    let whereClause: any = {};
+    // Build the where clause for filtering - use conditions array like dashboard
+    const conditions: any[] = [];
     
     // Status filtering
     if (statusFilter) {
-      if (statusFilter.includes(',')) {
+      if (statusFilter === 'overdue') {
+        // Handle overdue requests - use exact same logic as dashboard
+        conditions.push({
+          status: {
+            in: ['open', 'on_hold'] // Only consider active statuses as potentially overdue
+          }
+        });
+        
+        conditions.push({
+          // Check for overdue based on SLA due date - same as dashboard
+          formData: {
+            path: ['slaDueDate'],
+            lt: new Date().toISOString()
+          }
+        });
+      } else if (statusFilter.includes(',')) {
         // Multiple statuses
-        const statuses = statusFilter.split(',').map(s => s.trim());
-        whereClause.status = { in: statuses };
+        const statuses = statusFilter.split(',').map(s => s.trim()).filter(s => s !== 'overdue');
+        if (statuses.length > 0) {
+          conditions.push({ status: { in: statuses } });
+        }
       } else {
-        whereClause.status = statusFilter;
+        conditions.push({ status: statusFilter });
       }
+    }
+    
+    // Technician assignment filtering - use same logic as dashboard
+    if (assignedToCurrentUser === 'true') {
+      // Filter by current user's ID
+      conditions.push({
+        OR: [
+          {
+            formData: {
+              path: ['assignedTechnicianId'],
+              equals: currentUserId
+            }
+          },
+          {
+            formData: {
+              path: ['assignedTechnicianId'],
+              equals: currentUserId.toString()
+            }
+          }
+        ]
+      });
+    } else if (assignedTechnicianId && assignedTechnicianId !== 'unassigned') {
+      // Filter by specific technician - use same logic as dashboard
+      const techId = parseInt(assignedTechnicianId);
+      
+      // Get technician name for the OR condition
+      const technician = await prisma.technician.findFirst({
+        where: { userId: techId, isActive: true },
+        include: { user: true }
+      });
+      
+      const techName = technician ? 
+        (technician.displayName || `${technician.user.emp_fname} ${technician.user.emp_lname}`.trim()) : 
+        '';
+      
+      conditions.push({
+        OR: [
+          {
+            formData: {
+              path: ['assignedTechnicianId'],
+              equals: techId
+            }
+          },
+          {
+            formData: {
+              path: ['assignedTechnicianId'],
+              equals: techId.toString()
+            }
+          },
+          ...(techName ? [{
+            formData: {
+              path: ['assignedTechnician'],
+              equals: techName
+            }
+          }] : [])
+        ]
+      });
+    } else if (assignedTechnicianId === 'unassigned') {
+      // Filter for unassigned requests
+      conditions.push({
+        OR: [
+          {
+            formData: {
+              path: ['assignedTechnicianId'],
+              equals: null
+            }
+          },
+          {
+            formData: {
+              path: ['assignedTechnician'],
+              equals: null
+            }
+          },
+          {
+            NOT: {
+              formData: {
+                path: ['assignedTechnicianId'],
+                not: Prisma.JsonNull
+              }
+            }
+          }
+        ]
+      });
     }
     
     // Department filtering (for "All Requests" view)
     if (departmentId && departmentId !== 'all') {
-      whereClause.user = {
-        department: departmentId
-      };
+      conditions.push({
+        user: {
+          department: departmentId
+        }
+      });
     } else if (departmentHead && departmentHead !== 'all') {
       // Get all departments managed by this department head
       const managedDepartments = await prisma.users.findUnique({
@@ -107,65 +211,22 @@ export async function GET(request: Request) {
       
       if (managedDepartments?.departmentsManaged?.length) {
         const deptIds = managedDepartments.departmentsManaged.map(d => d.id);
-        whereClause.user = {
-          department: { in: deptIds }
-        };
+        conditions.push({
+          user: {
+            department: { in: deptIds }
+          }
+        });
       }
     }
     
-    // Technician assignment filtering (for "Technician Assigned" view)
-    else if (assignedToCurrentUser === 'true') {
-      // Filter by current user's ID (not technician record ID)
-      whereClause.OR = [
-        {
-          formData: {
-            path: ['assignedTechnicianId'],
-            equals: currentUserId
-          }
-        },
-        {
-          formData: {
-            path: ['assignedTechnicianId'],
-            equals: currentUserId.toString()
-          }
-        }
-      ];
-    } else if (assignedTechnicianId && assignedTechnicianId !== 'unassigned') {
-      // Filter by specific technician ID
-      const techId = parseInt(assignedTechnicianId);
-      whereClause.OR = [
-        {
-          formData: {
-            path: ['assignedTechnicianId'],
-            equals: techId
-          }
-        },
-        {
-          formData: {
-            path: ['assignedTechnicianId'],
-            equals: techId.toString()
-          }
-        }
-      ];
-    } else if (assignedTechnicianId === 'unassigned') {
-      // Filter for unassigned requests
-      whereClause.OR = [
-        {
-          formData: {
-            path: ['assignedTechnicianId'],
-            equals: null
-          }
-        },
-        {
-          NOT: {
-            formData: {
-              path: ['assignedTechnicianId'],
-              not: null
-            }
-          }
-        }
-      ];
+    // Combine all conditions using AND
+    let whereClause: any = {};
+    if (conditions.length > 0) {
+      whereClause.AND = conditions;
     }
+
+    console.log('🔍 DEBUG: Final whereClause:', JSON.stringify(whereClause, null, 2));
+    console.log('🔍 DEBUG: Conditions array:', JSON.stringify(conditions, null, 2));
 
     // Add search functionality
     if (searchTerm) {
@@ -208,6 +269,8 @@ export async function GET(request: Request) {
 
     console.log('Where clause:', JSON.stringify(whereClause, null, 2));
 
+    console.log('🔍 DEBUG: About to execute query...');
+
     // Get requests with all data for front-end filtering
     const requests = await prisma.request.findMany({
       where: whereClause,
@@ -247,6 +310,14 @@ export async function GET(request: Request) {
       },
       take: 100, // Get more records for front-end filtering
     });
+
+    console.log('🔍 DEBUG: Raw requests found:', requests.length);
+    console.log('🔍 DEBUG: First request (if any):', requests[0] ? {
+      id: requests[0].id,
+      status: requests[0].status,
+      assignedTechId: (requests[0].formData as any)?.assignedTechnicianId,
+      slaDueDate: (requests[0].formData as any)?.slaDueDate
+    } : 'No requests');
 
     // Enhance requests with template information
     const enhancedRequests = await Promise.all(

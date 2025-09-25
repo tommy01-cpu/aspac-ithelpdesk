@@ -360,8 +360,10 @@ export default function Home() {
   };
 
   // Fetch notifications when panel opens
-  const handleSignOut = () => {
-    signOut({ callbackUrl: '/login' });
+  const handleSignOut = async () => {
+    await signOut({ redirect: false });
+    // Manually redirect to clean login URL
+    window.location.href = '/login';
   };
 
   return (
@@ -383,7 +385,7 @@ export default function Home() {
       `}</style>
       <div className="bg-white w-full min-h-screen">
         {/* Hero Section */}
-        <section className="relative h-[35vh] sm:h-[40vh] md:h-[45vh]">
+        <section className="relative h-[50vh] sm:h-[55vh] md:h-[60vh]">
           {/* Gradient Background as fallback */}
           <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-700 to-slate-900"></div>
           

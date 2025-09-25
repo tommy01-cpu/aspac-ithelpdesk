@@ -19,7 +19,9 @@ import {
   Paperclip,
   Download,
   Settings,
-  UserCheck
+  UserCheck,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -185,6 +187,8 @@ export default function ApprovalDetailsPage() {
   const [conversationLoading, setConversationLoading] = useState<{[approvalId: string]: boolean}>({});
   const [expandedApprovals, setExpandedApprovals] = useState<{[approvalId: string]: boolean}>({});
   const [viewedConversations, setViewedConversations] = useState<{[approvalId: string]: boolean}>({});
+  const [expandedLevels, setExpandedLevels] = useState<{[levelId: string]: boolean}>({});
+  const [expandedConversations, setExpandedConversations] = useState<boolean>(false);
   const [showClarificationModal, setShowClarificationModal] = useState(false);
   const [clarificationMessage, setClarificationMessage] = useState('');
   const [showApprovalModal, setShowApprovalModal] = useState(false);
@@ -619,6 +623,17 @@ export default function ApprovalDetailsPage() {
     router.push(`/requests/approvals/${approval.requestId}`);
   };
 
+  const toggleApprovalLevel = (levelId: string) => {
+    setExpandedLevels(prev => ({
+      ...prev,
+      [levelId]: !prev[levelId]
+    }));
+  };
+
+  const toggleConversationsSection = () => {
+    setExpandedConversations(prev => !prev);
+  };
+
   const filteredApprovals = pendingApprovals
     .filter(approval =>
       approval.requestTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -654,15 +669,23 @@ export default function ApprovalDetailsPage() {
         throw new Error(errorData.error || 'Failed to send clarification request');
       }
 
-      toast({
-        title: "Clarification Requested",
-        description: "Your clarification request has been sent to the requester",
-        variant: "default",
-        className: "border-green-200 bg-green-50 text-green-800",
-      });
+      // Close the modal first
+      setShowClarificationModal(false);
+      setClarificationMessage('');
 
       // Navigate to the first pending approval or back to approvals list if none
       await redirectToFirstPendingApproval();
+
+      // Show success toast after navigation
+      setTimeout(() => {
+        toast({
+          title: "Clarification Requested",
+          description: "Your clarification request has been sent to the requester",
+          variant: "default",
+          className: "border-green-200 bg-green-50 text-green-800",
+        });
+      }, 100);
+
       return;
       
     } catch (error) {
@@ -1583,7 +1606,7 @@ export default function ApprovalDetailsPage() {
                     </CardContent>
                   </Card>
 
-                  {/* Approval Levels Status - Show only current user's level and previous levels */}
+                  {/* Approval Levels Status - Simple one-line view */}
                   {allApprovals.length > 0 && (
                     <Card>
                       <CardHeader>
@@ -1593,7 +1616,7 @@ export default function ApprovalDetailsPage() {
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="space-y-3 sm:space-y-4">
+                        <div className="space-y-2">
                           {(() => {
                             // Find current user's approval level
                             const currentUserApprovals = allApprovals.filter((approval: any) => 
@@ -1625,129 +1648,113 @@ export default function ApprovalDetailsPage() {
                             // Get all unique levels and sort them
                             const allLevels = Object.keys(approvalsByLevel).sort((a, b) => parseInt(a) - parseInt(b));
 
-                            // Filter to show only current user's level and previous levels
-                            const levelsToShow = allLevels.filter(level => parseInt(level) <= currentUserLevel);
-
-                            return levelsToShow.map((level) => {
-                              const levelApprovals = approvalsByLevel[parseInt(level)];
-                              const levelName = levelApprovals[0]?.name || `Level ${level}`;
-                              const isCurrentUserLevel = parseInt(level) === currentUserLevel;
+                            // Only show levels that should be visible based on workflow state
+                            const levelsToShow = allLevels.filter(level => {
+                              const currentLevelNum = parseInt(level);
                               
-                              // Determine level status based on all approvals in this level
-                              const hasApproved = levelApprovals.some((app: any) => normalizeStatus(app.status) === 'approved');
-                              const hasPending = levelApprovals.some((app: any) => {
-                                const st = normalizeStatus(app.status);
-                                return st === 'pending approval' || st === 'for clarification' || st === 'pending clarification';
-                              });
-                              const hasRejected = levelApprovals.some((app: any) => normalizeStatus(app.status) === 'rejected');
-                              const allApproved = levelApprovals.every((app: any) => normalizeStatus(app.status) === 'approved');
-                              
-                              // Check if all previous levels are approved
-                              const currentLevelNumber = parseInt(level);
-                              const previousLevels = levelsToShow.filter(l => parseInt(l) < currentLevelNumber);
-                              const allPreviousLevelsApproved = previousLevels.every(prevLevel => {
-                                const prevLevelApprovals = approvalsByLevel[parseInt(prevLevel)];
-                                return prevLevelApprovals.every((app: any) => normalizeStatus(app.status) === 'approved');
-                              });
-                              
-                              // Determine the level status
-                              let levelStatus = '';
-                              let levelBadgeColor = '';
-                              
-                              if (hasRejected) {
-                                levelStatus = 'Rejected';
-                                levelBadgeColor = 'bg-red-100 text-red-800 border-red-200';
-                              } else if (allApproved) {
-                                levelStatus = 'Approved';
-                                levelBadgeColor = 'bg-green-100 text-green-800 border-green-200';
-                              } else if (hasPending && allPreviousLevelsApproved) {
-                                levelStatus = 'In Progress';
-                                levelBadgeColor = 'bg-blue-100 text-blue-800 border-blue-200';
-                              } else if (hasPending && !allPreviousLevelsApproved) {
-                                levelStatus = 'Waiting';
-                                levelBadgeColor = 'bg-gray-100 text-gray-600 border-gray-200';
-                              } else {
-                                levelStatus = 'Pending';
-                                levelBadgeColor = 'bg-gray-100 text-gray-600 border-gray-200';
+                              // Always show level 1
+                              if (currentLevelNum === 1) {
+                                return true;
                               }
+                              
+                              // For higher levels, only show if all previous levels are fully approved
+                              for (let i = 1; i < currentLevelNum; i++) {
+                                const prevLevelApprovals = approvalsByLevel[i];
+                                if (!prevLevelApprovals || !prevLevelApprovals.every((app: any) => normalizeStatus(app.status) === 'approved')) {
+                                  return false;
+                                }
+                              }
+                              
+                              // Only show this level if user has approvals in it, or if it's the next active level
+                              const userHasApprovalsInLevel = allApprovals.some((app: any) => 
+                                app.level === currentLevelNum && 
+                                session?.user?.email && 
+                                app.approverEmail === session.user.email
+                              );
+                              
+                              return userHasApprovalsInLevel || currentLevelNum <= currentUserLevel;
+                            });
+
+                            // Flatten all approvals for simple display
+                            const allRelevantApprovals = levelsToShow.flatMap(level => {
+                              const levelApprovals = approvalsByLevel[parseInt(level)];
+                              return levelApprovals.map((approval: any) => ({ ...approval, levelNum: parseInt(level) }));
+                            });
+
+                            return allRelevantApprovals.map((approval: any) => {
+                              const approverName = (() => {
+                                if (approval.approver) {
+                                  return `${approval.approver.emp_fname} ${approval.approver.emp_lname}`;
+                                }
+                                return approval.approverName || approval.approverEmail || 'Unknown Approver';
+                              })();
+                              
+                              const status = normalizeStatus(approval.status);
+                              const hasComment = approval.comments && approval.comments.trim();
+                              const approvalId = `approval-${approval.id}`;
+                              const isCommentExpanded = expandedApprovals[approvalId];
 
                               return (
-                                <div key={level} className={`border rounded-lg p-3 sm:p-4 ${isCurrentUserLevel ? 'bg-blue-50 border-blue-200' : 'bg-white'}`}>
-                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-                                    <div className="flex items-center gap-3">
-                                      <div className={`w-8 h-8 ${isCurrentUserLevel ? 'bg-blue-500 text-white' : 'bg-blue-100 text-blue-600'} rounded-full flex items-center justify-center flex-shrink-0`}>
-                                        <span className="text-sm font-semibold">{level}</span>
+                                <div key={approval.id} className="border rounded-lg bg-white p-3">
+                                  {/* Simple one-line view */}
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <div className="w-4 h-4 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
+                                        <User className="h-2.5 w-2.5 text-gray-600" />
                                       </div>
-                                      <div className="min-w-0">
-                                        <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                          {levelName}
-                                          {isCurrentUserLevel && (
-                                            <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300 text-xs">
-                                              Your Level
-                                            </Badge>
-                                          )}
-                                        </h4>
-                                        <p className="text-xs text-gray-500">
-                                          {levelApprovals.length} approver{levelApprovals.length !== 1 ? 's' : ''}
-                                        </p>
-                                      </div>
+                                      <span className="text-sm font-medium text-gray-900 truncate">
+                                        {approverName}
+                                      </span>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <Badge className={`${levelBadgeColor} border text-xs`}>
-                                        {levelStatus}
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      <Badge className={`${getApprovalStatusColor(status)} text-xs`}>
+                                        {titleCaseStatus(status)}
                                       </Badge>
+                                      {hasComment && (
+                                        <button
+                                          onClick={() => {
+                                            setExpandedApprovals(prev => ({
+                                              ...prev,
+                                              [approvalId]: !prev[approvalId]
+                                            }));
+                                          }}
+                                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                                        >
+                                          {isCommentExpanded ? (
+                                            <>
+                                              <ChevronDown className="h-3 w-3" />
+                                              <span>Hide comment</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <ChevronRight className="h-3 w-3" />
+                                              <span>Show comment</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      )}
+                                      <div className="text-xs text-gray-500 ml-2">
+                                        {approval.actedOn ? formatDbTimestampDisplay(approval.actedOn, { shortFormat: true }) : '-'}
+                                      </div>
                                     </div>
                                   </div>
                                   
-                                  {/* Show approvers in this level */}
-                                  <div className="space-y-2">
-                                    {levelApprovals.map((approval: any) => (
-                                      <div key={approval.id} className="bg-gray-50 rounded-lg p-2.5 sm:p-3">
-                                        <div className="flex items-center justify-between mb-2">
-                                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                                            <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
-                                              <User className="h-3 w-3 text-gray-600" />
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                              <p className="text-sm font-medium text-gray-900 truncate">
-                                                {(() => {
-                                                  if (approval.approver) {
-                                                    return `${approval.approver.emp_fname} ${approval.approver.emp_lname}`;
-                                                  }
-                                                  return approval.approverName || approval.approverEmail || 'Unknown Approver';
-                                                })()}
-                                              </p>
-                                              <p className="text-xs text-gray-500 truncate">
-                                                {(() => {
-                                                  if (approval.approver?.emp_email) {
-                                                    return approval.approver.emp_email;
-                                                  }
-                                                  return approval.approverEmail || '';
-                                                })()}
-                                              </p>
-                                            </div>
-                                          </div>
-                                          <div className="flex flex-col items-end gap-1">
-                                            <Badge className={`${getApprovalStatusColor(normalizeStatus(approval.status))} text-xs whitespace-nowrap`}>
-                                              {titleCaseStatus(approval.status)}
-                                            </Badge>
-                                            {approval.actedOn && (
-                                              <span className="text-xs text-gray-500">
-                                                {formatDbTimestampDisplay(approval.actedOn, { shortFormat: true })}
-                                              </span>
-                                            )}
+                                  {/* Collapsible comment section */}
+                                  {hasComment && isCommentExpanded && (
+                                    <div className="mt-3 pt-3 border-t border-gray-100">
+                                      <div className="bg-gray-50 rounded-lg p-3">
+                                        <div className="flex items-start gap-2">
+                                          <MessageSquare className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                                          <div className="flex-1">
+                                            <p className="text-xs font-medium text-gray-700 mb-1">Comment:</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed">
+                                              {approval.comments}
+                                            </p>
                                           </div>
                                         </div>
-                                        
-                                        {/* Show comment directly below the approver if they have one */}
-                                        {approval.comments && (
-                                          <div className="mt-2 pt-2 border-t border-gray-200">
-                                            <p className="text-xs text-gray-600 whitespace-pre-wrap bg-white rounded p-2 border">{approval.comments}</p>
-                                          </div>
-                                        )}
                                       </div>
-                                    ))}
-                                  </div>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             });
@@ -1763,13 +1770,31 @@ export default function ApprovalDetailsPage() {
                     conversations[approval.id] && conversations[approval.id].length > 0
                   ) && (
                     <Card>
-                      <CardHeader>
-                        <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                          <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
-                          Approver Conversations
+                      <CardHeader 
+                        className="cursor-pointer hover:bg-gray-50 transition-colors"
+                        onClick={toggleConversationsSection}
+                      >
+                        <CardTitle className="text-base sm:text-lg flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
+                            <span>Approver Conversations</span>
+                            {/* Show count of approvals with conversations */}
+                            <span className="text-sm text-gray-500">
+                              ({approvals.filter((approval) => 
+                                session?.user?.email && approval.approverEmail === session.user.email &&
+                                conversations[approval.id] && conversations[approval.id].length > 0
+                              ).length})
+                            </span>
+                          </div>
+                          {expandedConversations ? (
+                            <ChevronDown className="h-4 w-4 text-gray-500" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-gray-500" />
+                          )}
                         </CardTitle>
                       </CardHeader>
-                    <CardContent>
+                      {expandedConversations && (
+                        <CardContent>
                       <div className="space-y-3 sm:space-y-4">
                         {approvals.length > 0 ? (
                           approvals
@@ -1950,8 +1975,9 @@ export default function ApprovalDetailsPage() {
                           </div>
                         )}
                       </div>
-                    </CardContent>
-                  </Card>
+                        </CardContent>
+                      )}
+                    </Card>
                   )}
 
                   {/* Action Buttons */}
@@ -2117,6 +2143,7 @@ export default function ApprovalDetailsPage() {
                   setShowClarificationModal(false);
                   setClarificationMessage('');
                 }}
+                disabled={actionLoading === 'clarification'}
                 className="w-full sm:w-auto order-2 sm:order-1"
               >
                 Cancel

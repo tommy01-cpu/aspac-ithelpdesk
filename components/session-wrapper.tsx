@@ -54,8 +54,10 @@ export function SessionWrapper({ children }: SessionWrapperProps) {
     };
   }, [showIdleWarning, countdown]);
 
-  const handleSignOut = () => {
-    signOut({ callbackUrl: '/login' });
+  const handleSignOut = async () => {
+    await signOut({ redirect: false });
+    // Manually redirect to clean login URL
+    window.location.href = '/login';
   };
 
   const handleStayLoggedIn = () => {
@@ -64,12 +66,23 @@ export function SessionWrapper({ children }: SessionWrapperProps) {
     resetTimer();
   };
 
-  // Redirect to login if not authenticated
+  // Handle session expiration more gracefully
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/login');
+      // Let NextAuth middleware handle the redirect to avoid double redirects
+      // Only manually redirect if we're not already on a public page
+      const currentPath = window.location.pathname;
+      const publicPaths = ['/login', '/signup', '/forgot-password'];
+      const isOnPublicPage = publicPaths.some(path => currentPath.startsWith(path));
+      
+      if (!isOnPublicPage) {
+        // Clear any existing timers and warnings
+        setShowIdleWarning(false);
+        // Use window.location for a clean redirect instead of router.push
+        window.location.href = '/login';
+      }
     }
-  }, [status, router]);
+  }, [status]);
 
   if (status === 'loading') {
     return (

@@ -128,6 +128,7 @@ export default function ReportsPage() {
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([]);
   const [isAdvancedFilter, setIsAdvancedFilter] = useState(false);
+  const [hasUserClosedModal, setHasUserClosedModal] = useState(false); // Track if user manually closed the modal
   const [basicFilters, setBasicFilters] = useState({
     requestId: '',
     subject: '',
@@ -178,6 +179,66 @@ export default function ReportsPage() {
     totalCount: 0,
     totalPages: 0
   });
+
+  // Sorting state
+  const [sortField, setSortField] = useState<string>('');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Handle sorting
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      // Toggle direction if same field
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new field and default to ascending
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Sort requests and apply client-side pagination
+  const sortedRequests = useMemo(() => {
+    if (!requests || requests.length === 0) return [];
+
+    // First, sort the requests
+    let sorted = [...requests];
+    if (sortField) {
+      sorted = sorted.sort((a, b) => {
+        let aValue = a[sortField];
+        let bValue = b[sortField];
+
+        // Handle special cases for nested objects
+        if (sortField === 'requester') {
+          aValue = a.requester?.name || '';
+          bValue = b.requester?.name || '';
+        } else if (sortField === 'description') {
+          // For description, remove HTML tags and use first 100 characters for comparison
+          aValue = (a.description || '').replace(/<[^>]*>/g, '').substring(0, 100).toLowerCase();
+          bValue = (b.description || '').replace(/<[^>]*>/g, '').substring(0, 100).toLowerCase();
+        } else if (sortField === 'createdAt' || sortField === 'dueByTime' || sortField === 'resolvedTime') {
+          aValue = aValue ? new Date(aValue).getTime() : 0;
+          bValue = bValue ? new Date(bValue).getTime() : 0;
+        }
+
+        // Convert to string for comparison if not already a number
+        if (typeof aValue !== 'number') {
+          aValue = String(aValue || '').toLowerCase();
+          bValue = String(bValue || '').toLowerCase();
+        }
+
+        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    // Then, apply client-side pagination
+    const startIndex = (pagination.page - 1) * pagination.limit;
+    const endIndex = startIndex + pagination.limit;
+    const paginatedResults = sorted.slice(startIndex, endIndex);
+
+    return paginatedResults;
+  }, [requests, sortField, sortDirection, pagination.page, pagination.limit]);
 
   // Helper function to preserve description formatting including indentation and bullets
   const preserveDescriptionFormatting = (description: string) => {
@@ -307,12 +368,81 @@ export default function ReportsPage() {
     fetchFilterData();
   }, []);
 
-  // Load requests when filters change
+  // Load requests when filters change (not pagination - that's handled client-side)
   useEffect(() => {
     if (filterData) {
       fetchRequests();
     }
-  }, [filters, pagination.page, filterData]);
+  }, [filters, filterData]);
+
+  // Recalculate pagination when limit changes (client-side)
+  useEffect(() => {
+    if (allRequests.length > 0) {
+      const totalCount = allRequests.length;
+      const totalPages = Math.ceil(totalCount / pagination.limit);
+      
+      setPagination(prev => ({
+        ...prev,
+        totalCount: totalCount,
+        totalPages: totalPages,
+        // Reset to page 1 if current page is beyond new total pages
+        page: prev.page > totalPages ? 1 : prev.page
+      }));
+
+      console.log('🔄 Recalculated pagination for limit change:', {
+        totalCount,
+        totalPages,
+        newLimit: pagination.limit
+      });
+    }
+  }, [pagination.limit, allRequests.length]);
+
+  // Set initial department filter for non-technicians (department heads) and show filter dialog
+  useEffect(() => {
+    if (filterData && session?.user && !session.user.isTechnician) {
+      // Check if user is a department head and set the first department as default
+      if (filterData.departments && filterData.departments.length > 0) {
+        // Only set the default department if no department filter is already set
+        if (!filters.departmentId && !basicFilters.department) {
+          const firstDepartment = filterData.departments[0];
+          
+          console.log('🏢 Setting default department for non-technician:', firstDepartment);
+          
+          // Set the department in both filters and basicFilters
+          setFilters(prev => ({
+            ...prev,
+            departmentId: firstDepartment.id.toString()
+          }));
+          
+          setBasicFilters(prev => ({
+            ...prev,
+            department: firstDepartment.id.toString()
+          }));
+          
+          // Automatically open the filter dialog for non-technicians
+          setTimeout(() => {
+            console.log('🔧 Opening filter modal for non-technician user');
+            setIsFilterModalOpen(true);
+          }, 800); // Slightly longer delay to ensure all state updates are complete
+        }
+      }
+    }
+  }, [filterData, session?.user, filters.departmentId, basicFilters.department]);
+
+  // Additional effect to ensure filter modal opens for non-technicians
+  useEffect(() => {
+    if (session?.user && !session.user.isTechnician && filterData && !loading && !hasUserClosedModal) {
+      // Open filter dialog for non-technician users after a short delay
+      const timer = setTimeout(() => {
+        if (!isFilterModalOpen) {
+          console.log('🎯 Auto-opening filter modal for non-technician user');
+          setIsFilterModalOpen(true);
+        }
+      }, 1000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [session?.user, filterData, loading, isFilterModalOpen, hasUserClosedModal]);
 
   const fetchFilterData = async () => {
     try {
@@ -340,24 +470,27 @@ export default function ReportsPage() {
         }
       });
 
-      // Note: No search parameters - we'll fetch all data and filter client-side
-      
-      // Add pagination
-      searchParams.append('page', pagination.page.toString());
-      searchParams.append('limit', pagination.limit.toString());
+      // Fetch ALL data without pagination limits - let client handle pagination
+      searchParams.append('page', '1');
+      searchParams.append('limit', '9999'); // Fetch all records
 
-      console.log('Fetching requests with filters:', Object.fromEntries(searchParams));
+      console.log('🔍 Fetching ALL requests for client-side pagination');
 
       const response = await fetch(`/api/reports?${searchParams.toString()}`);
       if (response.ok) {
         const data = await response.json();
-        console.log('Received data:', data);
-        setAllRequests(data.requests); // Store all requests for client-side filtering
+        
+        setAllRequests(data.requests); // Store all requests
         setRequests(data.requests); // Initially show all requests
+        
+        // Calculate client-side pagination based on ALL data
+        const totalCount = data.requests.length;
+        const totalPages = Math.ceil(totalCount / pagination.limit);
+        
         setPagination(prev => ({
           ...prev,
-          totalCount: data.pagination.totalCount,
-          totalPages: data.pagination.totalPages
+          totalCount: totalCount,
+          totalPages: totalPages
         }));
       } else {
         console.error('Failed to fetch requests:', response.status, response.statusText);
@@ -366,6 +499,14 @@ export default function ReportsPage() {
       console.error('Error fetching requests:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCloseFilterModal = (open: boolean) => {
+    setIsFilterModalOpen(open);
+    if (!open) {
+      // User manually closed the modal
+      setHasUserClosedModal(true);
     }
   };
 
@@ -435,22 +576,22 @@ export default function ReportsPage() {
 
   const applyBasicFilters = () => {
     const newFilters: Filters = {
-      requestType: '',
+      requestType: basicFilters.requestType || '',
       requestStatus: basicFilters.status,
-      approvalStatus: '',
-      mode: '',
-      requesterId: '',
+      approvalStatus: basicFilters.approvalStatus || '',
+      mode: basicFilters.mode || '',
+      requesterId: basicFilters.requester,
       departmentId: basicFilters.department,
-      createdTimeFrom: '',
-      createdTimeTo: '',
-      dueByTimeFrom: '',
-      dueByTimeTo: '',
-      resolvedTimeFrom: '',
-      resolvedTimeTo: '',
+      createdTimeFrom: basicFilters.createdFrom || '',
+      createdTimeTo: basicFilters.createdTo || '',
+      dueByTimeFrom: basicFilters.dueByFrom || '',
+      dueByTimeTo: basicFilters.dueByTo || '',
+      resolvedTimeFrom: basicFilters.resolvedFrom || '',
+      resolvedTimeTo: basicFilters.resolvedTo || '',
       priority: basicFilters.priority,
-      technicianId: basicFilters.requester, // Map requester to technicianId for filtering
-      serviceCategoryId: '',
-      templateId: '',
+      technicianId: basicFilters.technician, // Fixed: Map technician to technicianId
+      serviceCategoryId: basicFilters.serviceCategory || '',
+      templateId: basicFilters.template || '',
       searchRequestId: basicFilters.requestId,
       searchSubject: basicFilters.subject
     };
@@ -462,7 +603,8 @@ export default function ReportsPage() {
     
     // Trigger data fetch with new filters
     setPagination(prev => ({ ...prev, page: 1 }));
-    setIsFilterModalOpen(false);
+    setIsFilterModalOpen(false); // This is OK - user applied filters, not manually closed
+    setHasUserClosedModal(true); // Prevent modal from auto-reopening after applying filters
   };
 
   const applyFilters = () => {
@@ -561,7 +703,8 @@ export default function ReportsPage() {
     
     setFilters(newFilters);
     setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
-    setIsFilterModalOpen(false);
+    setIsFilterModalOpen(false); // This is OK - user applied filters, not manually closed
+    setHasUserClosedModal(true); // Prevent modal from auto-reopening after applying filters
   };
 
   const getColumnType = (column: string) => {
@@ -600,8 +743,24 @@ export default function ReportsPage() {
     // Check if any basic filters have values
     const hasActiveFilters = (
       basicFilters.requestId.trim() !== '' ||
+      basicFilters.subject.trim() !== '' ||
+      basicFilters.requestType !== '' ||
       basicFilters.status !== '' ||
-      basicFilters.requester.trim() !== ''
+      basicFilters.approvalStatus !== '' ||
+      basicFilters.mode !== '' ||
+      basicFilters.requester !== '' ||
+      basicFilters.department !== '' ||
+      basicFilters.priority !== '' ||
+      basicFilters.technician !== '' ||
+      basicFilters.serviceCategory !== '' ||
+      basicFilters.template !== '' ||
+      basicFilters.sla !== '' ||
+      basicFilters.createdFrom !== '' ||
+      basicFilters.createdTo !== '' ||
+      basicFilters.dueByFrom !== '' ||
+      basicFilters.dueByTo !== '' ||
+      basicFilters.resolvedFrom !== '' ||
+      basicFilters.resolvedTo !== ''
     );
     
     // If there are active filters, apply AND logic with omni search
@@ -735,38 +894,107 @@ export default function ReportsPage() {
     setPagination(prev => ({ ...prev, page: 1 }));
   };
 
-  // Apply filters whenever omniSearch or basicFilters change
+  // Apply omni search whenever it changes (only for client-side search)
   useEffect(() => {
-    if (allRequests.length > 0) {
-      applyAllFilters();
+    if (allRequests.length > 0 && omniSearch.trim() !== '') {
+      // Only apply omni search if no API filters are active
+      const hasApiFilters = Object.values(filters).some(value => 
+        value && value !== '' && value !== '0'
+      );
+      
+      if (!hasApiFilters) {
+        const searchLower = omniSearch.toLowerCase();
+        const filtered = allRequests.filter(request => {
+          return (
+            request.id.toString().includes(searchLower) ||
+            request.subject?.toLowerCase().includes(searchLower) ||
+            request.description?.toLowerCase().includes(searchLower) ||
+            request.requester?.name?.toLowerCase().includes(searchLower) ||
+            request.requester?.email?.toLowerCase().includes(searchLower) ||
+            request.requester?.employeeId?.toLowerCase().includes(searchLower) ||
+            request.department?.toLowerCase().includes(searchLower) ||
+            request.technician?.toLowerCase().includes(searchLower) ||
+            request.requestType?.toLowerCase().includes(searchLower) ||
+            request.status?.toLowerCase().includes(searchLower) ||
+            request.priority?.toLowerCase().includes(searchLower) ||
+            request.template?.toLowerCase().includes(searchLower)
+          );
+        });
+        
+        setRequests(filtered);
+        
+        // Recalculate pagination for filtered results
+        const totalCount = filtered.length;
+        const totalPages = Math.ceil(totalCount / pagination.limit);
+        setPagination(prev => ({
+          ...prev,
+          totalCount,
+          totalPages,
+          page: 1 // Reset to first page when searching
+        }));
+        
+        console.log('🔍 Applied search and recalculated pagination:', {
+          searchTerm: omniSearch,
+          filteredCount: filtered.length,
+          totalPages
+        });
+      }
+    } else if (omniSearch.trim() === '') {
+      // If omni search is cleared, restore all requests
+      const hasApiFilters = Object.values(filters).some(value => 
+        value && value !== '' && value !== '0'
+      );
+      if (!hasApiFilters) {
+        setRequests(allRequests);
+        
+        // Recalculate pagination for all results
+        const totalCount = allRequests.length;
+        const totalPages = Math.ceil(totalCount / pagination.limit);
+        setPagination(prev => ({
+          ...prev,
+          totalCount,
+          totalPages,
+          page: 1 // Reset to first page
+        }));
+        
+        console.log('🧹 Cleared search and restored pagination:', {
+          totalCount,
+          totalPages
+        });
+      }
     }
-  }, [omniSearch, basicFilters, allRequests]);
+  }, [omniSearch, allRequests, filters, pagination.limit]);
 
   const handleExportExcel = async () => {
     try {
       setExporting(true);
-      // Create search params for current client-side filters
+      
+      // Create search params with all current filters
       const searchParams = new URLSearchParams();
+      
+      // Add current filter state to export
+      if (filters.requestType) searchParams.append('requestType', filters.requestType);
+      if (filters.requestStatus) searchParams.append('requestStatus', filters.requestStatus);
+      if (filters.approvalStatus) searchParams.append('approvalStatus', filters.approvalStatus);
+      if (filters.mode) searchParams.append('mode', filters.mode);
+      if (filters.requesterId) searchParams.append('requesterId', filters.requesterId);
+      if (filters.departmentId) searchParams.append('departmentId', filters.departmentId);
+      if (filters.createdTimeFrom) searchParams.append('createdTimeFrom', filters.createdTimeFrom);
+      if (filters.createdTimeTo) searchParams.append('createdTimeTo', filters.createdTimeTo);
+      if (filters.dueByTimeFrom) searchParams.append('dueByTimeFrom', filters.dueByTimeFrom);
+      if (filters.dueByTimeTo) searchParams.append('dueByTimeTo', filters.dueByTimeTo);
+      if (filters.resolvedTimeFrom) searchParams.append('resolvedTimeFrom', filters.resolvedTimeFrom);
+      if (filters.resolvedTimeTo) searchParams.append('resolvedTimeTo', filters.resolvedTimeTo);
+      if (filters.priority) searchParams.append('priority', filters.priority);
+      if (filters.technicianId) searchParams.append('technicianId', filters.technicianId);
+      if (filters.serviceCategoryId) searchParams.append('serviceCategoryId', filters.serviceCategoryId);
+      if (filters.templateId) searchParams.append('templateId', filters.templateId);
+      if (filters.searchRequestId) searchParams.append('searchRequestId', filters.searchRequestId);
+      if (filters.searchSubject) searchParams.append('searchSubject', filters.searchSubject);
       
       // Add omni search if present
       if (omniSearch.trim() !== '') {
         searchParams.append('searchSubject', omniSearch);
-      }
-      
-      // Add basic filters if present
-      if (basicFilters.requestId.trim() !== '') {
-        searchParams.append('searchRequestId', basicFilters.requestId);
-      }
-      
-      if (basicFilters.status !== 'ALL' && basicFilters.status !== '') {
-        searchParams.append('statusFilter', basicFilters.status);
-      }
-      
-      if (basicFilters.requester.trim() !== '') {
-        // Use searchSubject for requester since the API searches across multiple fields
-        const existingSearch = searchParams.get('searchSubject') || '';
-        const combinedSearch = existingSearch ? `${existingSearch} ${basicFilters.requester}` : basicFilters.requester;
-        searchParams.set('searchSubject', combinedSearch);
       }
       
       searchParams.append('export', 'excel');
@@ -777,7 +1005,7 @@ export default function ReportsPage() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `reports-${new Date().toISOString().split('T')[0]}.xlsx`;
+        a.download = `ASPAC_IT_Helpdesk_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -898,7 +1126,7 @@ export default function ReportsPage() {
                   Excel
                 </Button>
                 
-                <Button
+                {/* <Button
                   onClick={handleExportPDF}
                   variant="outline"
                   size="sm"
@@ -911,17 +1139,20 @@ export default function ReportsPage() {
                     <FileText className="h-4 w-4" />
                   )}
                   PDF
-                </Button>
+                </Button> */}
               </div>
               
               {/* Filter Button */}
               <Button
-                onClick={() => setIsFilterModalOpen(true)}
+                onClick={() => {
+                  setHasUserClosedModal(false); // Reset the flag when user manually opens
+                  setIsFilterModalOpen(true);
+                }}
                 variant="outline"
                 className="flex items-center gap-2"
               >
                 <Filter className="h-4 w-4" />
-                Custom Filter
+                Filter
                 
               </Button>
               
@@ -947,11 +1178,19 @@ export default function ReportsPage() {
           </div>
           
           {/* Active Filters Display */}
-          {(filterConditions.length > 0 || 
-            basicFilters.requestId.trim() !== '' ||
-            basicFilters.requester.trim() !== '' ||
-            (basicFilters.status !== 'ALL' && basicFilters.status !== '') ||
-            omniSearch) && (
+          {(() => {
+            // Check if any filters are active
+            const hasActiveBasicFilters = Object.entries(basicFilters).some(([key, value]) => 
+              value && value !== '' && value !== 'ALL'
+            );
+            const hasActiveApiFilters = Object.entries(filters).some(([key, value]) => 
+              value && value !== '' && value !== '0'
+            );
+            const hasAdvancedFilters = filterConditions.length > 0;
+            const hasSearch = omniSearch && omniSearch.trim() !== '';
+            
+            return (hasActiveBasicFilters || hasActiveApiFilters || hasAdvancedFilters || hasSearch);
+          })() && (
             <div className="mt-4 p-3 bg-muted rounded-lg">
               <div className="text-sm font-medium text-foreground mb-2">Active Filters:</div>
               <div className="flex flex-wrap gap-2">
@@ -972,26 +1211,63 @@ export default function ReportsPage() {
                     </div>
                   ))
                 ) : (
-                  Object.entries(basicFilters).map(([key, value]) => {
-                    if (!value || value === 'ALL') return null;
+                  // Show applied API filters instead of basicFilters for better accuracy
+                  Object.entries(filters).map(([key, value]) => {
+                    if (!value || value === '' || value === '0') return null;
                     
                     let displayValue = value;
                     let displayKey = key;
                     
-                    // Convert technician ID to name and change key label
-                    if (key === 'requester' && value && filterData?.technicians) {
-                      const technician = filterData.technicians.find(tech => tech.id.toString() === value);
-                      displayValue = technician ? technician.name : value;
-                      displayKey = 'technician';
-                    }
+                    // Map API filter keys to user-friendly labels
+                    const keyMappings: { [key: string]: string } = {
+                      requestType: 'Request Type',
+                      requestStatus: 'Request Status', 
+                      approvalStatus: 'Approval Status',
+                      mode: 'Mode',
+                      requesterId: 'Requester',
+                      departmentId: 'Department',
+                      priority: 'Priority',
+                      technicianId: 'Technician',
+                      serviceCategoryId: 'Service Category',
+                      templateId: 'Template',
+                      createdTimeFrom: 'Created From',
+                      createdTimeTo: 'Created To',
+                      dueByTimeFrom: 'Due By From',
+                      dueByTimeTo: 'Due By To',
+                      resolvedTimeFrom: 'Resolved From',
+                      resolvedTimeTo: 'Resolved To',
+                      searchRequestId: 'Request ID',
+                      searchSubject: 'Subject'
+                    };
                     
-                    // Capitalize the display value
-                    if (typeof displayValue === 'string') {
+                    displayKey = keyMappings[key] || capitalizeWords(key.replace(/([A-Z])/g, ' $1').trim());
+                    
+                    // Convert IDs to names using filterData
+                    if (key === 'requesterId' && filterData?.users) {
+                      const user = filterData.users.find(u => u.id.toString() === value);
+                      displayValue = user ? `${user.name} (${user.employeeId})` : value;
+                    } else if (key === 'departmentId' && filterData?.departments) {
+                      const dept = filterData.departments.find(d => d.id.toString() === value);
+                      displayValue = dept ? dept.name : value;
+                    } else if (key === 'technicianId' && filterData?.technicians) {
+                      const tech = filterData.technicians.find(t => t.id.toString() === value);
+                      displayValue = tech ? `${tech.name} (${tech.employeeId})` : value;
+                    } else if (key === 'serviceCategoryId' && filterData?.serviceCategories) {
+                      const cat = filterData.serviceCategories.find(c => c.id.toString() === value);
+                      displayValue = cat ? cat.name : value;
+                    } else if (key === 'templateId' && filterData?.templates) {
+                      const template = filterData.templates.find(t => t.id.toString() === value);
+                      displayValue = template ? template.name : value;
+                    } else if (key.includes('Time')) {
+                      // Format date values without time for date-only filters
+                      try {
+                        displayValue = format(new Date(value), 'MMMM dd, yyyy');
+                      } catch {
+                        displayValue = value; // fallback if date parsing fails
+                      }
+                    } else if (typeof displayValue === 'string') {
                       displayValue = capitalizeWords(displayValue.replace('_', ' '));
                     }
-                    
-                    // Capitalize the display key
-                    displayKey = capitalizeWords(displayKey.replace(/([A-Z])/g, ' $1').trim());
                     
                     return (
                       <span key={key} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
@@ -1022,14 +1298,66 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Pagination - Fixed at top */}
-        {pagination.totalPages > 1 && (
-          <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card flex-shrink-0">
+        {/* Pagination - Enhanced with page size selection */}
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card flex-shrink-0">
+          <div className="flex items-center gap-4">
             <div className="text-sm text-muted-foreground">
               Page {pagination.page} of {pagination.totalPages} 
-              <span className="ml-2">({pagination.totalCount} total)</span>
+              <span className="ml-2">({pagination.totalCount} total records)</span>
             </div>
-            <div className="flex space-x-2">
+            
+            {/* Records per page selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Show:</span>
+              <select
+                value={pagination.limit}
+                onChange={(e) => {
+                  const newLimit = parseInt(e.target.value);
+                  setPagination(prev => ({ 
+                    ...prev, 
+                    limit: newLimit, 
+                    page: 1 // Reset to first page when changing page size
+                    // Remove local totalPages calculation - let the server handle it
+                  }));
+                }}
+                className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span className="text-sm text-muted-foreground">per page</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {/* Jump to page input */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Go to:</span>
+              <input
+                type="number"
+                min="1"
+                max={pagination.totalPages}
+                value={pagination.page}
+                onChange={(e) => {
+                  const newPage = Math.max(1, Math.min(pagination.totalPages, parseInt(e.target.value) || 1));
+                  setPagination(prev => ({ ...prev, page: newPage }));
+                }}
+                className="w-16 px-2 py-1 text-sm text-center border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            
+            {/* Navigation buttons */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPagination(prev => ({ ...prev, page: 1 }))}
+                disabled={pagination.page === 1}
+                className="px-2 py-1 text-sm font-medium text-foreground bg-card border border-border rounded-md hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                title="First page"
+              >
+                ««
+              </button>
               <button
                 onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
                 disabled={pagination.page === 1}
@@ -1037,6 +1365,101 @@ export default function ReportsPage() {
               >
                 Previous
               </button>
+              
+              {/* Page numbers */}
+              <div className="flex items-center gap-1">
+                {(() => {
+                  const pages = [];
+                  const totalPages = pagination.totalPages;
+                  const currentPage = pagination.page;
+                  
+                  // If 5 or fewer pages, show all pages
+                  if (totalPages <= 5) {
+                    for (let i = 1; i <= totalPages; i++) {
+                      pages.push(
+                        <button
+                          key={i}
+                          onClick={() => setPagination(prev => ({ ...prev, page: i }))}
+                          className={`px-2 py-1 text-sm font-medium border border-border rounded-md ${
+                            currentPage === i 
+                              ? 'bg-primary text-primary-foreground' 
+                              : 'text-foreground bg-card hover:bg-muted'
+                          }`}
+                        >
+                          {i}
+                        </button>
+                      );
+                    }
+                  } else {
+                    // More than 5 pages - use ellipsis logic
+                    
+                    // Always show first page
+                    pages.push(
+                      <button
+                        key={1}
+                        onClick={() => setPagination(prev => ({ ...prev, page: 1 }))}
+                        className={`px-2 py-1 text-sm font-medium border border-border rounded-md ${
+                          currentPage === 1 
+                            ? 'bg-primary text-primary-foreground' 
+                            : 'text-foreground bg-card hover:bg-muted'
+                        }`}
+                      >
+                        1
+                      </button>
+                    );
+                    
+                    // Show ellipsis if needed
+                    if (currentPage > 4) {
+                      pages.push(<span key="ellipsis1" className="px-1 text-sm text-muted-foreground">...</span>);
+                    }
+                    
+                    // Show pages around current page
+                    const start = Math.max(2, currentPage - 1);
+                    const end = Math.min(totalPages - 1, currentPage + 1);
+                    
+                    for (let i = start; i <= end; i++) {
+                      if (i !== 1 && i !== totalPages) {
+                        pages.push(
+                          <button
+                            key={i}
+                            onClick={() => setPagination(prev => ({ ...prev, page: i }))}
+                            className={`px-2 py-1 text-sm font-medium border border-border rounded-md ${
+                              currentPage === i 
+                                ? 'bg-primary text-primary-foreground' 
+                                : 'text-foreground bg-card hover:bg-muted'
+                            }`}
+                          >
+                            {i}
+                          </button>
+                        );
+                      }
+                    }
+                    
+                    // Show ellipsis if needed
+                    if (currentPage < totalPages - 3) {
+                      pages.push(<span key="ellipsis2" className="px-1 text-sm text-muted-foreground">...</span>);
+                    }
+                    
+                    // Always show last page
+                    pages.push(
+                      <button
+                        key={totalPages}
+                        onClick={() => setPagination(prev => ({ ...prev, page: totalPages }))}
+                        className={`px-2 py-1 text-sm font-medium border border-border rounded-md ${
+                          currentPage === totalPages 
+                            ? 'bg-primary text-primary-foreground' 
+                            : 'text-foreground bg-card hover:bg-muted'
+                        }`}
+                      >
+                        {totalPages}
+                      </button>
+                    );
+                  }
+                  
+                  return pages;
+                })()}
+              </div>
+              
               <button
                 onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.totalPages, prev.page + 1) }))}
                 disabled={pagination.page === pagination.totalPages}
@@ -1044,34 +1467,170 @@ export default function ReportsPage() {
               >
                 Next
               </button>
+              <button
+                onClick={() => setPagination(prev => ({ ...prev, page: pagination.totalPages }))}
+                disabled={pagination.page === pagination.totalPages}
+                className="px-2 py-1 text-sm font-medium text-foreground bg-card border border-border rounded-md hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Last page"
+              >
+                »»
+              </button>
             </div>
           </div>
-        )}
+        </div>
         
         <div className="w-full overflow-auto reports-table-scroll">
           <table className="w-full border-collapse bg-white" style={{fontSize: '12px'}}>
             <thead className="bg-blue-50 border-b-2 border-blue-200 sticky top-0 z-10">
               <tr>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Request ID</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Subject</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Description</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Request Type</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Request Status</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Approval Status</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Mode</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Requester</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Department</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Created At</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Due By</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Resolved Time</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Priority</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Technician</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200">Service Category</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider">Template</th>
+                <th onClick={() => handleSort('id')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Request ID</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'id' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'id' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('subject')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Subject</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'subject' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'subject' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('description')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Description</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'description' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'description' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('requestType')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Request Type</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'requestType' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'requestType' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('status')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Request Status</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'status' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'status' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('approvalStatus')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Approval Status</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'approvalStatus' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'approvalStatus' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('mode')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Mode</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'mode' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'mode' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('requester')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Requester</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'requester' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'requester' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('department')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Department</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'department' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'department' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('createdAt')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Date Created</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'createdAt' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'createdAt' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('dueByTime')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Due Date</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'dueByTime' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'dueByTime' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('resolvedTime')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Resolved Time</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'resolvedTime' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'resolvedTime' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('priority')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Priority</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'priority' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'priority' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('technician')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Technician</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'technician' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'technician' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('serviceCategory')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Service Category</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'serviceCategory' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'serviceCategory' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
+                <th onClick={() => handleSort('template')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider cursor-pointer hover:bg-blue-100 align-middle">
+                  <div className="flex items-center justify-between">
+                    <span>Template</span>
+                    <div className="flex flex-col">
+                      <span className={`text-xs ${sortField === 'template' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
+                      <span className={`text-xs ${sortField === 'template' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
+                    </div>
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white">
-              {requests.length === 0 ? (
+              {sortedRequests.length === 0 ? (
                 <tr>
                   <td colSpan={16} className="px-6 py-8 text-center text-gray-500">
                     <div className="flex flex-col items-center">
@@ -1084,7 +1643,7 @@ export default function ReportsPage() {
                   </td>
                 </tr>
               ) : (
-                requests.map((request, index) => {
+                sortedRequests.map((request, index) => {
                   // Alternating row colors like Excel
                   const isEvenRow = index % 2 === 0;
                   const rowClass = isEvenRow ? 'bg-white' : 'bg-gray-50';
@@ -1097,7 +1656,7 @@ export default function ReportsPage() {
                       <td className="px-3 py-2 border-r border-gray-200 text-blue-600 underline cursor-pointer">
                         {request.subject}
                       </td>
-                      <td className="px-3 py-2 border-r border-gray-200 text-gray-700 leading-relaxed max-w-md">
+                      <td className="px-3 py-2 border-r border-gray-200 text-gray-700 leading-relaxed max-w-lg">
                         <div className="whitespace-pre-wrap break-words font-mono text-sm">
                           {preserveDescriptionFormatting(request.description)}
                         </div>
@@ -1124,13 +1683,13 @@ export default function ReportsPage() {
                         {capitalizeWords(request.department || '')}
                       </td>
                       <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
-                        {format(new Date(request.createdAt), 'MMM dd, HH:mm')}
+                        {format(new Date(request.createdAt), 'MMMM dd, yyyy')}
                       </td>
                       <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
-                        {request.dueByTime ? format(new Date(request.dueByTime), 'MMM dd, HH:mm') : 'N/A'}
+                        {request.dueByTime ? format(new Date(request.dueByTime), 'MMMM dd, yyyy') : 'N/A'}
                       </td>
                       <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
-                        {request.resolvedTime ? format(new Date(request.resolvedTime), 'MMM dd, HH:mm') : 'N/A'}
+                        {request.resolvedTime ? format(new Date(request.resolvedTime), 'MMMM dd, yyyy') : 'N/A'}
                       </td>
                       <td className="px-3 py-2 border-r border-gray-200 text-gray-900">
                         {capitalizeWords(request.priority || '')}
@@ -1154,7 +1713,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Filter Modal */}
-      <Dialog open={isFilterModalOpen} onOpenChange={setIsFilterModalOpen}>
+      <Dialog open={isFilterModalOpen} onOpenChange={handleCloseFilterModal}>
         <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1179,7 +1738,7 @@ export default function ReportsPage() {
                   >
                     Basic
                   </button>
-                  <button
+                  {/* <button
                     onClick={() => setIsAdvancedFilter(true)}
                     className={`px-3 py-1 text-sm font-medium rounded-md ${
                       isAdvancedFilter
@@ -1188,7 +1747,7 @@ export default function ReportsPage() {
                     }`}
                   >
                     Advanced
-                  </button>
+                  </button> */}
                 </div>
               </div>
             </div>
@@ -1296,7 +1855,8 @@ export default function ReportsPage() {
                       onChange={(e) => setBasicFilters(prev => ({ ...prev, department: e.target.value }))}
                       className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">All Departments</option>
+                      {/* Only show "All Departments" option for technicians */}
+                      {session?.user?.isTechnician && <option value="">All Departments</option>}
                       {filterData?.departments.map(dept => (
                         <option key={dept.id} value={dept.id}>{capitalizeWords(dept.name)}</option>
                       ))}
@@ -1325,6 +1885,7 @@ export default function ReportsPage() {
                       className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">All Technicians</option>
+                      <option value="unassigned">Unassigned</option>
                       {filterData?.technicians.map(tech => (
                         <option key={tech.id} value={tech.id}>
                           {tech.name} ({tech.employeeId}) - {tech.department}
@@ -1367,48 +1928,48 @@ export default function ReportsPage() {
                   <div className="grid grid-cols-3 gap-4">
                     {/* Created Time Range */}
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">Created Time - From</label>
+                      <label className="block text-sm font-medium text-gray-700">Created Date - From</label>
                       <input
-                        type="datetime-local"
+                        type="date"
                         value={basicFilters.createdFrom || ''}
                         onChange={(e) => setBasicFilters(prev => ({ ...prev, createdFrom: e.target.value }))}
                         className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">Created Time - To</label>
+                      <label className="block text-sm font-medium text-gray-700">Created Date - To</label>
                       <input
-                        type="datetime-local"
+                        type="date"
                         value={basicFilters.createdTo || ''}
                         onChange={(e) => setBasicFilters(prev => ({ ...prev, createdTo: e.target.value }))}
                         className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">SLA</label>
-                      <input
+                      {/* <label className="block text-sm font-medium text-gray-700 mb-1">SLA</label> */}
+                      {/* <input
                         type="text"
                         placeholder="Enter SLA name"
                         value={basicFilters.sla || ''}
                         onChange={(e) => setBasicFilters(prev => ({ ...prev, sla: e.target.value }))}
                         className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                      /> */}
                     </div>
                     
-                    {/* Due By Time Range */}
+                    {/* Due By Date Range */}
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">Due By Time - From</label>
+                      <label className="block text-sm font-medium text-gray-700">Due By Date - From</label>
                       <input
-                        type="datetime-local"
+                        type="date"
                         value={basicFilters.dueByFrom || ''}
                         onChange={(e) => setBasicFilters(prev => ({ ...prev, dueByFrom: e.target.value }))}
                         className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">Due By Time - To</label>
+                      <label className="block text-sm font-medium text-gray-700">Due By Date - To</label>
                       <input
-                        type="datetime-local"
+                        type="date"
                         value={basicFilters.dueByTo || ''}
                         onChange={(e) => setBasicFilters(prev => ({ ...prev, dueByTo: e.target.value }))}
                         className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1416,20 +1977,20 @@ export default function ReportsPage() {
                     </div>
                     <div></div>
                     
-                    {/* Resolved Time Range */}
+                    {/* Resolved Date Range */}
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">Resolved Time - From</label>
+                      <label className="block text-sm font-medium text-gray-700">Resolved Date - From</label>
                       <input
-                        type="datetime-local"
+                        type="date"
                         value={basicFilters.resolvedFrom || ''}
                         onChange={(e) => setBasicFilters(prev => ({ ...prev, resolvedFrom: e.target.value }))}
                         className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">Resolved Time - To</label>
+                      <label className="block text-sm font-medium text-gray-700">Resolved Date - To</label>
                       <input
-                        type="datetime-local"
+                        type="date"
                         value={basicFilters.resolvedTo || ''}
                         onChange={(e) => setBasicFilters(prev => ({ ...prev, resolvedTo: e.target.value }))}
                         className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1592,7 +2153,7 @@ export default function ReportsPage() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => setIsFilterModalOpen(false)}
+                onClick={() => handleCloseFilterModal(false)}
               >
                 Cancel
               </Button>
@@ -1600,7 +2161,7 @@ export default function ReportsPage() {
                 onClick={applyFilters}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                Apply Filters
+                Generate
               </Button>
             </div>
           </div>

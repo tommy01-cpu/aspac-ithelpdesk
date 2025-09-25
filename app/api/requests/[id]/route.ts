@@ -369,9 +369,10 @@ export async function GET(
       name: approval.name,
       status: approval.status,
       approverId: approval.approverId, // <- important for filtering existing approvers in UI
-      approver: approval.approverName || (approval.approver ? 
-        `${approval.approver.emp_fname} ${approval.approver.emp_lname}` : 'Unknown'),
-      approverEmail: approval.approverEmail || approval.approver?.emp_email,
+      approver: (approval.approver ? 
+        `${approval.approver.emp_fname} ${approval.approver.emp_lname}` : 
+        approval.approverName) || 'Unknown',
+      approverEmail: approval.approver?.emp_email || approval.approverEmail,
       sentOn: approval.sentOn ? formatStoredPhilippineTime(approval.sentOn) : null,
       actedOn: approval.actedOn ? formatStoredPhilippineTime(approval.actedOn) : null,
       comments: approval.comments,

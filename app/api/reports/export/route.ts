@@ -603,6 +603,80 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Apply date filters for Due By Time - exclude N/A values when filtering is active
+    if (dueByTimeFrom || dueByTimeTo) {
+      filteredRequests = filteredRequests.filter(req => {
+        const dueByTime = req.dueByTime;
+        
+        // If there's no due by time (N/A), exclude it when date filter is active
+        if (!dueByTime || dueByTime === null) {
+          return false;
+        }
+        
+        const dueDate = new Date(dueByTime);
+        
+        // Check if the date is valid
+        if (isNaN(dueDate.getTime())) {
+          return false;
+        }
+        
+        // Apply from date filter
+        if (dueByTimeFrom) {
+          const fromDate = new Date(dueByTimeFrom);
+          if (dueDate < fromDate) {
+            return false;
+          }
+        }
+        
+        // Apply to date filter
+        if (dueByTimeTo) {
+          const toDate = new Date(dueByTimeTo + 'T23:59:59.999Z'); // End of day
+          if (dueDate > toDate) {
+            return false;
+          }
+        }
+        
+        return true;
+      });
+    }
+
+    // Apply date filters for Resolved Time - exclude N/A values when filtering is active
+    if (resolvedTimeFrom || resolvedTimeTo) {
+      filteredRequests = filteredRequests.filter(req => {
+        const resolvedTime = req.resolvedTime;
+        
+        // If there's no resolved time (N/A), exclude it when date filter is active
+        if (!resolvedTime || resolvedTime === null) {
+          return false;
+        }
+        
+        const resolvedDate = new Date(resolvedTime);
+        
+        // Check if the date is valid
+        if (isNaN(resolvedDate.getTime())) {
+          return false;
+        }
+        
+        // Apply from date filter
+        if (resolvedTimeFrom) {
+          const fromDate = new Date(resolvedTimeFrom);
+          if (resolvedDate < fromDate) {
+            return false;
+          }
+        }
+        
+        // Apply to date filter
+        if (resolvedTimeTo) {
+          const toDate = new Date(resolvedTimeTo + 'T23:59:59.999Z'); // End of day
+          if (resolvedDate > toDate) {
+            return false;
+          }
+        }
+        
+        return true;
+      });
+    }
+
     // Helper function to format status text
     const formatStatusText = (text: string) => {
       if (!text) return text;
@@ -651,81 +725,120 @@ export async function GET(request: NextRequest) {
       worksheet.views = [{ showGridLines: false }];
 
       // Add professional header section
-      // Row 1: Logo and text centered in cell A1 with background
-      const logoRow = worksheet.addRow(['']);
-      
-      // Set column A width to make it proportional
-      worksheet.getColumn(1).width = 12; // Wider for the logo and text
-      
-      // Add green background to cell A1
-      logoRow.getCell(1).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'C6EFCE' } // Light green background
-      };
-      
-      // Add ASPAC logo image
-      try {
-        const logoPath = path.join(process.cwd(), 'public', 'aspac-logo.png');
-        const logoBuffer = fs.readFileSync(logoPath);
-        const logoId = workbook.addImage({
-          buffer: logoBuffer,
-          extension: 'png',
-        });
-        
-        // Insert the logo centered in upper part of cell A1
-        worksheet.addImage(logoId, {
-          tl: { col: 0.25, row: 0.1 }, // Centered horizontally, upper part vertically
-          ext: { width: 50, height: 25 } // Logo size to fit with text below
-        });
-        
-        // Add "aspac" text below the logo in the same cell
-        logoRow.getCell(1).value = '\n\n\naspac';
-        logoRow.getCell(1).font = { size: 12, bold: true, color: { argb: '000000' }, name: 'Arial' };
-        logoRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-        
-      } catch (error) {
-        console.log('Logo file not found, using placeholder');
-        logoRow.getCell(1).value = 'ASPAC\nLOGO\naspac';
-        logoRow.getCell(1).font = { size: 10, bold: true, color: { argb: '000000' }, name: 'Arial' };
-        logoRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-      }
-      
-      // Make row height tall enough for logo and text
-      logoRow.height = 60;
+      // Set standard column width
+      worksheet.getColumn(1).width = 30;
 
-      // Row 2: IT HELPDESK SYSTEM left-aligned
+      // Row 1: IT HELPDESK SYSTEM left-aligned with improved styling
       const systemRow = worksheet.addRow(['IT HELPDESK SYSTEM']);
-      systemRow.getCell(1).font = { size: 11, bold: true, color: { argb: '000000' }, name: 'Arial' };
+      systemRow.getCell(1).font = { size: 12, bold: true, color: { argb: '000000' }, name: 'Arial' }; // Increased font size
       systemRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
-      // Auto-adjust height based on text
+      systemRow.height = 25; // Set explicit height
 
-      // Row 3: IT Helpdesk Export Report on separate row
+      // Row 2: IT Helpdesk Export Report with improved styling  
       const titleRow = worksheet.addRow(['IT Helpdesk Export Report']);
-      titleRow.getCell(1).font = { size: 11, bold: false, color: { argb: '000000' }, name: 'Arial' };
+      titleRow.getCell(1).font = { size: 11, bold: false, color: { argb: '555555' }, name: 'Arial' }; // Slightly darker gray
       titleRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
-      // Auto-adjust height based on text
+      titleRow.height = 22; // Set explicit height
 
-      // Add spacing before data table
-      worksheet.addRow([]);
+      // Row 3: Generated and exported by info
+      const currentDate = new Date();
+      const userName = user ? `${user.emp_fname} ${user.emp_lname}`.trim() : 'System Administrator';
+      
+      const infoRow1 = worksheet.addRow([`Generated: ${currentDate.toLocaleDateString()} at ${currentDate.toLocaleTimeString()}`]);
+      infoRow1.getCell(1).font = { size: 10, color: { argb: '6B7280' }, name: 'Arial' };
+      infoRow1.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+      infoRow1.height = 20; // Set explicit height
+      
+      // Row 4: Exported by info  
+      const infoRow2 = worksheet.addRow([`Exported by: ${userName} | Total Records: ${filteredRequests.length}`]);
+      infoRow2.getCell(1).font = { size: 10, color: { argb: '6B7280' }, name: 'Arial' };
+      infoRow2.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+      infoRow2.height = 20; // Set explicit height
 
-      // Now add the data table header row with professional styling
+      // Row 5: Applied Filters - Only show if filters are applied
+      const appliedFilters = [];
+      
+      // Build filter description
+      if (requestType) appliedFilters.push(`Request Type: ${capitalizeWords(requestType)}`);
+      if (requestStatus) appliedFilters.push(`Status: ${formatStatusText(requestStatus)}`);
+      if (approvalStatus) appliedFilters.push(`Approval: ${formatStatusText(approvalStatus)}`);
+      if (mode) appliedFilters.push(`Mode: ${capitalizeWords(mode)}`);
+      if (priority) appliedFilters.push(`Priority: ${capitalizeWords(priority)}`);
+      if (departmentId) {
+        // Try to get department name from processed requests
+        const deptName = filteredRequests.length > 0 ? filteredRequests[0].department : 'Selected Department';
+        appliedFilters.push(`Department: ${deptName}`);
+      }
+      if (createdTimeFrom || createdTimeTo) {
+        let dateRange = 'Created: ';
+        if (createdTimeFrom && createdTimeTo) {
+          dateRange += `${format(new Date(createdTimeFrom), 'MMMM dd, yyyy')} to ${format(new Date(createdTimeTo), 'MMMM dd, yyyy')}`;
+        } else if (createdTimeFrom) {
+          dateRange += `From ${format(new Date(createdTimeFrom), 'MMMM dd, yyyy')}`;
+        } else if (createdTimeTo) {
+          dateRange += `Until ${format(new Date(createdTimeTo), 'MMMM dd, yyyy')}`;
+        }
+        appliedFilters.push(dateRange);
+      }
+      if (dueByTimeFrom || dueByTimeTo) {
+        let dateRange = 'Due By: ';
+        if (dueByTimeFrom && dueByTimeTo) {
+          dateRange += `${format(new Date(dueByTimeFrom), 'MMMM dd, yyyy')} to ${format(new Date(dueByTimeTo), 'MMMM dd, yyyy')}`;
+        } else if (dueByTimeFrom) {
+          dateRange += `From ${format(new Date(dueByTimeFrom), 'MMMM dd, yyyy')}`;
+        } else if (dueByTimeTo) {
+          dateRange += `Until ${format(new Date(dueByTimeTo), 'MMMM dd, yyyy')}`;
+        }
+        appliedFilters.push(dateRange);
+      }
+      if (resolvedTimeFrom || resolvedTimeTo) {
+        let dateRange = 'Resolved: ';
+        if (resolvedTimeFrom && resolvedTimeTo) {
+          dateRange += `${format(new Date(resolvedTimeFrom), 'MMMM dd, yyyy')} to ${format(new Date(resolvedTimeTo), 'MMMM dd, yyyy')}`;
+        } else if (resolvedTimeFrom) {
+          dateRange += `From ${format(new Date(resolvedTimeFrom), 'MMMM dd, yyyy')}`;
+        } else if (resolvedTimeTo) {
+          dateRange += `Until ${format(new Date(resolvedTimeTo), 'MMMM dd, yyyy')}`;
+        }
+        appliedFilters.push(dateRange);
+      }
+      if (searchRequestId) appliedFilters.push(`Request ID: "${searchRequestId}"`);
+      if (searchSubject) appliedFilters.push(`Search: "${searchSubject}"`);
+      
+      // Add filters row if any filters are applied
+      let filtersRow;
+      if (appliedFilters.length > 0) {
+        const filterText = `Applied Filters: ${appliedFilters.join(' | ')}`;
+        filtersRow = worksheet.addRow([filterText]);
+        filtersRow.getCell(1).font = { size: 10, color: { argb: '059669' }, bold: true, name: 'Arial' }; // Green text for filters
+        filtersRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+        filtersRow.height = 20;
+      } else {
+        filtersRow = worksheet.addRow(['Applied Filters: None (All records)']);
+        filtersRow.getCell(1).font = { size: 10, color: { argb: '6B7280' }, name: 'Arial' }; // Gray text
+        filtersRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+        filtersRow.height = 20;
+      }
+
+      // Now add the data table header row with professional styling optimized for sorting
       const headerRow = worksheet.addRow(exportHeaders);
-      headerRow.height = 30;
+      headerRow.height = 35; // Increased height for better presentation with sort arrows
       
       headerRow.eachCell((cell, colNumber) => {
-        cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 11, name: 'Arial' };
+        cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 12, name: 'Arial' }; // Increased font size
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
           fgColor: { argb: '1F4E79' } // Dark blue color
         };
         cell.border = {
-          top: { style: 'thin', color: { argb: '1F4E79' } },
-          left: { style: 'thin', color: { argb: '1F4E79' } },
-          bottom: { style: 'thin', color: { argb: '1F4E79' } },
-          right: { style: 'thin', color: { argb: '1F4E79' } }
+          top: { style: 'medium', color: { argb: '1F4E79' } }, // Thicker borders
+          left: { style: 'medium', color: { argb: '1F4E79' } },
+          bottom: { style: 'medium', color: { argb: '1F4E79' } },
+          right: { style: 'medium', color: { argb: '1F4E79' } }
         };
+        
+        // Apply center alignment to ALL headers, especially Description (column 3)
         cell.alignment = { 
           horizontal: 'center', 
           vertical: 'middle',
@@ -745,9 +858,9 @@ export async function GET(request: NextRequest) {
           capitalizeWords(request.mode || 'Standard'),
           `${request.requester.name}\n${request.requester.employeeId || ''}`, // Multi-line as shown in frontend
           capitalizeWords(request.department || ''),
-          request.createdAt ? format(new Date(request.createdAt), 'MMM dd, HH:mm') : 'N/A',
-          request.dueByTime ? format(new Date(request.dueByTime), 'MMM dd, HH:mm') : 'N/A',
-          request.resolvedTime ? format(new Date(request.resolvedTime), 'MMM dd, HH:mm') : 'N/A',
+          request.createdAt ? format(new Date(request.createdAt), 'MMMM dd, yyyy') : 'N/A',
+          request.dueByTime ? format(new Date(request.dueByTime), 'MMMM dd, yyyy') : 'N/A',
+          request.resolvedTime ? format(new Date(request.resolvedTime), 'MMMM dd, yyyy') : 'N/A',
           capitalizeWords(request.priority || ''),
           getTechnicianName(request.technician),
           request.serviceCategory || 'N/A',
@@ -780,18 +893,21 @@ export async function GET(request: NextRequest) {
         const calculatedHeight = 25 + ((maxLines - 1) * 18);
         row.height = Math.min(Math.max(calculatedHeight, 30), 200); // Min 30, Max 200 pixels
 
-        // Apply alternating row colors
-        const isEvenRow = index % 2 === 0;
-        const fillColor = isEvenRow ? 'FFFFFF' : 'F8F9FA'; // White and light gray
+        // Force all data rows to white background to eliminate blue highlighting issue
+        const fillColor = 'FFFFFF'; // Force all rows to white
 
+        // Apply styling to each cell individually
         row.eachCell((cell, colNumber) => {
-          // Apply consistent styling with Arial font
+          // Apply fresh styling with Arial font
           cell.font = { size: 9, color: { argb: '000000' }, name: 'Arial' };
+          
+          // Explicitly force the background color to override any Excel defaults
           cell.fill = {
             type: 'pattern',
             pattern: 'solid',
             fgColor: { argb: fillColor }
           };
+          
           cell.border = {
             top: { style: 'thin', color: { argb: 'D1D5DB' } },
             left: { style: 'thin', color: { argb: 'D1D5DB' } },
@@ -849,7 +965,7 @@ export async function GET(request: NextRequest) {
         { min: 10, autoWidth: true },   // Request ID
         { min: 25, autoWidth: true },   // Subject
         { min: 40, autoWidth: true },   // Description - minimum 40, auto-expand as needed
-        { min: 15, autoWidth: true },   // Request Type
+        { min: 18, autoWidth: true },   // Request Type - increased from 15 to 18
         { min: 15, autoWidth: true },   // Request Status
         { min: 15, autoWidth: true },   // Approval Status
         { min: 12, autoWidth: true },   // Mode
@@ -857,12 +973,26 @@ export async function GET(request: NextRequest) {
         { min: 18, autoWidth: true },   // Department
         { min: 15, autoWidth: true },   // Created At
         { min: 12, autoWidth: true },   // Due By
-        { min: 15, autoWidth: true },   // Resolved Time
+        { min: 18, autoWidth: true },   // Resolved Time - increased from 15 to 18
         { min: 12, autoWidth: true },   // Priority
         { min: 18, autoWidth: true },   // Technician
         { min: 18, autoWidth: true },   // Service Category
         { min: 25, autoWidth: true }    // Template
       ];
+
+      // Add AutoFilter to enable sorting and filtering
+      const headerRowNumber = 6; // Header row (Row 6: after filters row)  
+      const firstDataRow = headerRowNumber + 1; // First data row (Row 7)
+      const lastDataRow = headerRowNumber + filteredRequests.length; // Last data row
+      const lastColumn = exportHeaders.length; // Number of columns (A to P = 16 columns)
+      
+      // Set autoFilter if there are data rows to enable sorting
+      if (filteredRequests.length > 0) {
+        worksheet.autoFilter = {
+          from: { row: headerRowNumber, column: 1 }, // Start from header row, column A
+          to: { row: lastDataRow, column: lastColumn } // End at last data row, last column
+        };
+      }
 
       // Auto-adjust columns based on actual content with intelligent width calculation
       columnSettings.forEach((setting, index) => {
@@ -888,14 +1018,16 @@ export async function GET(request: NextRequest) {
         // Set the calculated width
         column.width = maxLength;
         
-        // Set column alignment with special handling for description
+        // Set column alignment - ensure ALL headers are centered, especially Description
         if (index === 2) { // Description column
+          // Data cells in description column should be left-aligned
           column.alignment = { 
             horizontal: 'left', 
             vertical: 'top',
             wrapText: true
           };
         } else {
+          // All other columns center-aligned
           column.alignment = { 
             horizontal: 'center', 
             vertical: 'middle',
@@ -918,7 +1050,7 @@ export async function GET(request: NextRequest) {
         });
         
         // Set minimum row height for better readability
-        if (rowNumber > 7 && row.height < 25) { // Data rows only
+        if (rowNumber > 8 && row.height < 25) { // Data rows only (was 7, now 8)
           row.height = 25;
         }
       });
@@ -941,15 +1073,33 @@ export async function GET(request: NextRequest) {
         }
       });
 
-      // Add footer information at the bottom left
-      worksheet.addRow([]); // Empty row for spacing
-      const footerRow1 = worksheet.addRow([`Generated: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`]);
-      footerRow1.getCell(1).font = { size: 10, color: { argb: '6B7280' }, name: 'Arial' };
-      footerRow1.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+      // FINAL FIX: Explicitly set Description header alignment after all other processing
+      // This ensures it won't be overridden by column or row settings
+      const finalDescriptionHeaderCell = worksheet.getCell('C8'); // Column C, Row 8 = Description header (was 7, now 8)
+      finalDescriptionHeaderCell.alignment = { 
+        horizontal: 'center', 
+        vertical: 'middle',
+        wrapText: true
+      };
       
-      const footerRow2 = worksheet.addRow([`Exported by: System Administrator | Total Records: ${filteredRequests.length} | Page 1 of 1`]);
-      footerRow2.getCell(1).font = { size: 10, color: { argb: '6B7280' }, name: 'Arial' };
-      footerRow2.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+      // Also ensure all header cells in row 6 are properly centered as final step
+      const headerRowCells = worksheet.getRow(6);
+      headerRowCells.eachCell((cell) => {
+        // Force center alignment for ALL header cells
+        cell.alignment = { 
+          horizontal: 'center', 
+          vertical: 'middle',
+          wrapText: true
+        };
+        
+        // Ensure header styling is preserved
+        cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 12, name: 'Arial' };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: '1F4E79' }
+        };
+      });
 
       // Generate Excel buffer
       const buffer = await workbook.xlsx.writeBuffer();
@@ -1006,7 +1156,8 @@ export async function GET(request: NextRequest) {
       doc.text(`Total Records: ${filteredRequests.length}`, 20, 64);
       
       // User and page info on the right
-      doc.text('Exported by: System Administrator', 200, 58);
+      const pdfUserName = user ? `${user.emp_fname} ${user.emp_lname}`.trim() : 'System Administrator';
+      doc.text(`Exported by: ${pdfUserName}`, 200, 58);
       doc.text('Page 1 of 1', 200, 64);
 
       // Create a simple table manually using basic PDF functions

@@ -103,7 +103,9 @@ export function PasswordChangeChecker({ children }: { children: React.ReactNode 
         setNewPassword('');
         setConfirmPassword('');
         // Sign out user to force re-login with new session
-        await signOut({ callbackUrl: '/login' });
+        await signOut({ redirect: false });
+        // Manually redirect to clean login URL
+        window.location.href = '/login';
       } else {
         const data = await response.json();
         toast({

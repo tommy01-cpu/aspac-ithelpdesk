@@ -33,30 +33,47 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
 
-  // Get callback URL from query params
-  const callbackUrl = searchParams?.get('callbackUrl') || '/';
-
-  // Check if user is already authenticated and redirect them
+  // Clean URL on component mount
   useEffect(() => {
-    const checkAuthAndRedirect = async () => {
+    // Clear URL parameters immediately
+    if (typeof window !== 'undefined' && window.location.search) {
+      window.history.replaceState({}, document.title, '/login');
+    }
+  }, []);
+
+  // Check if user is already authenticated
+  useEffect(() => {
+    const checkAuth = async () => {
       try {
         const session = await getSession();
         if (session) {
-          console.log('User already authenticated, redirecting to:', callbackUrl);
-          // Don't show toast, just redirect silently for better UX
-          router.push(callbackUrl);
-          return; // Don't set isCheckingAuth to false if redirecting
+          console.log('🔍 User already authenticated:', {
+            isTechnician: session.user.isTechnician,
+            isAdmin: session.user.isAdmin,
+            employee_id: session.user.employee_id
+          });
+          // Redirect authenticated users away from login page
+          window.location.href = '/';
+          return;
         }
       } catch (error) {
         console.error('Error checking authentication:', error);
       }
       
-      // Only show login form if user is not authenticated
+      // Clear any URL parameters when showing login form
+      if (window.location.search) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+      
+      // Show login form
       setIsCheckingAuth(false);
     };
 
-    checkAuthAndRedirect();
-  }, [callbackUrl, router]);
+    // Add a small delay to prevent race conditions with middleware
+    const timeoutId = setTimeout(checkAuth, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, []);
 
   // Password validation function
   const validatePassword = (password: string) => {
@@ -80,45 +97,55 @@ export default function LoginPage() {
     setError('');
     
     try {
+      // Clear any existing errors
+      setError('');
+      
+      // Simple login with redirect to home page
       const result = await signIn('credentials', {
         employee_id: employeeId,
         password: password,
-        redirect: false,
+        callbackUrl: '/',
+        redirect: false, // Handle redirect manually to avoid URL parameters
       });
 
+      console.log('🔍 SignIn result:', result);
+
       if (result?.error) {
+        console.log('❌ Login error:', result.error);
         setError('Invalid employee ID or password');
         toast({
           title: "Login Failed",
           description: "Invalid employee ID or password. Please try again.",
           variant: "destructive"
         });
-      } else {
-        // Get the session to verify login and check password change requirement
+      } else if (result?.ok) {
+        console.log('✅ Login successful, checking session...');
+        
+        // Get session to check for password change requirement
         const session = await getSession();
-        if (session) {
-          // Check if password change is required
-          if (session.user.requiresPasswordChange) {
-            setIsLoading(false);
-            setShowForceChangePassword(true);
-            toast({
-              title: "Password Change Required",
-              description: "Please create a new secure password to continue.",
-              variant: "destructive"
-            });
-            return;
-          }
-          
-          // Get user's name for personalized welcome message
-          const userName = session.user.name || session.user.employee_id || 'User';
-          
+        if (session?.user?.requiresPasswordChange) {
+          setIsLoading(false);
+          setShowForceChangePassword(true);
           toast({
-            title: "Login Successful",
-            description: `Welcome, ${userName}! `,
-            className: "bg-yellow-50 border-yellow-200 text-yellow-800"
+            title: "Password Change Required",
+            description: "Please create a new secure password to continue.",
+            variant: "destructive"
           });
-          router.push(callbackUrl);
+          return;
         }
+        
+        // Show success message and redirect
+        const userName = session?.user?.name || employeeId;
+        toast({
+          title: "Login Successful",
+          description: `Welcome, ${userName}!`,
+          className: "bg-yellow-50 border-yellow-200 text-yellow-800"
+        });
+        
+        // Redirect after a short delay
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 500);
       }
     } catch (error) {
       const errorMessage = 'An error occurred during login';
@@ -425,7 +452,7 @@ export default function LoginPage() {
                 />
                 <h1 className="text-xl font-semibold font-neo-sans" style={{ fontSize: '35px' }}>IT Help Desk</h1>
               </div>
-               <p className="text-sm font-bold ">Version 1.250912</p>
+               <p className="text-sm font-bold ">Version 1.250924</p>
             </CardHeader>
 
             <CardContent className="space-y-6">

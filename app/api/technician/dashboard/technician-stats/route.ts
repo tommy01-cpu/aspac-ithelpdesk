@@ -38,79 +38,127 @@ export async function GET(request: NextRequest) {
     // If no technicians found, return empty array with totals
     if (technicians.length === 0) {
       // Still calculate unassigned requests
-      const unassignedOnHold = await prisma.request.count({
-        where: {
-          status: 'on_hold',
-          AND: [
-            {
-              OR: [
-                {
-                  formData: {
-                    path: ['assignedTechnicianId'],
-                    equals: Prisma.JsonNull
-                  }
-                },
-                {
-                  formData: {
-                    path: ['assignedTechnician'],
-                    equals: Prisma.JsonNull
-                  }
-                },
-                {
-                  NOT: {
+      const [unassignedOnHold, unassignedOpen, unassignedOverdue] = await Promise.all([
+        prisma.request.count({
+          where: {
+            status: 'on_hold',
+            AND: [
+              {
+                OR: [
+                  {
                     formData: {
                       path: ['assignedTechnicianId'],
-                      not: Prisma.JsonNull
+                      equals: Prisma.JsonNull
+                    }
+                  },
+                  {
+                    formData: {
+                      path: ['assignedTechnician'],
+                      equals: Prisma.JsonNull
+                    }
+                  },
+                  {
+                    NOT: {
+                      formData: {
+                        path: ['assignedTechnicianId'],
+                        not: Prisma.JsonNull
+                      }
                     }
                   }
-                }
-              ]
-            }
-          ]
-        }
-      });
+                ]
+              }
+            ]
+          }
+        }),
 
-      const unassignedOpen = await prisma.request.count({
-        where: {
-          status: 'open',
-          AND: [
-            {
-              OR: [
-                {
-                  formData: {
-                    path: ['assignedTechnicianId'],
-                    equals: Prisma.JsonNull
-                  }
-                },
-                {
-                  formData: {
-                    path: ['assignedTechnician'],
-                    equals: Prisma.JsonNull
-                  }
-                },
-                {
-                  NOT: {
+        prisma.request.count({
+          where: {
+            status: 'open',
+            AND: [
+              {
+                OR: [
+                  {
                     formData: {
                       path: ['assignedTechnicianId'],
-                      not: Prisma.JsonNull
+                      equals: Prisma.JsonNull
+                    }
+                  },
+                  {
+                    formData: {
+                      path: ['assignedTechnician'],
+                      equals: Prisma.JsonNull
+                    }
+                  },
+                  {
+                    NOT: {
+                      formData: {
+                        path: ['assignedTechnicianId'],
+                        not: Prisma.JsonNull
+                      }
                     }
                   }
-                }
-              ]
-            }
-          ]
-        }
-      });
+                ]
+              }
+            ]
+          }
+        }),
+
+        // Unassigned overdue
+        prisma.request.count({
+          where: {
+            status: {
+              in: ['open', 'on_hold']
+            },
+            AND: [
+              {
+                OR: [
+                  {
+                    formData: {
+                      path: ['assignedTechnicianId'],
+                      equals: Prisma.JsonNull
+                    }
+                  },
+                  {
+                    formData: {
+                      path: ['assignedTechnician'],
+                      equals: Prisma.JsonNull
+                    }
+                  },
+                  {
+                    NOT: {
+                      formData: {
+                        path: ['assignedTechnicianId'],
+                        not: Prisma.JsonNull
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                OR: [
+                  {
+                    // Check JSON formData dueDateTime field (ISO string format)
+                    formData: {
+                      path: ['slaDueDate'],
+                      lt: new Date().toISOString()
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        })
+      ]);
 
       const result = [];
       
-      if (unassignedOnHold > 0 || unassignedOpen > 0) {
+      if (unassignedOnHold > 0 || unassignedOpen > 0 || unassignedOverdue > 0) {
         result.push({
           id: 0,
           name: 'Unassigned',
           onHold: unassignedOnHold,
           open: unassignedOpen,
-          overdue: 0,
+          overdue: unassignedOverdue,
           totalAssigned: unassignedOnHold + unassignedOpen
         });
       }
@@ -121,7 +169,7 @@ export async function GET(request: NextRequest) {
         name: 'Total',
         onHold: unassignedOnHold,
         open: unassignedOpen,
-        overdue: 0,
+        overdue: unassignedOverdue,
         totalAssigned: unassignedOnHold + unassignedOpen
       });
 
@@ -189,35 +237,45 @@ export async function GET(request: NextRequest) {
             }
           }),
           
-          // Overdue requests (older than 3 days and still active)
+          // Overdue requests (past due date based on SLA)
           prisma.request.count({
             where: {
-              OR: [
+              AND: [
                 {
-                  formData: {
-                    path: ['assignedTechnicianId'],
-                    equals: tech.userId
+                  OR: [
+                    {
+                      formData: {
+                        path: ['assignedTechnicianId'],
+                        equals: tech.userId
+                      }
+                    },
+                    {
+                      formData: {
+                        path: ['assignedTechnicianId'],
+                        equals: tech.userId.toString()
+                      }
+                    },
+                    {
+                      formData: {
+                        path: ['assignedTechnician'],
+                        equals: techName
+                      }
+                    }
+                  ]
+                },
+                {
+                  status: {
+                    in: ['open', 'on_hold']
                   }
                 },
                 {
+                  // Check for overdue based on SLA due date - use same field as dashboard stats
                   formData: {
-                    path: ['assignedTechnicianId'],
-                    equals: tech.userId.toString()
-                  }
-                },
-                {
-                  formData: {
-                    path: ['assignedTechnician'],
-                    equals: techName
+                    path: ['slaDueDate'],
+                    lt: new Date().toISOString()
                   }
                 }
-              ],
-              status: {
-                in: ['open', 'on_hold']
-              },
-              createdAt: {
-                lt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) // 3 days ago
-              }
+              ]
             }
           })
         ]);
@@ -236,186 +294,294 @@ export async function GET(request: NextRequest) {
     );
 
     // Add "Others" category for requests assigned to users not in technicians list
-    const othersOnHold = await prisma.request.count({
-      where: {
-        status: 'on_hold',
-        AND: [
-          {
-            NOT: {
-              OR: technicians.flatMap(tech => [
-                {
-                  formData: {
-                    path: ['assignedTechnicianId'],
-                    equals: tech.id
+    const [othersOnHold, othersOpen, othersOverdue] = await Promise.all([
+      prisma.request.count({
+        where: {
+          status: 'on_hold',
+          AND: [
+            {
+              NOT: {
+                OR: technicians.flatMap(tech => [
+                  {
+                    formData: {
+                      path: ['assignedTechnicianId'],
+                      equals: tech.id
+                    }
+                  },
+                  {
+                    formData: {
+                      path: ['assignedTechnicianId'],
+                      equals: tech.id.toString()
+                    }
+                  },
+                  {
+                    formData: {
+                      path: ['assignedTechnician'],
+                      equals: tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`.trim()
+                    }
                   }
-                },
+                ])
+              }
+            },
+            {
+              OR: [
                 {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    equals: tech.id.toString()
+                    not: Prisma.JsonNull
                   }
                 },
                 {
                   formData: {
                     path: ['assignedTechnician'],
-                    equals: tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`.trim()
+                    not: Prisma.JsonNull
                   }
                 }
-              ])
+              ]
             }
-          },
-          {
-            OR: [
-              {
-                formData: {
-                  path: ['assignedTechnicianId'],
-                  not: Prisma.JsonNull
-                }
-              },
-              {
-                formData: {
-                  path: ['assignedTechnician'],
-                  not: Prisma.JsonNull
-                }
-              }
-            ]
-          }
-        ]
-      }
-    });
+          ]
+        }
+      }),
 
-    const othersOpen = await prisma.request.count({
-      where: {
-        status: 'open',
-        AND: [
-          {
-            NOT: {
-              OR: technicians.flatMap(tech => [
-                {
-                  formData: {
-                    path: ['assignedTechnicianId'],
-                    equals: tech.id
+      prisma.request.count({
+        where: {
+          status: 'open',
+          AND: [
+            {
+              NOT: {
+                OR: technicians.flatMap(tech => [
+                  {
+                    formData: {
+                      path: ['assignedTechnicianId'],
+                      equals: tech.id
+                    }
+                  },
+                  {
+                    formData: {
+                      path: ['assignedTechnicianId'],
+                      equals: tech.id.toString()
+                    }
+                  },
+                  {
+                    formData: {
+                      path: ['assignedTechnician'],
+                      equals: tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`.trim()
+                    }
                   }
-                },
+                ])
+              }
+            },
+            {
+              OR: [
                 {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    equals: tech.id.toString()
+                    not: Prisma.JsonNull
                   }
                 },
                 {
                   formData: {
                     path: ['assignedTechnician'],
-                    equals: tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`.trim()
+                    not: Prisma.JsonNull
                   }
                 }
-              ])
+              ]
             }
+          ]
+        }
+      }),
+
+      // Others overdue
+      prisma.request.count({
+        where: {
+          status: {
+            in: ['open', 'on_hold']
           },
-          {
-            OR: [
-              {
-                formData: {
-                  path: ['assignedTechnicianId'],
-                  not: Prisma.JsonNull
-                }
-              },
-              {
-                formData: {
-                  path: ['assignedTechnician'],
-                  not: Prisma.JsonNull
-                }
+          AND: [
+            {
+              NOT: {
+                OR: technicians.flatMap(tech => [
+                  {
+                    formData: {
+                      path: ['assignedTechnicianId'],
+                      equals: tech.id
+                    }
+                  },
+                  {
+                    formData: {
+                      path: ['assignedTechnicianId'],
+                      equals: tech.id.toString()
+                    }
+                  },
+                  {
+                    formData: {
+                      path: ['assignedTechnician'],
+                      equals: tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`.trim()
+                    }
+                  }
+                ])
               }
-            ]
-          }
-        ]
-      }
-    });
+            },
+            {
+              OR: [
+                {
+                  formData: {
+                    path: ['assignedTechnicianId'],
+                    not: Prisma.JsonNull
+                  }
+                },
+                {
+                  formData: {
+                    path: ['assignedTechnician'],
+                    not: Prisma.JsonNull
+                  }
+                }
+              ]
+            },
+            {
+              // Check for overdue based on SLA due date - use same field as dashboard stats
+              formData: {
+                path: ['slaDueDate'],
+                lt: new Date().toISOString()
+              }
+            }
+          ]
+        }
+      })
+    ]);
 
     // Add "Unassigned" category
-    const unassignedOnHold = await prisma.request.count({
-      where: {
-        status: 'on_hold',
-        AND: [
-          {
-            OR: [
-              {
-                formData: {
-                  path: ['assignedTechnicianId'],
-                  equals: Prisma.JsonNull
-                }
-              },
-              {
-                formData: {
-                  path: ['assignedTechnician'],
-                  equals: Prisma.JsonNull
-                }
-              },
-              {
-                NOT: {
+    const [unassignedOnHold, unassignedOpen, unassignedOverdue] = await Promise.all([
+      prisma.request.count({
+        where: {
+          status: 'on_hold',
+          AND: [
+            {
+              OR: [
+                {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    not: Prisma.JsonNull
+                    equals: Prisma.JsonNull
+                  }
+                },
+                {
+                  formData: {
+                    path: ['assignedTechnician'],
+                    equals: Prisma.JsonNull
+                  }
+                },
+                {
+                  NOT: {
+                    formData: {
+                      path: ['assignedTechnicianId'],
+                      not: Prisma.JsonNull
+                    }
                   }
                 }
-              }
-            ]
-          }
-        ]
-      }
-    });
+              ]
+            }
+          ]
+        }
+      }),
 
-    const unassignedOpen = await prisma.request.count({
-      where: {
-        status: 'open',
-        AND: [
-          {
-            OR: [
-              {
-                formData: {
-                  path: ['assignedTechnicianId'],
-                  equals: Prisma.JsonNull
-                }
-              },
-              {
-                formData: {
-                  path: ['assignedTechnician'],
-                  equals: Prisma.JsonNull
-                }
-              },
-              {
-                NOT: {
+      prisma.request.count({
+        where: {
+          status: 'open',
+          AND: [
+            {
+              OR: [
+                {
                   formData: {
                     path: ['assignedTechnicianId'],
-                    not: Prisma.JsonNull
+                    equals: Prisma.JsonNull
+                  }
+                },
+                {
+                  formData: {
+                    path: ['assignedTechnician'],
+                    equals: Prisma.JsonNull
+                  }
+                },
+                {
+                  NOT: {
+                    formData: {
+                      path: ['assignedTechnicianId'],
+                      not: Prisma.JsonNull
+                    }
                   }
                 }
-              }
-            ]
-          }
-        ]
-      }
-    });
+              ]
+            }
+          ]
+        }
+      }),
+
+      // Unassigned overdue
+      prisma.request.count({
+        where: {
+          status: {
+            in: ['open', 'on_hold']
+          },
+          AND: [
+            {
+              OR: [
+                {
+                  formData: {
+                    path: ['assignedTechnicianId'],
+                    equals: Prisma.JsonNull
+                  }
+                },
+                {
+                  formData: {
+                    path: ['assignedTechnician'],
+                    equals: Prisma.JsonNull
+                  }
+                },
+                {
+                  NOT: {
+                    formData: {
+                      path: ['assignedTechnicianId'],
+                      not: Prisma.JsonNull
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              OR: [
+                {
+                  // Check JSON formData dueDateTime field (ISO string format)
+                  formData: {
+                    path: ['slaDueDate'],
+                    lt: new Date().toISOString()
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      })
+    ]);
 
     // Add summary rows
-    if (othersOnHold > 0 || othersOpen > 0) {
+    if (othersOnHold > 0 || othersOpen > 0 || othersOverdue > 0) {
       technicianStats.push({
         id: -1,
         name: 'Others',
         onHold: othersOnHold,
         open: othersOpen,
-        overdue: 0,
+        overdue: othersOverdue,
         totalAssigned: othersOnHold + othersOpen
       });
     }
 
-    if (unassignedOnHold > 0 || unassignedOpen > 0) {
+    if (unassignedOnHold > 0 || unassignedOpen > 0 || unassignedOverdue > 0) {
       technicianStats.push({
         id: 0,
         name: 'Unassigned',
         onHold: unassignedOnHold,
         open: unassignedOpen,
-        overdue: 0,
+        overdue: unassignedOverdue,
         totalAssigned: unassignedOnHold + unassignedOpen
       });
     }

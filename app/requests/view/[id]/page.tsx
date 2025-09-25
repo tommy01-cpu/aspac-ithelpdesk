@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic';
 import 'react-quill/dist/quill.snow.css';
 import { 
   ArrowLeft, 
+  ArrowRight,
   Clock, 
   AlertCircle, 
   AlertTriangle,
@@ -3832,6 +3833,8 @@ export default function RequestViewPage() {
                                   case 'Approvals Initiated':
                                   case 'Next Level Activated':
                                     return <Mail className="h-4 w-4 text-orange-600" />; // Orange mail icon
+                                  case 'Approval Redirected':
+                                    return <ArrowRight className="h-4 w-4 text-blue-600" />; // Blue arrow for redirect
                                   case 'Approved':
                                   case 'Request Approved - Ready for Work':
                                   case 'Resolved':
@@ -3865,12 +3868,13 @@ export default function RequestViewPage() {
                                 }
                               };
 
-                              // Helper function to get priority for sorting (lower number = higher priority)
+                              // Helper function to get priority for sorting (higher number = appears first in timeline)
                               const getActionPriority = (action: string) => {
                                 switch (action) {
                                   case 'Created': return 1;
-                                  case 'Approvals Initiated': return 2;
-                                  case 'Next Level Activated': return 2;
+                                  case 'Approvals Initiated': return 3; // Higher number to appear first
+                                  case 'Next Level Activated': return 3; // Higher number to appear first  
+                                  case 'Approval Redirected': return 4; // Lower number to appear after Approvals Initiated
                                   case 'Approved': return 10;
                                   case 'Rejected': return 10;
                                   case 'Requested Clarification': return 10;

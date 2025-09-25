@@ -76,6 +76,15 @@ model users {
   userDepartment                                    Department?            @relation("DepartmentMembers", fields: [departmentId], references: [id])
   reportingTo                                       users?                 @relation("UserReporting", fields: [reportingToId], references: [id])
   directReports                                     users[]                @relation("UserReporting")
+  
+  // Backup Approver Relations
+  originalApproverConfigs                           backup_approvers[]     @relation("OriginalApprover")
+  backupApproverConfigs                             backup_approvers[]     @relation("BackupApprover")
+  createdBackupConfigs                              backup_approvers[]     @relation("BackupApproverCreator")
+  deactivatedBackupConfigs                          backup_approvers[]     @relation("BackupApproverDeactivator")
+  originalApproverDiversions                        approval_diversions[]  @relation("OriginalApproverDiversions")
+  backupApproverDiversions                          approval_diversions[]  @relation("BackupApproverDiversions")
+  backupApproverLogActions                          backup_approver_logs[] @relation("BackupApproverLogPerformer")
 }
 
 model Department {
@@ -466,6 +475,7 @@ model Request {
   approvals       RequestApproval[]
   history         RequestHistory[]
   user            users             @relation(fields: [userId], references: [id])
+  approval_diversions approval_diversions[]
 
   @@index([userId])
   @@index([templateId])
@@ -746,4 +756,99 @@ enum NotificationType {
   CLARIFICATION_REQUIRED
   SLA_WARNING
   SLA_ESCALATION
+  APPROVAL_REVERTED
+  BACKUP_PERIOD_ENDED
+}
+
+model backup_approvers {
+  id                    Int                     @id @default(autoincrement())
+  original_approver_id  Int
+  backup_approver_id    Int
+  start_date           DateTime                @db.Date
+  end_date             DateTime                @db.Date
+  is_active            Boolean                 @default(true)
+  divert_pending       Boolean                 @default(true)
+  reason               String?                 @db.VarChar(500)
+  created_at           DateTime                @default(now())
+  updated_at           DateTime                @default(now()) @updatedAt
+  created_by           Int
+  deactivated_at       DateTime?
+  deactivated_by       Int?
+
+  // Relations
+  original_approver    users                   @relation("OriginalApprover", fields: [original_approver_id], references: [id], onDelete: Restrict)
+  backup_approver      users                   @relation("BackupApprover", fields: [backup_approver_id], references: [id], onDelete: Restrict)
+  creator              users                   @relation("BackupApproverCreator", fields: [created_by], references: [id], onDelete: Restrict)
+  deactivator          users?                  @relation("BackupApproverDeactivator", fields: [deactivated_by], references: [id], onDelete: Restrict)
+  
+  // Related records
+  approval_diversions  approval_diversions[]
+  backup_approver_logs backup_approver_logs[]
+
+  @@index([original_approver_id])
+  @@index([backup_approver_id])
+  @@index([start_date, end_date])
+  @@index([is_active, start_date, end_date])
+}
+
+model approval_diversions {
+  id                    Int                @id @default(autoincrement())
+  request_id           Int
+  original_approver_id Int
+  backup_approver_id   Int
+  diverted_at          DateTime           @default(now())
+  reverted_at          DateTime?
+  backup_config_id     Int
+  diversion_type       DiversionType      @default(automatic)
+  reversion_type       ReversionType?
+  notes                String?
+
+  // Relations
+  request              Request            @relation(fields: [request_id], references: [id], onDelete: Cascade)
+  original_approver    users              @relation("OriginalApproverDiversions", fields: [original_approver_id], references: [id], onDelete: Restrict)
+  backup_approver      users              @relation("BackupApproverDiversions", fields: [backup_approver_id], references: [id], onDelete: Restrict)
+  backup_config        backup_approvers   @relation(fields: [backup_config_id], references: [id], onDelete: Restrict)
+
+  @@index([request_id])
+  @@index([backup_config_id])
+  @@index([diverted_at, reverted_at])
+  @@index([reverted_at]) // For pending diversions (NULL values)
+}
+
+model backup_approver_logs {
+  id               Int                      @id @default(autoincrement())
+  backup_config_id Int
+  action_type      BackupApproverLogAction
+  details          Json?
+  performed_by     Int?
+  performed_at     DateTime                 @default(now())
+
+  // Relations
+  backup_config    backup_approvers         @relation(fields: [backup_config_id], references: [id], onDelete: Cascade)
+  performer        users?                   @relation("BackupApproverLogPerformer", fields: [performed_by], references: [id], onDelete: SetNull)
+
+  @@index([backup_config_id, performed_at])
+  @@index([action_type])
+  @@index([performed_at])
+}
+
+enum DiversionType {
+  automatic
+  manual
+}
+
+enum ReversionType {
+  automatic
+  manual
+  expired
+}
+
+enum BackupApproverLogAction {
+  created
+  activated
+  deactivated
+  expired
+  updated
+  diversion
+  reversion
 }

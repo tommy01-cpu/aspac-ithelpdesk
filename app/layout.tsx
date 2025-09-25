@@ -10,6 +10,14 @@ import { Toaster } from '@/components/ui/toaster';
 // Import SAFE background service manager to auto-start all services
 import '@/lib/safe-background-service-manager';
 
+// Hide console.log globally in all environments
+if (typeof window !== 'undefined') {
+  console.log = function () {};
+  console.info = function () {};
+  console.warn = function () {}; // Optional: also hide warnings
+  // Keep console.error for debugging critical issues
+}
+
 const inter = Inter({ subsets: ['latin'] });
 const nunitoSans = Nunito_Sans({ 
   subsets: ['latin'],
