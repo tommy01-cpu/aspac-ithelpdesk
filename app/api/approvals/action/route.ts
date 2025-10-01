@@ -605,43 +605,15 @@ export async function POST(request: NextRequest) {
             lines.push(`Technician Auto Assign : ${autoAssigned ? 'YES' : 'NO'}`);
             await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
           } else {
-            // Fallback path mirrors Image 1 entries
-            const priority = ((finalRequest.formData as any)?.priority || '').toLowerCase();
-            let slaHours = 48; if (priority === 'top') slaHours = 4; else if (priority === 'high') slaHours = 8; else if (priority === 'medium') slaHours = 16;
-            
-            // SLA should start from approval time, not request creation time
-            const currentTime = new Date(); // Same time for both slaStartAt and slaCalculatedAt
-            const computedDue = await calculateSLADueDate(currentTime, slaHours, { useOperationalHours: true });
-            
-            // Convert dates to Philippine time format without Z
-            const computedDuePH = formatPhilippineTime(computedDue);
-            const slaCalculatedAtPH = formatPhilippineTime(currentTime);
-            const slaStartAtPH = formatPhilippineTime(currentTime);
-            
-            await prisma.request.update({ 
-              where: { id: approval.requestId }, 
-              data: { 
-                formData: { 
-                  ...(finalRequest.formData as any || {}), 
-                  slaHours: slaHours.toString(), 
-                  slaDueDate: computedDuePH,
-                  slaCalculatedAt: slaCalculatedAtPH,
-                  slaStartAt: slaStartAtPH,
-                  slaSource: 'fallback'
-                } 
-              } 
+            // Fallback: No SLA configured - just update status without SLA
+            console.log('⚠️ No SLA configuration found for this request - skipping SLA assignment');
+            await addHistory(prisma, { 
+              requestId: approval.requestId, 
+              action: 'Updated', 
+              actorName: 'System', 
+              actorType: 'system', 
+              details: `Status changed from ${formatStatusForDisplay(approval.request.status)} to Open\nTechnician Auto Assign : NO\nSLA : Not Configured` 
             });
-            await addHistory(prisma, { requestId: approval.requestId, action: 'Start Timer', actorName: 'System', actorType: 'system', details: 'Timer started by System and status set to Open' });
-            const prevDue = (approval.request.formData as any)?.slaDueDate as string | undefined;
-            const fmt = (iso?: string) => { if (!iso) return '-'; const d = new Date(iso); return d.toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }); };
-            const lines: string[] = [];
-            if (computedDue) {
-              if (prevDue) lines.push(`DueBy Date changed from ${fmt(prevDue)} to ${fmt(computedDuePH)}`);
-              else lines.push(`DueBy Date set to ${fmt(computedDuePH)}`);
-            }
-            lines.push(`Status changed from ${formatStatusForDisplay(approval.request.status)} to Open`);
-            lines.push('Technician Auto Assign : NO');
-            await addHistory(prisma, { requestId: approval.requestId, action: 'Updated', actorName: 'System', actorType: 'system', details: lines.join('\n') });
           }
         } catch (e) {
           console.error('Safety finalization failed:', e);

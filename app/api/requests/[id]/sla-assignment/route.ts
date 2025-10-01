@@ -202,36 +202,25 @@ export async function POST(request: NextRequest) {
       }
 
       if (slaHours == null) {
-        // Fallback mapping by priority (hours)
-        const formData = requestDetails.formData as any;
-        const priority = (formData?.priority || formData?.['2'] || '').toString().toLowerCase();
-        switch (priority) {
-          case 'high':
-            slaHours = 8; // 8 hours for high priority
-            useOperationalHours = true; // Always use operational hours
-            break;
-          case 'top':
-            slaHours = 4; // 4 hours for top priority
-            useOperationalHours = true; // Always use operational hours
-            break;
-          case 'medium':
-            slaHours = 16; // 16 hours for medium priority
-            useOperationalHours = true; // Always use operational hours
-            break;
-          case 'low':
-          default:
-            slaHours = 16; // 16 hours for low priority
-            useOperationalHours = true; // Always use operational hours
-            break;
+        // No SLA configuration found - do not apply SLA
+        console.log('✅ No SLA configuration found for this request - skipping SLA assignment');
+        results.sla.success = false;
+        results.sla.error = 'No SLA configured for this request type/template';
+        
+        // Still add history to document that no SLA was applied
+        await addHistory(prisma, {
+          requestId: requestId,
+          action: 'SLA Evaluation',
+          actorName: 'System',
+          actorType: 'system',
+          details: 'No SLA configuration found - SLA not applied'
+        });
+      } else {
+        // Validate slaHours
+        if (!slaHours || slaHours <= 0 || isNaN(slaHours)) {
+          console.warn('⚠️ Invalid slaHours, using default 48 hours');
+          slaHours = 48;
         }
-        slaSource = 'fallback';
-      }
-
-      // Validate slaHours
-      if (!slaHours || slaHours <= 0 || isNaN(slaHours)) {
-        console.warn('⚠️ Invalid slaHours, using default 48 hours');
-        slaHours = 48;
-      }
 
       // For service requests, SLA should start when approvals are completed (which is now)
       // For incidents, SLA starts when they become "open" (which is now)
@@ -473,7 +462,8 @@ export async function POST(request: NextRequest) {
         error: null
       } as any;
 
-  console.log(`✅ SLA calculated: ${slaHours} hours, start: ${slaStartAtPH}, due date: ${slaDueDatePH}`);
+      console.log(`✅ SLA calculated: ${slaHours} hours, start: ${slaStartAtPH}, due date: ${slaDueDatePH}`);
+    } // End of else block for slaHours != null
 
     } catch (slaError: any) {
       console.error('❌ Error calculating SLA:', slaError);

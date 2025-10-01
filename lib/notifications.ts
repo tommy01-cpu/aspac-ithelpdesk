@@ -455,7 +455,7 @@ export const notifyRequestAssigned = async (requestData: any, templateData: any,
     const technicianEmail = technicianData.emp_email;
     const dueDate = (requestData.formData as any)?.slaDueDate 
       ? formatTimestampForNotification((requestData.formData as any).slaDueDate)
-      : 'Not specified';
+      : 'N/A';
 
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();
@@ -646,7 +646,7 @@ export const notifySLAEscalation = async (requestData: any, templateData: any, t
     const technicianEmail = technicianData.emp_email;
     const dueDate = (requestData.formData as any)?.slaDueDate 
       ? formatTimestampForNotification((requestData.formData as any).slaDueDate)
-      : 'Not specified';
+      : 'N/A';
 
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();

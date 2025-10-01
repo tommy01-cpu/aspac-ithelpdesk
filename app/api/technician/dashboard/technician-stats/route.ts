@@ -37,35 +37,25 @@ export async function GET(request: NextRequest) {
 
     // If no technicians found, return empty array with totals
     if (technicians.length === 0) {
-      // Still calculate unassigned requests
+      // Still calculate unassigned requests - only check assignedTechnicianId
       const [unassignedOnHold, unassignedOpen, unassignedOverdue] = await Promise.all([
         prisma.request.count({
           where: {
             status: 'on_hold',
-            AND: [
+            OR: [
               {
-                OR: [
-                  {
-                    formData: {
-                      path: ['assignedTechnicianId'],
-                      equals: Prisma.JsonNull
-                    }
-                  },
-                  {
-                    formData: {
-                      path: ['assignedTechnician'],
-                      equals: Prisma.JsonNull
-                    }
-                  },
-                  {
-                    NOT: {
-                      formData: {
-                        path: ['assignedTechnicianId'],
-                        not: Prisma.JsonNull
-                      }
-                    }
+                formData: {
+                  path: ['assignedTechnicianId'],
+                  equals: Prisma.JsonNull
+                }
+              },
+              {
+                NOT: {
+                  formData: {
+                    path: ['assignedTechnicianId'],
+                    not: Prisma.JsonNull
                   }
-                ]
+                }
               }
             ]
           }
@@ -74,30 +64,20 @@ export async function GET(request: NextRequest) {
         prisma.request.count({
           where: {
             status: 'open',
-            AND: [
+            OR: [
               {
-                OR: [
-                  {
-                    formData: {
-                      path: ['assignedTechnicianId'],
-                      equals: Prisma.JsonNull
-                    }
-                  },
-                  {
-                    formData: {
-                      path: ['assignedTechnician'],
-                      equals: Prisma.JsonNull
-                    }
-                  },
-                  {
-                    NOT: {
-                      formData: {
-                        path: ['assignedTechnicianId'],
-                        not: Prisma.JsonNull
-                      }
-                    }
+                formData: {
+                  path: ['assignedTechnicianId'],
+                  equals: Prisma.JsonNull
+                }
+              },
+              {
+                NOT: {
+                  formData: {
+                    path: ['assignedTechnicianId'],
+                    not: Prisma.JsonNull
                   }
-                ]
+                }
               }
             ]
           }
@@ -109,41 +89,28 @@ export async function GET(request: NextRequest) {
             status: {
               in: ['open', 'on_hold']
             },
-            AND: [
+            OR: [
               {
-                OR: [
-                  {
-                    formData: {
-                      path: ['assignedTechnicianId'],
-                      equals: Prisma.JsonNull
-                    }
-                  },
-                  {
-                    formData: {
-                      path: ['assignedTechnician'],
-                      equals: Prisma.JsonNull
-                    }
-                  },
-                  {
-                    NOT: {
-                      formData: {
-                        path: ['assignedTechnicianId'],
-                        not: Prisma.JsonNull
-                      }
-                    }
-                  }
-                ]
+                formData: {
+                  path: ['assignedTechnicianId'],
+                  equals: Prisma.JsonNull
+                }
               },
               {
-                OR: [
-                  {
-                    // Check JSON formData dueDateTime field (ISO string format)
-                    formData: {
-                      path: ['slaDueDate'],
-                      lt: new Date().toISOString()
-                    }
+                NOT: {
+                  formData: {
+                    path: ['assignedTechnicianId'],
+                    not: Prisma.JsonNull
                   }
-                ]
+                }
+              }
+            ],
+            AND: [
+              {
+                formData: {
+                  path: ['slaDueDate'],
+                  lt: new Date().toISOString()
+                }
               }
             ]
           }
@@ -176,12 +143,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(result);
     }
 
-    // Calculate stats for each technician
+    // Calculate stats for each technician - only use assignedTechnicianId
     const technicianStats = await Promise.all(
       technicians.map(async (tech) => {
         const techName = tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`.trim();
         
-        // Count requests by status for this technician
+        // Count requests by status for this technician using only assignedTechnicianId
         const [onHold, open, overdue] = await Promise.all([
           // On-hold requests
           prisma.request.count({
@@ -197,12 +164,6 @@ export async function GET(request: NextRequest) {
                   formData: {
                     path: ['assignedTechnicianId'],
                     equals: tech.userId.toString()
-                  }
-                },
-                {
-                  formData: {
-                    path: ['assignedTechnician'],
-                    equals: techName
                   }
                 }
               ],
@@ -225,12 +186,6 @@ export async function GET(request: NextRequest) {
                     path: ['assignedTechnicianId'],
                     equals: tech.userId.toString()
                   }
-                },
-                {
-                  formData: {
-                    path: ['assignedTechnician'],
-                    equals: techName
-                  }
                 }
               ],
               status: 'open'
@@ -240,36 +195,25 @@ export async function GET(request: NextRequest) {
           // Overdue requests (past due date based on SLA)
           prisma.request.count({
             where: {
-              AND: [
+              OR: [
                 {
-                  OR: [
-                    {
-                      formData: {
-                        path: ['assignedTechnicianId'],
-                        equals: tech.userId
-                      }
-                    },
-                    {
-                      formData: {
-                        path: ['assignedTechnicianId'],
-                        equals: tech.userId.toString()
-                      }
-                    },
-                    {
-                      formData: {
-                        path: ['assignedTechnician'],
-                        equals: techName
-                      }
-                    }
-                  ]
-                },
-                {
-                  status: {
-                    in: ['open', 'on_hold']
+                  formData: {
+                    path: ['assignedTechnicianId'],
+                    equals: tech.userId
                   }
                 },
                 {
-                  // Check for overdue based on SLA due date - use same field as dashboard stats
+                  formData: {
+                    path: ['assignedTechnicianId'],
+                    equals: tech.userId.toString()
+                  }
+                }
+              ],
+              status: {
+                in: ['open', 'on_hold']
+              },
+              AND: [
+                {
                   formData: {
                     path: ['slaDueDate'],
                     lt: new Date().toISOString()
@@ -293,101 +237,57 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    // Add "Others" category for requests assigned to users not in technicians list
+    // Add "Others" category for requests assigned to users not in technicians list - only check assignedTechnicianId
     const [othersOnHold, othersOpen, othersOverdue] = await Promise.all([
       prisma.request.count({
         where: {
           status: 'on_hold',
-          AND: [
-            {
-              NOT: {
-                OR: technicians.flatMap(tech => [
-                  {
-                    formData: {
-                      path: ['assignedTechnicianId'],
-                      equals: tech.id
-                    }
-                  },
-                  {
-                    formData: {
-                      path: ['assignedTechnicianId'],
-                      equals: tech.id.toString()
-                    }
-                  },
-                  {
-                    formData: {
-                      path: ['assignedTechnician'],
-                      equals: tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`.trim()
-                    }
-                  }
-                ])
-              }
-            },
-            {
-              OR: [
-                {
-                  formData: {
-                    path: ['assignedTechnicianId'],
-                    not: Prisma.JsonNull
-                  }
-                },
-                {
-                  formData: {
-                    path: ['assignedTechnician'],
-                    not: Prisma.JsonNull
-                  }
+          NOT: {
+            OR: technicians.flatMap(tech => [
+              {
+                formData: {
+                  path: ['assignedTechnicianId'],
+                  equals: tech.userId
                 }
-              ]
-            }
-          ]
+              },
+              {
+                formData: {
+                  path: ['assignedTechnicianId'],
+                  equals: tech.userId.toString()
+                }
+              }
+            ])
+          },
+          formData: {
+            path: ['assignedTechnicianId'],
+            not: Prisma.JsonNull
+          }
         }
       }),
 
       prisma.request.count({
         where: {
           status: 'open',
-          AND: [
-            {
-              NOT: {
-                OR: technicians.flatMap(tech => [
-                  {
-                    formData: {
-                      path: ['assignedTechnicianId'],
-                      equals: tech.id
-                    }
-                  },
-                  {
-                    formData: {
-                      path: ['assignedTechnicianId'],
-                      equals: tech.id.toString()
-                    }
-                  },
-                  {
-                    formData: {
-                      path: ['assignedTechnician'],
-                      equals: tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`.trim()
-                    }
-                  }
-                ])
-              }
-            },
-            {
-              OR: [
-                {
-                  formData: {
-                    path: ['assignedTechnicianId'],
-                    not: Prisma.JsonNull
-                  }
-                },
-                {
-                  formData: {
-                    path: ['assignedTechnician'],
-                    not: Prisma.JsonNull
-                  }
+          NOT: {
+            OR: technicians.flatMap(tech => [
+              {
+                formData: {
+                  path: ['assignedTechnicianId'],
+                  equals: tech.userId
                 }
-              ]
-            }
-          ]
+              },
+              {
+                formData: {
+                  path: ['assignedTechnicianId'],
+                  equals: tech.userId.toString()
+                }
+              }
+            ])
+          },
+          formData: {
+            path: ['assignedTechnicianId'],
+            not: Prisma.JsonNull
+          }
         }
       }),
 
@@ -397,49 +297,28 @@ export async function GET(request: NextRequest) {
           status: {
             in: ['open', 'on_hold']
           },
+          NOT: {
+            OR: technicians.flatMap(tech => [
+              {
+                formData: {
+                  path: ['assignedTechnicianId'],
+                  equals: tech.userId
+                }
+              },
+              {
+                formData: {
+                  path: ['assignedTechnicianId'],
+                  equals: tech.userId.toString()
+                }
+              }
+            ])
+          },
+          formData: {
+            path: ['assignedTechnicianId'],
+            not: Prisma.JsonNull
+          },
           AND: [
             {
-              NOT: {
-                OR: technicians.flatMap(tech => [
-                  {
-                    formData: {
-                      path: ['assignedTechnicianId'],
-                      equals: tech.id
-                    }
-                  },
-                  {
-                    formData: {
-                      path: ['assignedTechnicianId'],
-                      equals: tech.id.toString()
-                    }
-                  },
-                  {
-                    formData: {
-                      path: ['assignedTechnician'],
-                      equals: tech.displayName || `${tech.user.emp_fname} ${tech.user.emp_lname}`.trim()
-                    }
-                  }
-                ])
-              }
-            },
-            {
-              OR: [
-                {
-                  formData: {
-                    path: ['assignedTechnicianId'],
-                    not: Prisma.JsonNull
-                  }
-                },
-                {
-                  formData: {
-                    path: ['assignedTechnician'],
-                    not: Prisma.JsonNull
-                  }
-                }
-              ]
-            },
-            {
-              // Check for overdue based on SLA due date - use same field as dashboard stats
               formData: {
                 path: ['slaDueDate'],
                 lt: new Date().toISOString()
@@ -450,35 +329,25 @@ export async function GET(request: NextRequest) {
       })
     ]);
 
-    // Add "Unassigned" category
+    // Add "Unassigned" category - only check assignedTechnicianId
     const [unassignedOnHold, unassignedOpen, unassignedOverdue] = await Promise.all([
       prisma.request.count({
         where: {
           status: 'on_hold',
-          AND: [
+          OR: [
             {
-              OR: [
-                {
-                  formData: {
-                    path: ['assignedTechnicianId'],
-                    equals: Prisma.JsonNull
-                  }
-                },
-                {
-                  formData: {
-                    path: ['assignedTechnician'],
-                    equals: Prisma.JsonNull
-                  }
-                },
-                {
-                  NOT: {
-                    formData: {
-                      path: ['assignedTechnicianId'],
-                      not: Prisma.JsonNull
-                    }
-                  }
+              formData: {
+                path: ['assignedTechnicianId'],
+                equals: Prisma.JsonNull
+              }
+            },
+            {
+              NOT: {
+                formData: {
+                  path: ['assignedTechnicianId'],
+                  not: Prisma.JsonNull
                 }
-              ]
+              }
             }
           ]
         }
@@ -487,30 +356,20 @@ export async function GET(request: NextRequest) {
       prisma.request.count({
         where: {
           status: 'open',
-          AND: [
+          OR: [
             {
-              OR: [
-                {
-                  formData: {
-                    path: ['assignedTechnicianId'],
-                    equals: Prisma.JsonNull
-                  }
-                },
-                {
-                  formData: {
-                    path: ['assignedTechnician'],
-                    equals: Prisma.JsonNull
-                  }
-                },
-                {
-                  NOT: {
-                    formData: {
-                      path: ['assignedTechnicianId'],
-                      not: Prisma.JsonNull
-                    }
-                  }
+              formData: {
+                path: ['assignedTechnicianId'],
+                equals: Prisma.JsonNull
+              }
+            },
+            {
+              NOT: {
+                formData: {
+                  path: ['assignedTechnicianId'],
+                  not: Prisma.JsonNull
                 }
-              ]
+              }
             }
           ]
         }
@@ -522,41 +381,28 @@ export async function GET(request: NextRequest) {
           status: {
             in: ['open', 'on_hold']
           },
-          AND: [
+          OR: [
             {
-              OR: [
-                {
-                  formData: {
-                    path: ['assignedTechnicianId'],
-                    equals: Prisma.JsonNull
-                  }
-                },
-                {
-                  formData: {
-                    path: ['assignedTechnician'],
-                    equals: Prisma.JsonNull
-                  }
-                },
-                {
-                  NOT: {
-                    formData: {
-                      path: ['assignedTechnicianId'],
-                      not: Prisma.JsonNull
-                    }
-                  }
-                }
-              ]
+              formData: {
+                path: ['assignedTechnicianId'],
+                equals: Prisma.JsonNull
+              }
             },
             {
-              OR: [
-                {
-                  // Check JSON formData dueDateTime field (ISO string format)
-                  formData: {
-                    path: ['slaDueDate'],
-                    lt: new Date().toISOString()
-                  }
+              NOT: {
+                formData: {
+                  path: ['assignedTechnicianId'],
+                  not: Prisma.JsonNull
                 }
-              ]
+              }
+            }
+          ],
+          AND: [
+            {
+              formData: {
+                path: ['slaDueDate'],
+                lt: new Date().toISOString()
+              }
             }
           ]
         }

@@ -933,10 +933,10 @@ export default function MyRequestsPage() {
                                     <div className="flex items-center gap-1 leading-tight">
                                       <User className="h-3 w-3 text-gray-500 flex-shrink-0" />
                                       <span className="text-sm break-words">
-                                        {request.assignedTechnician?.displayName ||
-                                          request.assignedTechnician?.fullName ||
-                                          request.formData?.assignedTechnician ||
-                                          "-"}
+                                        <TechnicianName 
+                                          technicianId={request.formData?.assignedTechnicianId} 
+                                          fallback="-" 
+                                        />
                                       </span>
                                     </div>
                                   </div>
@@ -1069,10 +1069,10 @@ export default function MyRequestsPage() {
                                   <div>
                                     <span className="text-gray-500">Assigned To:</span>
                                     <p className="font-medium text-gray-900 truncate">
-                                      {request.assignedTechnician?.displayName ||
-                                        request.assignedTechnician?.fullName ||
-                                        request.formData?.assignedTechnician ||
-                                        "-"}
+                                      <TechnicianName 
+                                        technicianId={request.formData?.assignedTechnicianId} 
+                                        fallback="-" 
+                                      />
                                     </p>
                                   </div>
                                 </div>

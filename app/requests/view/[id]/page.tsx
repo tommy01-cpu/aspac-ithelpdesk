@@ -39,7 +39,9 @@ import {
   Info,
   Play,
   Pause,
-  RotateCcw
+  RotateCcw,
+  ShoppingCart,
+  Ticket
 } from 'lucide-react';
 import { Search as SearchIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -47,6 +49,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { SessionWrapper } from '@/components/session-wrapper';
+import TechnicianName from '@/components/TechnicianName';
 import { toast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -2285,12 +2288,12 @@ export default function RequestViewPage() {
           margin-top: 1rem;
         }
       `}</style>
-      <div className="min-h-screen bg-gray-50" style={{ transform: 'scale(0.9)', transformOrigin: 'top left', width: '111.11%', height: '111.11%' }}>
+      <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-          <div className="w-full px-6 lg:px-8">
-            <div className="flex items-center justify-between h-16">
-              <div className="flex items-center gap-4">
+          <div className="w-full px-3 sm:px-6 lg:px-8">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3 sm:py-4 min-h-[3.5rem] sm:min-h-[4rem]">
+              <div className="flex items-center gap-2 sm:gap-4">
                 <Button 
                   variant="ghost" 
                   size="sm" 
@@ -2299,7 +2302,7 @@ export default function RequestViewPage() {
                     if (window.history.length > 1) {
                       router.back();
                     } else {
-                      // Fallback: try to determine the appropriate page based on user role
+                      // Fallback: try to determine the appropriate page based as user role
                       if (session?.user?.isTechnician) {
                         router.push('/technician/requests');
                       } else {
@@ -2307,24 +2310,41 @@ export default function RequestViewPage() {
                       }
                     }
                   }} 
-                  className="text-gray-600 hover:text-gray-900"
+                  className="text-gray-600 hover:text-gray-900 shrink-0"
                 >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back
+                  <ArrowLeft className="h-4 w-4 mr-1 sm:mr-2" />
+                  <span className="text-sm">Back</span>
                 </Button>
-                <div className="flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-blue-600" />
-                  <div>
-                    <h1 className="text-lg font-semibold text-gray-900">
-                      #{requestData.id} {requestData.formData?.[8] || 'Request'}
-                    </h1>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <span>by {requestData.user.emp_fname} {requestData.user.emp_lname}</span>
-                      <span> on </span>
-                          <span>{formatDbTimestamp(requestData.createdAt)}</span>
-                      <span> / </span>
+              </div>
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {(() => {
+                  const requestType = requestData.formData?.['4']?.toLowerCase() || requestData.type?.toLowerCase() || 'unknown';
+                  
+                  if (requestType === 'service') {
+                    return <ShoppingCart className="h-5 w-5 text-blue-600 shrink-0" />;
+                  } else if (requestType === 'incident') {
+                    return <Ticket className="h-5 w-5 text-red-600 shrink-0" />;
+                  } else {
+                    return <FileText className="h-5 w-5 text-gray-500 shrink-0" />;
+                  }
+                })()}
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base sm:text-lg font-semibold text-gray-900 break-words leading-tight">
+                    <span className="text-blue-600">#{requestData.id}</span> {requestData.formData?.[8] || 'Request'}
+                  </h1>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mt-1">
+                    <div className="flex items-center gap-1">
+                      <span className="font-medium">By:</span>
+                      <span>{requestData.user.emp_fname} {requestData.user.emp_lname}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="font-medium">Created:</span>
+                      <span>{formatDbTimestamp(requestData.createdAt)}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="font-medium">Due:</span>
                       <span>
-                        Due By: {requestData.formData?.slaDueDate
+                        {requestData.formData?.slaDueDate
                           ? formatDbTimestamp(String(requestData.formData.slaDueDate))
                           : 'N/A'}
                       </span>
@@ -2332,41 +2352,46 @@ export default function RequestViewPage() {
                   </div>
                 </div>
               </div>
-              
-             
             </div>
           </div>
         </header>
 
-        <div className="w-full px-6 lg:px-8 py-6">
-          <div className="grid grid-cols-12 gap-6">
+        <div className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
             {/* Main Content */}
-            <div className="col-span-8">
+            <div className="lg:col-span-8">
               <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-                <TabsList className={`grid w-full mb-6 ${session?.user?.isTechnician ? 'grid-cols-5' : 'grid-cols-4'}`}>
-                  <TabsTrigger value="details" className="flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Details
-                  </TabsTrigger>
-                  <TabsTrigger value="resolution" className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4" />
-                    Resolution
-                  </TabsTrigger>
-                  <TabsTrigger value="approvals" className="flex items-center gap-2">
-                    <CheckSquare className="h-4 w-4" />
-                    Approvals
-                  </TabsTrigger>
-                  {session?.user?.isTechnician && (
-                    <TabsTrigger value="worklogs" className="flex items-center gap-2">
-                      <Edit className="h-4 w-4" />
-                      Work Logs
+                <div className="w-full overflow-x-auto mb-4 sm:mb-6">
+                  <TabsList className={`inline-flex w-max sm:w-full sm:grid mb-0 ${session?.user?.isTechnician ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
+                    <TabsTrigger value="details" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-4">
+                      <FileText className="h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">Details</span>
+                      <span className="sm:hidden">Info</span>
                     </TabsTrigger>
-                  )}
-                  <TabsTrigger value="history" className="flex items-center gap-2">
-                    <History className="h-4 w-4" />
-                    History
-                  </TabsTrigger>
-                </TabsList>
+                    <TabsTrigger value="resolution" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-4">
+                      <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">Resolution</span>
+                      <span className="sm:hidden">Solution</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="approvals" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-4">
+                      <CheckSquare className="h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">Approvals</span>
+                      <span className="sm:hidden">Approval</span>
+                    </TabsTrigger>
+                    {session?.user?.isTechnician && (
+                      <TabsTrigger value="worklogs" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-4">
+                        <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
+                        <span className="hidden sm:inline">Work Logs</span>
+                        <span className="sm:hidden">Work</span>
+                      </TabsTrigger>
+                    )}
+                    <TabsTrigger value="history" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-4">
+                      <History className="h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">History</span>
+                      <span className="sm:hidden">Log</span>
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
 
                 <TabsContent value="details" className="space-y-6">
                   {/* Description */}
@@ -2645,7 +2670,7 @@ export default function RequestViewPage() {
                             <span className="text-sm text-gray-600">
                               {requestData.formData?.slaName
                                 ? String(requestData.formData.slaName)
-                                : templateData?.slaService?.name || 'Not specified'}
+                                : templateData?.slaService?.name || 'N/A'}
                             </span>
                           </div>  
                        
@@ -2666,9 +2691,10 @@ export default function RequestViewPage() {
                           <div className="flex justify-between">
                             <span className="text-sm font-medium text-gray-700">Technician</span>
                             <span className="text-sm text-gray-600">
-                              {requestData.formData?.assignedTechnician && String(requestData.formData.assignedTechnician).trim() !== ''
-                                ? String(requestData.formData.assignedTechnician)
-                                : 'Not Assigned'}
+                              <TechnicianName 
+                                technicianId={requestData.formData?.assignedTechnicianId} 
+                                fallback="Not Assigned" 
+                              />
                             </span>
                           </div>
                           
@@ -3438,17 +3464,17 @@ export default function RequestViewPage() {
 
                             return (
                               <Card key={level} className="border-l-4 border-l-blue-500">
-                                <CardHeader className="pb-3">
+                                <CardHeader className="pb-2 sm:pb-3">
                                   <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-4">
-                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${levelBgColor}`}>
-                                        <IconComponent className="h-5 w-5 text-white" />
+                                    <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+                                      <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center ${levelBgColor} shrink-0`}>
+                                        <IconComponent className="h-3 w-3 sm:h-5 sm:w-5 text-white" />
                                       </div>
-                                      <div>
-                                        <h3 className="font-semibold text-gray-900">
+                                      <div className="min-w-0 flex-1">
+                                        <h3 className="text-sm sm:text-base font-semibold text-gray-900 break-words">
                                           Level {level}: {levelName}
                                         </h3>
-                                        <p className="text-sm text-gray-600">{levelStatus}</p>
+                                        <p className="text-xs sm:text-sm text-gray-600">{levelStatus}</p>
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -3488,28 +3514,28 @@ export default function RequestViewPage() {
                                     <div className="space-y-4">
                                       {levelApprovals.map((approval: any, index: number) => (
                                         <Card key={approval.id || index} className="bg-gray-50 border border-gray-200">
-                                          <CardContent className="p-4">
-                                            <div className="flex items-start justify-between mb-3">
-                                              <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                                                  <User className="h-5 w-5 text-blue-600" />
+                                          <CardContent className="p-3 sm:p-4">
+                                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+                                              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
+                                                  <User className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
                                                 </div>
-                                                <div>
-                                                  <h4 className="font-medium text-gray-900">
+                                                <div className="min-w-0 flex-1">
+                                                  <h4 className="text-sm sm:text-base font-medium text-gray-900 break-words">
                                                     {approval.approver?.emp_fname && approval.approver?.emp_lname 
                                                       ? `${approval.approver.emp_fname} ${approval.approver.emp_lname}` 
                                                       : approval.approver || approval.approverName || 'Unknown Approver'
                                                     }
                                                   </h4>
-                                                  <p className="text-sm text-gray-600">
+                                                  <p className="text-xs sm:text-sm text-gray-600 break-all">
                                                     {approval.approver?.emp_email || approval.approverEmail || 'No email'}
                                                   </p>
                                                 </div>
                                               </div>
                                               
-                                              <div className="flex items-center gap-2">
+                                              <div className="flex items-center gap-2 sm:gap-2">
                                                 {/* Status Badge */}
-                                                <div className="flex items-center gap-1.5 min-w-[190px] justify-end">
+                                                <div className="flex items-center gap-1 sm:gap-1.5 justify-end">
                                                   {(() => {
                                                     // Check if any approval has been rejected in the entire workflow
                                                     const hasAnyRejection = approvals.some((app: any) => app.status === 'rejected');
@@ -3601,10 +3627,10 @@ export default function RequestViewPage() {
                                             </div>
 
                                             {/* Approval Details */}
-                                            <div className="grid grid-cols-3 gap-4 text-sm">
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-sm">
                                               <div>
-                                                <span className="text-gray-500">Sent On:</span>
-                                                <p className="font-medium">
+                                                <span className="text-gray-500 block sm:inline">Sent On:</span>
+                                                <p className="font-medium break-words">
                                                   {(() => {
                                                     if (approval.sentOn) {
                                                       return formatDbTimestamp(approval.sentOn);
@@ -3621,14 +3647,14 @@ export default function RequestViewPage() {
                                                 </p>
                                               </div>
                                               <div>
-                                                <span className="text-gray-500">Acted On:</span>
-                                                <p className="font-medium">
+                                                <span className="text-gray-500 block sm:inline">Acted On:</span>
+                                                <p className="font-medium break-words">
                                                   {approval.actedOn ? formatDbTimestamp(approval.actedOn) : '-'}
                                                 </p>
                                               </div>
-                                              <div>
-                                                <span className="text-gray-500">Comments:</span>
-                                                <p className="font-medium">
+                                              <div className="sm:col-span-1">
+                                                <span className="text-gray-500 block sm:inline">Comments:</span>
+                                                <p className="font-medium break-words">
                                                   {approval.comments || '-'}
                                                 </p>
                                               </div>
@@ -3778,12 +3804,12 @@ export default function RequestViewPage() {
                             <table className="min-w-full text-sm">
                               <thead className="bg-gray-50 text-gray-600">
                                 <tr>
-                                  <th className="text-left px-3 py-2">Owner</th>
-                                  <th className="text-left px-3 py-2">Time Taken</th>
-                                  <th className="text-left px-3 py-2">Start Time</th>
-                                  <th className="text-left px-3 py-2">End Time</th>
-                                  <th className="text-left px-3 py-2">Description</th>
-                                  <th className="text-left px-3 py-2">Actions</th>
+                                  <th className="text-left px-2 sm:px-3 py-2 text-xs sm:text-sm">Owner</th>
+                                  <th className="text-left px-2 sm:px-3 py-2 text-xs sm:text-sm">Time</th>
+                                  <th className="text-left px-2 sm:px-3 py-2 text-xs sm:text-sm hidden sm:table-cell">Start</th>
+                                  <th className="text-left px-2 sm:px-3 py-2 text-xs sm:text-sm hidden sm:table-cell">End</th>
+                                  <th className="text-left px-2 sm:px-3 py-2 text-xs sm:text-sm">Description</th>
+                                  <th className="text-left px-2 sm:px-3 py-2 text-xs sm:text-sm">Actions</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -3792,17 +3818,17 @@ export default function RequestViewPage() {
                                   const mins = (wl.timeTakenMinutes || 0) % 60;
                                   return (
                                     <tr key={wl.id} className="border-t hover:bg-gray-50">
-                                      <td className="px-3 py-2">{wl.ownerName || '-'}</td>
-                                      <td className="px-3 py-2">{String(hrs).padStart(2,'0')} hr {String(mins).padStart(2,'0')} min</td>
-                                      <td className="px-3 py-2">{wl.startTime ? formatDbTimestamp(wl.startTime) : '-'}</td>
-                                      <td className="px-3 py-2">{wl.endTime ? formatDbTimestamp(wl.endTime) : '-'}</td>
-                                      <td className="px-3 py-2 truncate max-w-[200px]" title={htmlToText(wl.description)}>{htmlToText(wl.description)}</td>
-                                      <td className="px-3 py-2 space-x-1">
-                                        <Button variant="outline" size="sm" onClick={() => openEditWorkLog(wl)} className="h-8 w-8 p-0" title="Edit work log">
-                                          <Edit className="h-4 w-4" />
+                                      <td className="px-2 sm:px-3 py-2 text-xs sm:text-sm">{wl.ownerName || '-'}</td>
+                                      <td className="px-2 sm:px-3 py-2 text-xs sm:text-sm">{String(hrs).padStart(2,'0')}h {String(mins).padStart(2,'0')}m</td>
+                                      <td className="px-2 sm:px-3 py-2 text-xs sm:text-sm hidden sm:table-cell">{wl.startTime ? formatDbTimestamp(wl.startTime) : '-'}</td>
+                                      <td className="px-2 sm:px-3 py-2 text-xs sm:text-sm hidden sm:table-cell">{wl.endTime ? formatDbTimestamp(wl.endTime) : '-'}</td>
+                                      <td className="px-2 sm:px-3 py-2 text-xs sm:text-sm truncate max-w-[100px] sm:max-w-[200px]" title={htmlToText(wl.description)}>{htmlToText(wl.description)}</td>
+                                      <td className="px-2 sm:px-3 py-2 space-x-1">
+                                        <Button variant="outline" size="sm" onClick={() => openEditWorkLog(wl)} className="h-6 w-6 sm:h-8 sm:w-8 p-0" title="Edit work log">
+                                          <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
                                         </Button>
-                                        <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50 h-8 w-8 p-0" onClick={() => deleteWorkLog(wl)} title="Delete work log">
-                                          <X className="h-4 w-4" />
+                                        <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50 h-6 w-6 sm:h-8 sm:w-8 p-0" onClick={() => deleteWorkLog(wl)} title="Delete work log">
+                                          <X className="h-3 w-3 sm:h-4 sm:w-4" />
                                         </Button>
                                       </td>
                                     </tr>
@@ -4072,7 +4098,7 @@ export default function RequestViewPage() {
             </div>
 
             {/* Sidebar */}
-            <div className="col-span-4 space-y-6">
+            <div className="lg:col-span-4 space-y-4 lg:space-y-6 order-1 lg:order-2">
               {/* Status Information */}
               <Card>
                 <CardHeader>
@@ -4146,57 +4172,57 @@ export default function RequestViewPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex items-start gap-3">
-                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                      <User className="h-6 w-6 text-blue-600" />
+                  <div className="flex flex-col sm:flex-row items-start gap-3">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
+                      <User className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
                     </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">
+                    <div className="flex-1 w-full">
+                      <p className="font-medium text-gray-900 text-sm sm:text-base">
                         {requestData.user.emp_fname} {requestData.user.emp_lname}
                       </p>
-                      <p className="text-sm text-blue-600">{requestData.user.emp_email}</p>
+                      <p className="text-xs sm:text-sm text-blue-600 break-all">{requestData.user.emp_email}</p>
                       
-                      <div className="mt-4 space-y-3 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Employee ID</span>
-                          <span className="font-medium">{requestData.user.emp_code || '16-024'}</span>
+                      <div className="mt-3 sm:mt-4 space-y-2 sm:space-y-3 text-xs sm:text-sm">
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0">
+                          <span className="text-gray-600 font-medium sm:font-normal">Employee ID</span>
+                          <span className="font-medium break-words">{requestData.user.emp_code || '16-024'}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Department Name</span>
-                          <span className="font-medium">{requestData.user.department}</span>
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0">
+                          <span className="text-gray-600 font-medium sm:font-normal">Department Name</span>
+                          <span className="font-medium break-words">{requestData.user.department}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Land Line No.</span>
-                          <span className="font-medium">{requestData.user.landline_no || '-'}</span>
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0">
+                          <span className="text-gray-600 font-medium sm:font-normal">Land Line No.</span>
+                          <span className="font-medium break-words">{requestData.user.landline_no || '-'}</span>
                         </div>
-                         <div className="flex justify-between">
-                          <span className="text-gray-600">Local No.</span>
-                          <span className="font-medium">{requestData.user.local_no || '-'}</span>
+                         <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0">
+                          <span className="text-gray-600 font-medium sm:font-normal">Local No.</span>
+                          <span className="font-medium break-words">{requestData.user.local_no || '-'}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Job title</span>
-                          <span className="font-medium">{requestData.user.post_des || 'Software Development Manager'}</span>
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0">
+                          <span className="text-gray-600 font-medium sm:font-normal">Job title</span>
+                          <span className="font-medium break-words">{requestData.user.post_des || 'Software Development Manager'}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Reporting To</span>
-                          <span className="font-medium">
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0">
+                          <span className="text-gray-600 font-medium sm:font-normal">Reporting To</span>
+                          <span className="font-medium break-words">
                             {requestData.user.reportingTo 
                               ? `${requestData.user.reportingTo.emp_fname} ${requestData.user.reportingTo.emp_lname}`
                               : 'Robert E. Baluyot'}
                           </span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Mobile</span>
-                          <span className="font-medium">{requestData.user.emp_cell || '+639998668296'}</span>
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0">
+                          <span className="text-gray-600 font-medium sm:font-normal">Mobile</span>
+                          <span className="font-medium break-words">{requestData.user.emp_cell || '+639998668296'}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Status</span>
-                          <span className="font-medium capitalize">{requestData.user.emp_status || 'active'}</span>
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0">
+                          <span className="text-gray-600 font-medium sm:font-normal">Status</span>
+                          <span className="font-medium capitalize break-words">{requestData.user.emp_status || 'active'}</span>
                         </div>
                         {requestData.user.departmentHead && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Department Head</span>
-                            <span className="font-medium">
+                          <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0">
+                            <span className="text-gray-600 font-medium sm:font-normal">Department Head</span>
+                            <span className="font-medium break-words">
                               {requestData.user.departmentHead.emp_fname} {requestData.user.departmentHead.emp_lname}
                             </span>
                           </div>
@@ -4399,7 +4425,7 @@ export default function RequestViewPage() {
 
         {/* Add Notes Modal */}
         <Dialog open={showNotesModal} onOpenChange={setShowNotesModal}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogContent className="max-w-full sm:max-w-4xl max-h-[90vh] overflow-hidden flex flex-col mx-2 sm:mx-auto">
             <DialogHeader>
               <DialogTitle>Add Notes</DialogTitle>
             </DialogHeader>
@@ -4493,7 +4519,7 @@ export default function RequestViewPage() {
 
         {/* Add Approval Modal */}
         <Dialog open={showAddApprovalModal} onOpenChange={setShowAddApprovalModal}>
-          <DialogContent className="max-w-2xl max-h-[600px] overflow-y-auto">
+          <DialogContent className="max-w-full sm:max-w-2xl max-h-[600px] overflow-y-auto mx-2 sm:mx-auto">
             <DialogHeader>
               <DialogTitle>Add Approvers</DialogTitle>
             </DialogHeader>
@@ -4653,12 +4679,12 @@ export default function RequestViewPage() {
               resetWorkLogForm(); // Clear form when modal closes
             }
           }}>
-            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-full sm:max-w-3xl max-h-[90vh] overflow-y-auto mx-2 sm:mx-auto">
               <DialogHeader>
-                <DialogTitle>{editingWorkLog ? 'Edit Work Log' : 'New Work Log'}</DialogTitle>
+                <DialogTitle className="text-sm sm:text-base">{editingWorkLog ? 'Edit Work Log' : 'New Work Log'}</DialogTitle>
               </DialogHeader>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="text-sm text-gray-700">Owner</label>
                   {/* Compact selected-owner display; click to open selector */}
@@ -4769,12 +4795,12 @@ export default function RequestViewPage() {
         {/* Resolve (Close Request) Modal */}
         {session?.user?.isTechnician && (
       <Dialog open={showResolveModal} onOpenChange={setShowResolveModal}>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-full sm:max-w-2xl mx-2 sm:mx-auto">
               <DialogHeader>
         <DialogTitle>Resolve Request</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                  
                   <div>
                     <label className="text-sm text-gray-700">Closure Code</label>
@@ -5016,9 +5042,14 @@ export default function RequestViewPage() {
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>Assign Technician</DialogTitle>
-                {requestData?.formData?.assignedTechnician && (
+                {requestData?.formData?.assignedTechnicianId && (
                   <div className="text-sm text-gray-600 mt-2">
-                    Currently assigned to: <span className="font-medium">{requestData.formData.assignedTechnician}</span>
+                    Currently assigned to: <span className="font-medium">
+                      <TechnicianName 
+                        technicianId={requestData.formData?.assignedTechnicianId} 
+                        fallback="Unknown" 
+                      />
+                    </span>
                   </div>
                 )}
               </DialogHeader>
@@ -5203,7 +5234,7 @@ export default function RequestViewPage() {
         {/* Change Type Modal */}
         {showChangeTypeModal && (
           <Dialog open={showChangeTypeModal} onOpenChange={setShowChangeTypeModal}>
-            <DialogContent className="max-w-4xl max-h-[85vh] bg-white border border-gray-200 shadow-xl flex flex-col">
+            <DialogContent className="max-w-full sm:max-w-4xl max-h-[85vh] bg-white border border-gray-200 shadow-xl flex flex-col mx-2 sm:mx-auto">
               <DialogHeader className="bg-white border-b border-gray-100 pb-4 flex-shrink-0">
                 <DialogTitle className="flex items-center gap-2 text-gray-900">
                   <Tag className="h-5 w-5 text-blue-600" />
@@ -5540,7 +5571,7 @@ export default function RequestViewPage() {
 
         {/* SLA Timer Modal */}
         <Dialog open={showSlaTimerModal} onOpenChange={setShowSlaTimerModal}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-full sm:max-w-md mx-2 sm:mx-auto">
             <DialogHeader>
               <DialogTitle>SLA Timer</DialogTitle>
               <DialogDescription>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth';
+import { getAssignedTechnicianName } from '@/lib/technician-lookup';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 import { format } from 'date-fns';
@@ -549,9 +550,8 @@ export async function GET(request: NextRequest) {
         dueByTime: formData.dueBy || formData.slaDueDate || null,
         resolvedTime: null,
         technician: (() => {
-          const technicianName = request.assignedTechnician || 
-                                formData.assignedTechnician ||
-                                formData.assignedTechnicianName || 
+          // Fallback to stored names (legacy data) - assignedTechnician removed
+          const technicianName = formData.assignedTechnicianName || 
                                 formData['assigned technician'] ||
                                 formData.assigned_technician || 
                                 formData.assignedTo ||
@@ -560,7 +560,7 @@ export async function GET(request: NextRequest) {
           
           return technicianName && technicianName.toString().trim() !== '' 
             ? technicianName.toString().trim() 
-            : 'Unassigned';
+            : (formData.assignedTechnicianId ? `Assigned (ID: ${formData.assignedTechnicianId})` : 'Unassigned');
         })()
       };
     }));

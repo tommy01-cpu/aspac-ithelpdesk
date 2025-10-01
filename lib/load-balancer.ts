@@ -18,7 +18,7 @@ export interface TechnicianWorkload {
 }
 
 export interface AssignmentResult {
-  success: boolean;
+  success?: boolean;
   technicianId?: number; // Note: This is actually the user ID of the technician
   technicianName?: string;
   technicianEmail?: string;
@@ -417,6 +417,73 @@ export async function getGlobalLoadBalancingConfig(): Promise<LoadBalancingConfi
 }
 
 /**
+ * Check for active backup technician configuration for a given technician
+ */
+async function getActiveBackupTechnician(originalTechnicianUserId: number): Promise<{ backupTechnicianId: number; backupTechnicianUserId: number; backupTechnicianName: string; backupTechnicianEmail: string } | null> {
+  try {
+    console.log(`🔍 Checking for active backup technician for user ID: ${originalTechnicianUserId}`);
+    
+    console.log(`🔍 Checking for backup configuration for user ID ${originalTechnicianUserId}...`);
+    
+    const now = new Date();
+    
+    // Create date range to handle same-day configurations properly
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    
+    const todayEnd = new Date(now);
+    todayEnd.setHours(23, 59, 59, 999);
+    
+    console.log(`🔍 Checking backup configs active between ${todayStart.toISOString()} and ${todayEnd.toISOString()}`);
+    
+    const activeBackup = await (prisma as any).backup_technicians.findFirst({
+      where: {
+        original_technician_id: originalTechnicianUserId, // Use user ID directly since relations are to users table
+        is_active: true,
+        // Configuration is active if current time falls within the backup period
+        AND: [
+          {
+            OR: [
+              { start_date: { lte: now } },
+              { start_date: { lte: todayEnd } } // Handle same-day configs
+            ]
+          },
+          {
+            OR: [
+              { end_date: { gte: now } },
+              { end_date: { gte: todayStart } } // Handle same-day configs  
+            ]
+          }
+        ]
+      },
+      include: {
+        backup_technician: true // backup_technician is the users table relation
+      }
+    });
+
+    if (activeBackup) {
+      const backupUser = activeBackup.backup_technician;
+      const backupTechName = `${backupUser.emp_fname} ${backupUser.emp_lname}`.trim();
+
+      console.log(`✅ Found active backup: ${backupTechName} backing up for user ID ${originalTechnicianUserId}`);
+
+      return {
+        backupTechnicianId: activeBackup.backup_technician_id, // This is the user ID
+        backupTechnicianUserId: activeBackup.backup_technician_id,
+        backupTechnicianName: backupTechName,
+        backupTechnicianEmail: backupUser.emp_email || ''
+      };
+    }
+
+    console.log(`ℹ️ No active backup found for user ID: ${originalTechnicianUserId}`);
+    return null;
+  } catch (error) {
+    console.error('❌ Error checking backup technician:', error);
+    return null;
+  }
+}
+
+/**
  * Auto-assign technician to a request based on load balancing rules
  */
 export async function autoAssignTechnician(
@@ -492,6 +559,35 @@ export async function autoAssignTechnician(
       if (assignedTechnician) {
         console.log(`Assigned technician ${assignedTechnician.name} (ID: ${assignedTechnician.id})`);
 
+        // Get the user ID from the technician record to check for backup
+        const technicianRecord = await prisma.technician.findFirst({
+          where: { id: assignedTechnician.id }
+        });
+
+        // Check for active backup technician configuration using user ID
+        let backupConfig = null;
+        if (technicianRecord) {
+          backupConfig = await getActiveBackupTechnician(technicianRecord.userId);
+        }
+
+        let finalTechnicianId = assignedTechnician.id;
+        let finalTechnicianUserId = technicianRecord?.userId || assignedTechnician.id;
+        let finalTechnicianName = assignedTechnician.name;
+        let finalTechnicianEmail = assignedTechnician.email;
+        let backupRedirected = false;
+
+        if (backupConfig) {
+          console.log(`Found active backup configuration: ${assignedTechnician.name} → ${backupConfig.backupTechnicianName}`);
+          
+          // Use backup technician details
+          finalTechnicianId = backupConfig.backupTechnicianId;
+          finalTechnicianUserId = backupConfig.backupTechnicianUserId;
+          finalTechnicianName = backupConfig.backupTechnicianName;
+          finalTechnicianEmail = backupConfig.backupTechnicianEmail;
+          backupRedirected = true;
+          console.log(`Redirecting assignment to backup technician: ${finalTechnicianName}`);
+        }
+
         // Convert assignedDate to Philippine time format without Z
         const assignedDatePH = new Date().toLocaleString('en-PH', { 
           timeZone: 'Asia/Manila',
@@ -504,28 +600,37 @@ export async function autoAssignTechnician(
           hour12: false
         }).replace(/(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})/, '$3-$1-$2 $4:$5:$6');
 
-        // Update the request with the assigned technician
+        // Update the request with the assigned (or redirected) technician
+        // NOTE: Do NOT update userId - that's the requester, not the assigned technician
         await prisma.request.update({
           where: { id: requestId },
           data: {
             formData: {
               ...(await prisma.request.findUnique({ where: { id: requestId }, select: { formData: true } }))?.formData as any || {},
-              assignedTechnician: assignedTechnician.name,
-              assignedTechnicianId: assignedTechnician.id.toString(),
-              assignedTechnicianEmail: assignedTechnician.email,
-              assignedDate: assignedDatePH
+              assignedTechnicianId: finalTechnicianUserId, // Use user ID, not technician ID
+              assignedTechnicianEmail: finalTechnicianEmail,
+              assignedDate: assignedDatePH,
+              ...(backupRedirected && {
+                originalAssignedTechnician: assignedTechnician.name,
+                originalAssignedTechnicianId: technicianRecord?.userId || assignedTechnician.id, // Use original user ID
+                backupRedirectedAt: new Date().toISOString()
+              })
             }
           }
         });
 
         // Add assignment history unless suppressed (PH-local timestamp)
         if (writeHistory) {
+          const historyDetails = backupRedirected
+            ? `Request assigned to ${assignedTechnician.name} via load balancing, redirected to backup technician ${finalTechnicianName}`
+            : `Request automatically assigned to ${finalTechnicianName} via load balancing`;
+            
           await addHistory(prisma as any, {
             requestId,
             action: 'Assigned',
             actorName: 'System',
             actorType: 'system',
-            details: `Request automatically assigned to ${assignedTechnician.name} via load balancing`,
+            details: historyDetails,
           });
         }
 
@@ -537,12 +642,17 @@ export async function autoAssignTechnician(
 
         return {
           success: true,
-          technicianId: assignedTechnician.id,
-          technicianName: assignedTechnician.name,
-          technicianEmail: assignedTechnician.email,
+          technicianId: finalTechnicianId,
+          technicianName: finalTechnicianName,
+          technicianEmail: finalTechnicianEmail,
           supportGroupId: config.supportGroupId,
           supportGroupName: supportGroup?.name,
-          loadBalanceType: chosen
+          loadBalanceType: chosen,
+          ...(backupRedirected && {
+            originalTechnicianId: assignedTechnician.id,
+            originalTechnicianName: assignedTechnician.name,
+            backupRedirected: true
+          })
         };
       }
     }

@@ -85,6 +85,16 @@ model users {
   originalApproverDiversions                        approval_diversions[]  @relation("OriginalApproverDiversions")
   backupApproverDiversions                          approval_diversions[]  @relation("BackupApproverDiversions")
   backupApproverLogActions                          backup_approver_logs[] @relation("BackupApproverLogPerformer")
+
+  // Backup Technician Relations
+  originalTechnicianConfigs                         backup_technicians[]   @relation("OriginalTechnician")
+  backupTechnicianConfigs                           backup_technicians[]   @relation("BackupTechnician")
+  createdBackupTechConfigs                          backup_technicians[]   @relation("BackupTechnicianCreator")
+  backupTechLogOriginal                             backup_technician_logs[] @relation("BackupTechLogOriginalTech")
+  backupTechLogBackup                               backup_technician_logs[] @relation("BackupTechLogBackupTech")
+  backupTechLogActions                              backup_technician_logs[] @relation("BackupTechLogPerformer")
+  requestBackupOriginal                             request_assignments_backup[] @relation("RequestBackupOriginalTech")
+  requestBackupTech                                 request_assignments_backup[] @relation("RequestBackupTech")
 }
 
 model Department {
@@ -476,6 +486,7 @@ model Request {
   history         RequestHistory[]
   user            users             @relation(fields: [userId], references: [id])
   approval_diversions approval_diversions[]
+  request_assignments_backup request_assignments_backup[]
 
   @@index([userId])
   @@index([templateId])
@@ -851,4 +862,83 @@ enum BackupApproverLogAction {
   updated
   diversion
   reversion
+}
+
+model backup_technicians {
+  id                     Int                        @id @default(autoincrement())
+  original_technician_id Int
+  backup_technician_id   Int
+  start_date            DateTime                   @db.Date
+  end_date              DateTime                   @db.Date
+  is_active             Boolean                    @default(true)
+  divert_existing       Boolean                    @default(false)
+  reason                String?                    @db.VarChar(500)
+  created_at            DateTime                   @default(now())
+  updated_at            DateTime                   @default(now()) @updatedAt
+  created_by            Int
+
+  // Relations
+  original_technician   users                      @relation("OriginalTechnician", fields: [original_technician_id], references: [id], onDelete: Restrict)
+  backup_technician     users                      @relation("BackupTechnician", fields: [backup_technician_id], references: [id], onDelete: Restrict)
+  creator               users                      @relation("BackupTechnicianCreator", fields: [created_by], references: [id], onDelete: Restrict)
+  
+  // Related records
+  request_assignments   request_assignments_backup[]
+  backup_logs           backup_technician_logs[]
+
+  @@index([original_technician_id])
+  @@index([backup_technician_id])
+  @@index([start_date, end_date])
+  @@index([is_active, start_date, end_date])
+}
+
+model backup_technician_logs {
+  id                     Int                          @id @default(autoincrement())
+  backup_config_id       Int
+  original_technician_id Int
+  backup_technician_id   Int
+  action_type            BackupTechnicianLogAction
+  details                Json?
+  performed_by           Int?
+  performed_at           DateTime                     @default(now())
+
+  // Relations
+  backup_config          backup_technicians           @relation(fields: [backup_config_id], references: [id], onDelete: Cascade)
+  original_technician    users                        @relation("BackupTechLogOriginalTech", fields: [original_technician_id], references: [id], onDelete: Restrict)
+  backup_technician      users                        @relation("BackupTechLogBackupTech", fields: [backup_technician_id], references: [id], onDelete: Restrict)
+  performer              users?                       @relation("BackupTechLogPerformer", fields: [performed_by], references: [id], onDelete: SetNull)
+
+  @@index([backup_config_id, performed_at])
+  @@index([action_type])
+  @@index([performed_at])
+}
+
+model request_assignments_backup {
+  id                     Int                 @id @default(autoincrement())
+  request_id             Int
+  original_technician_id Int
+  backup_technician_id   Int
+  backup_config_id       Int
+  assigned_at            DateTime            @default(now())
+  reverted_at            DateTime?
+
+  // Relations
+  request                Request             @relation(fields: [request_id], references: [id], onDelete: Cascade)
+  original_technician    users               @relation("RequestBackupOriginalTech", fields: [original_technician_id], references: [id], onDelete: Restrict)
+  backup_technician      users               @relation("RequestBackupTech", fields: [backup_technician_id], references: [id], onDelete: Restrict)
+  backup_config          backup_technicians  @relation(fields: [backup_config_id], references: [id], onDelete: Cascade)
+
+  @@index([request_id])
+  @@index([backup_config_id])
+  @@index([reverted_at])
+}
+
+enum BackupTechnicianLogAction {
+  created
+  activated
+  deactivated
+  expired
+  updated
+  request_transferred
+  auto_reversion
 }

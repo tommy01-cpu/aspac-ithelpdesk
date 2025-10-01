@@ -58,7 +58,6 @@ export async function POST(request: NextRequest) {
     for (const req of requests) {
       const formData = req.formData as any;
       formData.assignedTechnicianId = technicianId;
-      formData.assignedTechnician = technicianName;
       formData.assignedAt = new Date().toISOString();
 
       await prisma.request.update({

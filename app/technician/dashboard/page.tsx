@@ -108,12 +108,37 @@ interface RecentRequest {
   slaStatus?: 'on-time' | 'at-risk' | 'overdue';
 }
 
-interface QuickAssignRequest {
+interface BackupTechnicianConfig {
   id: number;
-  title: string;
-  priority: string;
-  category: string;
-  createdAt: string;
+  original_technician_id: number;
+  backup_technician_id: number;
+  start_date: string;
+  end_date: string;
+  is_active: boolean;
+  divert_existing: boolean;
+  reason?: string;
+  created_at: string;
+  updated_at: string;
+  original_technician_name: string;
+  original_technician_email: string;
+  backup_technician_name: string;
+  backup_technician_email: string;
+  created_by_name?: string;
+  current_status: 'scheduled' | 'active' | 'expired';
+  days_remaining: number;
+}
+
+interface BackupTechnicianLog {
+  id: number;
+  backup_config_id: number;
+  original_technician_id: number;
+  backup_technician_id: number;
+  original_technician_name: string;
+  backup_technician_name: string;
+  action_type: string;
+  details?: any;
+  performed_by?: number;
+  performed_at: string;
 }
 
 export default function DashboardPage() {
@@ -148,6 +173,22 @@ export default function DashboardPage() {
     reason: ''
   });
 
+  // Backup Technician state
+  const [backupTechConfigs, setBackupTechConfigs] = useState<BackupTechnicianConfig[]>([]);
+  const [techniciansList, setTechniciansList] = useState<any[]>([]);
+  const [showBackupTechDialog, setShowBackupTechDialog] = useState(false);
+  const [upcomingTechExpirations, setUpcomingTechExpirations] = useState<BackupTechnicianConfig[]>([]);
+  const [backupTechLogs, setBackupTechLogs] = useState<BackupTechnicianLog[]>([]);
+  const [editingTechConfig, setEditingTechConfig] = useState<BackupTechnicianConfig | null>(null);
+  const [backupTechForm, setBackupTechForm] = useState({
+    originalTechnicianId: '',
+    backupTechnicianId: '',
+    startDate: '',
+    endDate: '',
+    divertExisting: false,
+    reason: ''
+  });
+
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState({
     open: false,
@@ -175,6 +216,7 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchDashboardData();
     fetchBackupApproverData();
+    fetchBackupTechnicianData();
   }, []);
 
   const fetchBackupApproverData = async () => {
@@ -207,6 +249,39 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error('Error fetching backup approver data:', error);
+    }
+  };
+
+  const fetchBackupTechnicianData = async () => {
+    try {
+      const [configsRes, techniciansRes, logsRes] = await Promise.all([
+        fetch('/api/backup-technicians'),
+        fetch('/api/users/technicians'),
+        fetch('/api/backup-technicians/logs?limit=10').catch(() => ({ ok: false })) // Will fail initially, that's ok
+      ]);
+
+      if (configsRes.ok) {
+        const configs = await configsRes.json();
+        setBackupTechConfigs(configs);
+        
+        // Filter upcoming expirations (active configs expiring within 7 days)
+        const upcomingExpiring = configs.filter((config: BackupTechnicianConfig) => 
+          config.current_status === 'active' && config.days_remaining <= 7 && config.days_remaining > 0
+        );
+        setUpcomingTechExpirations(upcomingExpiring);
+      }
+
+      if (techniciansRes.ok) {
+        const techniciansData = await techniciansRes.json();
+        setTechniciansList(techniciansData.data || []);
+      }
+
+      if (logsRes && logsRes.ok) {
+        const logs = await logsRes.json();
+        setBackupTechLogs(logs.slice(0, 10));
+      }
+    } catch (error) {
+      console.error('Error fetching backup technician data:', error);
     }
   };
 
@@ -355,7 +430,275 @@ export default function DashboardPage() {
     }
   };
 
-  // Backup Approver Management Functions
+  // Backup Technician Management Functions
+  const handleCreateBackupTechnician = async () => {
+    // Client-side validation first
+    if (!backupTechForm.originalTechnicianId || !backupTechForm.backupTechnicianId || 
+        !backupTechForm.startDate || !backupTechForm.endDate) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields (From Technician, To Backup Technician, Start Date, and End Date)",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (backupTechForm.originalTechnicianId === backupTechForm.backupTechnicianId) {
+      toast({
+        title: "Validation Error",
+        description: "Original technician and backup technician cannot be the same person",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const startDate = new Date(backupTechForm.startDate);
+    const endDate = new Date(backupTechForm.endDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (endDate < startDate) {
+      toast({
+        title: "Validation Error",
+        description: "End date cannot be before start date",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (endDate < today) {
+      toast({
+        title: "Validation Error",
+        description: "End date cannot be in the past",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Get technician names for confirmation
+    const originalTechnician = techniciansList.find(t => t.id === parseInt(backupTechForm.originalTechnicianId));
+    const backupTechnician = techniciansList.find(t => t.id === parseInt(backupTechForm.backupTechnicianId));
+
+    console.log("tommy", originalTechnician,backupTechnician)
+    // Show confirmation dialog
+    setConfirmDialog({
+      open: true,
+      title: 'Create Backup Technician Configuration',
+      description: `Are you sure you want to create this backup technician configuration?
+
+Configuration Details:
+• Original Technician: ${originalTechnician ? `${originalTechnician.emp_fname} ${originalTechnician.emp_lname}` : 'Unknown'}
+• Backup Technician: ${backupTechnician ? `${backupTechnician.emp_fname} ${backupTechnician.emp_lname}` : 'Unknown'}
+• Period: ${new Date(backupTechForm.startDate).toLocaleDateString()} - ${new Date(backupTechForm.endDate).toLocaleDateString()}
+• Transfer Existing Requests: ${backupTechForm.divertExisting ? 'Yes' : 'No'}
+${backupTechForm.reason ? `• Reason: ${backupTechForm.reason}` : ''}
+
+This will ${backupTechForm.divertExisting ? 'immediately transfer existing open/on-hold requests and ' : ''}redirect new request assignments to the backup technician during the specified period.`,
+      confirmText: 'Create Configuration',
+      cancelText: 'Cancel',
+      variant: 'default',
+      onConfirm: performCreateBackupTechnician
+    });
+  };
+
+  const performCreateBackupTechnician = async () => {
+    try {
+      const response = await fetch('/api/backup-technicians', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(backupTechForm),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        toast({
+          title: "Success",
+          description: result.message,
+        });
+        setShowBackupTechDialog(false);
+        setBackupTechForm({
+          originalTechnicianId: '',
+          backupTechnicianId: '',
+          startDate: '',
+          endDate: '',
+          divertExisting: false,
+          reason: ''
+        });
+        fetchBackupTechnicianData();
+      } else {
+        const error = await response.json();
+        let errorMessage = "Failed to create backup technician";
+        
+        if (error.error) {
+          errorMessage = error.error;
+        }
+
+        // Show specific error messages with helpful context
+        if (errorMessage.includes('overlapping') || errorMessage.includes('already exists')) {
+          toast({
+            title: "Configuration Conflict",
+            description: "A backup technician configuration already exists for this technician during the specified period. Please choose different dates or technician.",
+            variant: "destructive",
+          });
+        } else if (errorMessage.includes('same')) {
+          toast({
+            title: "Invalid Selection",
+            description: "Original technician and backup technician cannot be the same person. Please select different technicians.",
+            variant: "destructive",
+          });
+        } else if (errorMessage.includes('past')) {
+          toast({
+            title: "Invalid Date",
+            description: "End date cannot be in the past. Please select a future date.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Error",
+            description: errorMessage,
+            variant: "destructive",
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error creating backup technician:', error);
+      toast({
+        title: "Connection Error",
+        description: "Unable to connect to the server. Please check your internet connection and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setConfirmDialog(prev => ({ ...prev, open: false }));
+    }
+  };
+
+  const handleDeactivateBackupTechnician = async (config: BackupTechnicianConfig) => {
+    // Show confirmation dialog first
+    setConfirmDialog({
+      open: true,
+      title: 'Deactivate Backup Technician',
+      description: `Are you sure you want to deactivate the backup technician configuration for ${config.original_technician_name} → ${config.backup_technician_name}? 
+
+This will:
+• Stop the backup technician from receiving new request assignments
+• Revert any open/on-hold requests back to ${config.original_technician_name}
+• End the backup configuration immediately
+
+This action cannot be undone.`,
+      confirmText: 'Deactivate',
+      cancelText: 'Cancel',
+      variant: 'destructive',
+      onConfirm: () => performTechnicianDeactivation(config.id)
+    });
+  };
+
+  const performTechnicianDeactivation = async (configId: number) => {
+    try {
+      const response = await fetch(`/api/backup-technicians/${configId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ is_active: false }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        toast({
+          title: "Success",
+          description: result.message,
+        });
+        fetchBackupTechnicianData();
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Error",
+          description: errorData.error || "Failed to deactivate backup technician",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to deactivate backup technician",
+        variant: "destructive",
+      });
+    } finally {
+      setConfirmDialog(prev => ({ ...prev, open: false }));
+    }
+  };
+
+  const handleEditBackupTechnician = (config: BackupTechnicianConfig) => {
+    setEditingTechConfig(config);
+    setBackupTechForm({
+      originalTechnicianId: config.original_technician_id.toString(),
+      backupTechnicianId: config.backup_technician_id.toString(),
+      startDate: new Date(config.start_date).toISOString().split('T')[0],
+      endDate: new Date(config.end_date).toISOString().split('T')[0],
+      divertExisting: config.divert_existing || false,
+      reason: config.reason || ''
+    });
+    setShowBackupTechDialog(true);
+  };
+
+  const handleUpdateBackupTechnician = async () => {
+    if (!editingTechConfig) return;
+
+    try {
+      // Client-side validation
+      if (!backupTechForm.originalTechnicianId || !backupTechForm.backupTechnicianId || 
+          !backupTechForm.startDate || !backupTechForm.endDate) {
+        toast({
+          title: "Validation Error",
+          description: "Please fill in all required fields",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const response = await fetch(`/api/backup-technicians/${editingTechConfig.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(backupTechForm),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Backup technician configuration updated successfully",
+        });
+        setShowBackupTechDialog(false);
+        setEditingTechConfig(null);
+        setBackupTechForm({
+          originalTechnicianId: '',
+          backupTechnicianId: '',
+          startDate: '',
+          endDate: '',
+          divertExisting: false,
+          reason: ''
+        });
+        fetchBackupTechnicianData();
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Error",
+          description: error.error || "Failed to update backup technician",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error updating backup technician:', error);
+      toast({
+        title: "Connection Error",
+        description: "Unable to connect to the server. Please check your internet connection and try again.",
+        variant: "destructive",
+      });
+    }
+  };
   const handleCreateBackupApprover = async () => {
     // Client-side validation first
     if (!backupForm.originalApproverId || !backupForm.backupApproverId || 
@@ -404,6 +747,7 @@ export default function DashboardPage() {
     const originalApprover = approversList.find(a => a.id === parseInt(backupForm.originalApproverId));
     const backupApprover = approversList.find(a => a.id === parseInt(backupForm.backupApproverId));
 
+    console.log("tommy",originalApprover,backupApprover)
     // Show confirmation dialog
     setConfirmDialog({
       open: true,
@@ -1495,10 +1839,389 @@ This action cannot be undone.`,
         <TabsContent value="resource">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Backup Technician</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">Backup Technician Management</CardTitle>
+                <Dialog open={showBackupTechDialog} onOpenChange={setShowBackupTechDialog}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" className="h-7 text-xs">
+                      <Plus className="h-3 w-3 mr-1" />
+                      New Backup
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>
+                        {editingTechConfig ? 'Edit Backup Technician' : 'Create Backup Technician'}
+                      </DialogTitle>
+                      <DialogDescription>
+                        {editingTechConfig ? 
+                          'Update the backup technician configuration.' : 
+                          'Set up a backup technician to handle requests during specified periods.'
+                        }
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-medium">From Technician</label>
+                          <Select value={backupTechForm.originalTechnicianId} onValueChange={(value) => setBackupTechForm({...backupTechForm, originalTechnicianId: value})}>
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Select technician" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {techniciansList.map((technician: any) => (
+                                <SelectItem key={technician.id} value={technician.id.toString()} className="text-xs">
+                                  {technician.emp_fname} {technician.emp_lname}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium">To Backup Technician</label>
+                          <Select value={backupTechForm.backupTechnicianId} onValueChange={(value) => setBackupTechForm({...backupTechForm, backupTechnicianId: value})}>
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Select backup" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {techniciansList.filter((technician: any) => technician.id.toString() !== backupTechForm.originalTechnicianId).map((technician: any) => (
+                                <SelectItem key={technician.id} value={technician.id.toString()} className="text-xs">
+                                  {technician.emp_fname} {technician.emp_lname}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-medium">Start Date</label>
+                          <Input 
+                            type="date" 
+                            className="h-8 text-xs" 
+                            value={backupTechForm.startDate}
+                            onChange={(e) => setBackupTechForm({...backupTechForm, startDate: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium">End Date</label>
+                          <Input 
+                            type="date" 
+                            className="h-8 text-xs" 
+                            value={backupTechForm.endDate}
+                            onChange={(e) => setBackupTechForm({...backupTechForm, endDate: e.target.value})}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium">Reason (Optional)</label>
+                        <Input 
+                          placeholder="e.g., Vacation, Medical leave" 
+                          className="h-8 text-xs" 
+                          value={backupTechForm.reason}
+                          onChange={(e) => setBackupTechForm({...backupTechForm, reason: e.target.value})}
+                        />
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        <Checkbox 
+                          id="divert-existing" 
+                          checked={backupTechForm.divertExisting}
+                          onCheckedChange={(checked) => setBackupTechForm({...backupTechForm, divertExisting: !!checked})}
+                        />
+                        <label htmlFor="divert-existing" className="text-xs font-medium">
+                          Transfer existing open/on-hold requests
+                        </label>
+                      </div>
+
+                      <div className="bg-blue-50 p-3 rounded-lg">
+                        <h4 className="text-xs font-medium text-blue-800 mb-1">How it works:</h4>
+                        <ul className="text-xs text-blue-700 space-y-1">
+                          <li>• New request assignments will go to backup technician during the period</li>
+                          <li>• Backup technician receives all notifications for assigned requests</li>
+                          <li>• Open/on-hold requests auto-revert after the period ends</li>
+                          <li>• Resolved/closed requests remain unchanged</li>
+                          <li>• Both technicians get notified about transfers and reversions</li>
+                          <li>• Normal request handling process applies during backup period</li>
+                        </ul>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" size="sm" className="text-xs" onClick={() => {
+                        setShowBackupTechDialog(false);
+                        setEditingTechConfig(null);
+                        setBackupTechForm({
+                          originalTechnicianId: '',
+                          backupTechnicianId: '',
+                          startDate: '',
+                          endDate: '',
+                          divertExisting: false,
+                          reason: ''
+                        });
+                      }}>Cancel</Button>
+                      <Button size="sm" className="text-xs" onClick={editingTechConfig ? handleUpdateBackupTechnician : handleCreateBackupTechnician}>
+                        {editingTechConfig ? 'Update Backup' : 'Create Backup'}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </CardHeader>
             <CardContent className="pt-0">
-              <p className="text-gray-500 text-xs">Backup technician management will be implemented here.</p>
+              <Tabs defaultValue="active" className="space-y-4">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="active" className="text-xs">Active</TabsTrigger>
+                  <TabsTrigger value="scheduled" className="text-xs">Scheduled</TabsTrigger>
+                  <TabsTrigger value="expiring" className="text-xs">Expiring</TabsTrigger>
+                  <TabsTrigger value="logs" className="text-xs">Activity Logs</TabsTrigger>
+                </TabsList>
+
+                {/* Active Tab Content */}
+                <TabsContent value="active" className="space-y-2">
+                  {backupTechConfigs.filter((config: BackupTechnicianConfig) => config.current_status === 'active').length === 0 ? (
+                    <div className="text-center py-4 text-gray-500">
+                      <p className="text-xs">No active backup technician configurations</p>
+                    </div>
+                  ) : (
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead className="bg-green-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium text-green-800">Status</th>
+                            <th className="px-3 py-2 text-left font-medium text-green-800">Original → Backup</th>
+                            <th className="px-3 py-2 text-left font-medium text-green-800">Period</th>
+                            <th className="px-3 py-2 text-left font-medium text-green-800">Days Left</th>
+                            <th className="px-3 py-2 text-left font-medium text-green-800">Settings</th>
+                            <th className="px-3 py-2 text-center font-medium text-green-800">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {backupTechConfigs.filter((config: BackupTechnicianConfig) => config.current_status === 'active').map((config: BackupTechnicianConfig) => (
+                            <tr key={config.id} className="hover:bg-green-25">
+                              <td className="px-3 py-2">
+                                <Badge className="bg-green-100 text-green-800 text-xs px-2 py-0">Active</Badge>
+                              </td>
+                              <td className="px-3 py-2 font-medium">
+                                {config.original_technician_name} → {config.backup_technician_name}
+                              </td>
+                              <td className="px-3 py-2 text-gray-600">
+                                {new Date(config.start_date).toLocaleDateString()} - {new Date(config.end_date).toLocaleDateString()}
+                              </td>
+                              <td className="px-3 py-2 text-gray-600">
+                                {config.days_remaining} days
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-green-600">
+                                    ✓ {config.divert_existing ? 'Transfers existing' : 'New assignments only'}
+                                  </span>
+                                  {config.reason && <span className="text-gray-500 text-xs">• {config.reason}</span>}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                      <MoreHorizontal className="h-3 w-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem className="text-xs" onClick={() => handleEditBackupTechnician(config)}>
+                                      <Edit className="h-3 w-3 mr-2" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="text-xs text-red-600" onClick={() => handleDeactivateBackupTechnician(config)}>
+                                      <Settings className="h-3 w-3 mr-2" />
+                                      Deactivate
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Scheduled Tab Content */}
+                <TabsContent value="scheduled" className="space-y-2">
+                  {backupTechConfigs.filter((config: BackupTechnicianConfig) => config.current_status === 'scheduled').length === 0 ? (
+                    <div className="text-center py-4 text-gray-500">
+                      <p className="text-xs">No scheduled backup technician configurations</p>
+                    </div>
+                  ) : (
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead className="bg-blue-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium text-blue-800">Status</th>
+                            <th className="px-3 py-2 text-left font-medium text-blue-800">Original → Backup</th>
+                            <th className="px-3 py-2 text-left font-medium text-blue-800">Period</th>
+                            <th className="px-3 py-2 text-left font-medium text-blue-800">Starts In</th>
+                            <th className="px-3 py-2 text-left font-medium text-blue-800">Settings</th>
+                            <th className="px-3 py-2 text-center font-medium text-blue-800">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {backupTechConfigs.filter((config: BackupTechnicianConfig) => config.current_status === 'scheduled').map((config: BackupTechnicianConfig) => (
+                            <tr key={config.id} className="hover:bg-blue-25">
+                              <td className="px-3 py-2">
+                                <Badge className="bg-blue-100 text-blue-800 text-xs px-2 py-0">Scheduled</Badge>
+                              </td>
+                              <td className="px-3 py-2 font-medium">
+                                {config.original_technician_name} → {config.backup_technician_name}
+                              </td>
+                              <td className="px-3 py-2 text-gray-600">
+                                {new Date(config.start_date).toLocaleDateString()} - {new Date(config.end_date).toLocaleDateString()}
+                              </td>
+                              <td className="px-3 py-2 text-gray-600">
+                                {Math.abs(config.days_remaining)} days
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-blue-600">
+                                    ⏱ Will {config.divert_existing ? 'transfer existing' : 'handle new only'}
+                                  </span>
+                                  {config.reason && <span className="text-gray-500 text-xs">• {config.reason}</span>}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                      <MoreHorizontal className="h-3 w-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem className="text-xs" onClick={() => handleEditBackupTechnician(config)}>
+                                      <Edit className="h-3 w-3 mr-2" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="text-xs text-red-600" onClick={() => handleDeactivateBackupTechnician(config)}>
+                                      <Settings className="h-3 w-3 mr-2" />
+                                      Cancel
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Expiring Tab Content */}
+                <TabsContent value="expiring" className="space-y-2">
+                  {upcomingTechExpirations.length === 0 ? (
+                    <div className="text-center py-4 text-gray-500">
+                      <p className="text-xs">No configurations expiring soon</p>
+                    </div>
+                  ) : (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                      <div className="space-y-2">
+                        {upcomingTechExpirations.map((config: BackupTechnicianConfig) => (
+                          <div key={config.id} className="flex items-center justify-between text-xs">
+                            <span className="text-yellow-700">
+                              {config.original_technician_name} → {config.backup_technician_name}
+                            </span>
+                            <span className="text-yellow-600 font-medium">
+                              {config.days_remaining} {config.days_remaining === 1 ? 'day' : 'days'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2 text-xs text-yellow-700">
+                        💡 Open/on-hold requests will auto-revert to original technicians after expiration
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Activity Logs Tab Content */}
+                <TabsContent value="logs" className="space-y-2">
+                  <div className="max-h-64 overflow-y-auto">
+                    {backupTechLogs.length === 0 ? (
+                      <div className="text-center py-4 text-gray-500">
+                        <p className="text-xs">No backup technician activity</p>
+                      </div>
+                    ) : (
+                      backupTechLogs.map((log: BackupTechnicianLog) => (
+                        <div key={log.id} className="border rounded-lg p-3 bg-gray-50">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-3">
+                              <Badge variant="outline" className="text-xs px-2 py-0 capitalize">
+                                {log.action_type.replace('_', ' ')}
+                              </Badge>
+                              <span className="text-xs font-medium">
+                                {/* Show correct direction based on action type */}
+                                {(log.action_type === 'auto_reversion' || (log.action_type === 'deactivated' && log.details?.revertedDiversions > 0)) ? 
+                                  `${log.backup_technician_name} → ${log.original_technician_name}` :
+                                  `${log.original_technician_name} → ${log.backup_technician_name}`
+                                }
+                              </span>
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              {new Date(log.performed_at).toLocaleDateString()} {new Date(log.performed_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </span>
+                          </div>
+                          
+                          {/* Show period dates directly */}
+                          {(log.details?.startDate || log.details?.endDate) && (
+                            <div className="text-xs text-gray-600 mb-2">
+                              <span className="font-medium">Period: </span>
+                              {log.details.startDate && new Date(log.details.startDate).toLocaleDateString()}
+                              {log.details.startDate && log.details.endDate && ' - '}
+                              {log.details.endDate && new Date(log.details.endDate).toLocaleDateString()}
+                            </div>
+                          )}
+
+                          {/* Show transfer information */}
+                          {log.action_type === 'created' && log.details?.transferredRequests > 0 && (
+                            <div className="text-xs text-gray-600 mb-1">
+                              <span className="font-medium">Transferred: </span>
+                              {log.details.transferredRequests} existing requests to backup technician
+                            </div>
+                          )}
+
+                          {/* Show reversion information for deactivated configs */}
+                          {log.action_type === 'deactivated' && log.details?.revertedDiversions > 0 && (
+                            <div className="text-xs text-gray-600 mb-1">
+                              <span className="font-medium">Reverted: </span>
+                              {log.details.revertedDiversions} requests back to original technician
+                            </div>
+                          )}
+
+                          {/* Show reason if available */}
+                          {log.details?.reason && (
+                            <div className="text-xs text-gray-600">
+                              <span className="font-medium">Reason: </span>
+                              {log.details.reason}
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
+
+              {/* System Information */}
+              <div className="bg-gray-50 p-3 rounded-lg mt-4">
+                <h4 className="text-xs font-medium text-gray-700 mb-2">📋 How Auto-Reversion Works</h4>
+                <ul className="text-xs text-gray-600 space-y-1">
+                  <li>• System checks for expired backup configurations daily at 6 AM</li>
+                  <li>• Any open/on-hold requests are automatically reverted to original technicians</li>
+                  <li>• Both technicians receive notifications about the reversion</li>
+                  <li>• Already resolved/closed requests remain unchanged</li>
+                  <li>• New request assignments resume normal flow to original technicians</li>
+                </ul>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

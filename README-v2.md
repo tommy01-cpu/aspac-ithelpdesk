@@ -19,6 +19,9 @@ gcloud projects add-iam-policy-binding aspac-vm --member="serviceAccount:5703177
 # ithelpdesk 
 gcloud run services update ithelpdesk --region=asia-southeast1 --set-env-vars="DATABASE_URL=postgresql://postgres:~2D(ub*V{RsE%+k)@localhost:5432/ithelpdesk_db?host=/cloudsql/aspac-vm:asia-southeast1:ithelpdesk-db,ATTACHMENTS_DATABASE_URL=postgresql://postgres:~2D(ub*V{RsE%+k)@localhost:5432/ithelpdesk_attachments?host=/cloudsql/aspac-vm:asia-southeast1:ithelpdesk-db,NODE_ENV=production,NEXTAUTH_URL=https://ithelpdesk-369463028575.asia-southeast1.run.app,NEXT_PUBLIC_BASE_URL=https://ithelpdesk-369463028575.asia-southeast1.run.app,CLOUD_SQL_CONNECTION_NAME=aspac-vm:asia-southeast1:ithelpdesk-db,NEXTAUTH_SECRET=c43581fecccaa707d60c125f6cfe001de93c481d2e639d29d9b55b72dedeb9a0,TZ=Asia/Manila"
 
+
+gcloud run services update ithelpdesk --region=asia-southeast1 --set-env-vars="DATABASE_URL=postgresql://postgres:~2D(ub*V{RsE%+k)@localhost:5432/ithelpdesk_db?host=/cloudsql/aspac-vm:asia-southeast1:ithelpdesk-db,ATTACHMENTS_DATABASE_URL=postgresql://postgres:~2D(ub*V{RsE%+k)@localhost:5432/ithelpdesk_attachments?host=/cloudsql/aspac-vm:asia-southeast1:ithelpdesk-db,NODE_ENV=production,NEXTAUTH_URL=https://ithelpdesk.aspacphils.com.ph,NEXT_PUBLIC_BASE_URL=https://ithelpdesk.aspacphils.com.ph,CLOUD_SQL_CONNECTION_NAME=aspac-vm:asia-southeast1:ithelpdesk-db,NEXTAUTH_SECRET=c43581fecccaa707d60c125f6cfe001de93c481d2e639d29d9b55b72dedeb9a0,TZ=Asia/Manila"
+
 https://ithelpdesk-369463028575.asia-southeast1.run.app
 
 # restore Db (Cloud)

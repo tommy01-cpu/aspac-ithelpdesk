@@ -154,13 +154,7 @@ export async function GET(request: Request) {
               path: ['assignedTechnicianId'],
               equals: techId.toString()
             }
-          },
-          ...(techName ? [{
-            formData: {
-              path: ['assignedTechnician'],
-              equals: techName
-            }
-          }] : [])
+          }
         ]
       });
     } else if (assignedTechnicianId === 'unassigned') {
@@ -170,12 +164,6 @@ export async function GET(request: Request) {
           {
             formData: {
               path: ['assignedTechnicianId'],
-              equals: null
-            }
-          },
-          {
-            formData: {
-              path: ['assignedTechnician'],
               equals: null
             }
           },

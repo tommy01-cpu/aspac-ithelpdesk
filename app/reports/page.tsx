@@ -1484,16 +1484,16 @@ export default function ReportsPage() {
             <thead className="bg-blue-50 border-b-2 border-blue-200 sticky top-0 z-10">
               <tr>
                 <th onClick={() => handleSort('id')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between  w-[100px]">
                     <span>Request ID</span>
-                    <div className="flex flex-col">
+                    <div className="flex flex-col ">
                       <span className={`text-xs ${sortField === 'id' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
                       <span className={`text-xs ${sortField === 'id' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
                     </div>
                   </div>
                 </th>
                 <th onClick={() => handleSort('subject')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between  w-[250px]">
                     <span>Subject</span>
                     <div className="flex flex-col">
                       <span className={`text-xs ${sortField === 'subject' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
@@ -1501,8 +1501,8 @@ export default function ReportsPage() {
                     </div>
                   </div>
                 </th>
-                <th onClick={() => handleSort('description')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
-                  <div className="flex items-center justify-between">
+                <th onClick={() => handleSort('description')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle w-[1000px]">
+                  <div className="flex items-center justify-between  w-[400px]">
                     <span>Description</span>
                     <div className="flex flex-col">
                       <span className={`text-xs ${sortField === 'description' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
@@ -1511,7 +1511,7 @@ export default function ReportsPage() {
                   </div>
                 </th>
                 <th onClick={() => handleSort('requestType')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between  w-[120px]">
                     <span>Request Type</span>
                     <div className="flex flex-col">
                       <span className={`text-xs ${sortField === 'requestType' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
@@ -1520,7 +1520,7 @@ export default function ReportsPage() {
                   </div>
                 </th>
                 <th onClick={() => handleSort('status')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between  w-[130px]">
                     <span>Request Status</span>
                     <div className="flex flex-col">
                       <span className={`text-xs ${sortField === 'status' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
@@ -1529,7 +1529,7 @@ export default function ReportsPage() {
                   </div>
                 </th>
                 <th onClick={() => handleSort('approvalStatus')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between  w-[150px]">
                     <span>Approval Status</span>
                     <div className="flex flex-col">
                       <span className={`text-xs ${sortField === 'approvalStatus' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
@@ -1565,7 +1565,7 @@ export default function ReportsPage() {
                   </div>
                 </th>
                 <th onClick={() => handleSort('createdAt')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between  w-[120px]">
                     <span>Date Created</span>
                     <div className="flex flex-col">
                       <span className={`text-xs ${sortField === 'createdAt' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
@@ -1574,7 +1574,7 @@ export default function ReportsPage() {
                   </div>
                 </th>
                 <th onClick={() => handleSort('dueByTime')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between  w-[120px]">
                     <span>Due Date</span>
                     <div className="flex flex-col">
                       <span className={`text-xs ${sortField === 'dueByTime' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
@@ -1583,8 +1583,8 @@ export default function ReportsPage() {
                   </div>
                 </th>
                 <th onClick={() => handleSort('resolvedTime')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
-                  <div className="flex items-center justify-between">
-                    <span>Resolved Time</span>
+                  <div className="flex items-center justify-between  w-[150px]">
+                    <span>Resolution Date</span>
                     <div className="flex flex-col">
                       <span className={`text-xs ${sortField === 'resolvedTime' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>
                       <span className={`text-xs ${sortField === 'resolvedTime' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`}>▼</span>
@@ -1610,7 +1610,7 @@ export default function ReportsPage() {
                   </div>
                 </th>
                 <th onClick={() => handleSort('serviceCategory')} className="px-3 py-3 text-left text-xs font-bold text-blue-800 uppercase tracking-wider border-r border-blue-200 cursor-pointer hover:bg-blue-100 align-middle">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between  w-[150px]">
                     <span>Service Category</span>
                     <div className="flex flex-col">
                       <span className={`text-xs ${sortField === 'serviceCategory' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`}>▲</span>

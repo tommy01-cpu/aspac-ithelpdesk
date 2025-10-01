@@ -718,7 +718,6 @@ export async function POST(request: Request) {
               formData: {
                 ...formData,
                 assignedTechnicianId: availableTechnician.userId,
-                assignedTechnician: availableTechnician.displayName,
                 assignedTechnicianEmail: availableTechnician.user?.emp_email,
                 ...(slaData && {
                   slaId: slaData.id,

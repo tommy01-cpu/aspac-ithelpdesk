@@ -68,7 +68,6 @@ export async function POST(
     
     // Update assignment
     formData.assignedTechnicianId = technicianId;
-    formData.assignedTechnician = technicianName;
     formData.assignedTechnicianEmail = technicianEmail;
     formData.assignedAt = new Date().toISOString();
 

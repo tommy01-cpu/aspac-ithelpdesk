@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Transform data for frontend
-    const transformedRequests = assignedRequests.map(request => {
+    const transformedRequests = await Promise.all(assignedRequests.map(async (request) => {
       const formData = request.formData as any;
       return {
         id: request.id,
@@ -71,11 +71,11 @@ export async function GET(request: NextRequest) {
         priority: formData?.['2'] || formData?.priority || 'medium',
         status: request.status,
         category: formData?.['6'] || formData?.category || 'General',
-        assignedTechnician: formData?.assignedTechnician || null,
+        assignedTechnicianId: formData?.assignedTechnicianId,
         createdAt: request.createdAt.toISOString(),
         updatedAt: request.updatedAt.toISOString()
       };
-    });
+    }));
 
     return NextResponse.json(transformedRequests);
   } catch (error) {
