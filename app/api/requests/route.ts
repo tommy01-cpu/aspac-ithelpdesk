@@ -743,15 +743,19 @@ export async function POST(request: Request) {
             }
           });
 
-          // Add history entry for auto-assignment
+          // Add history entry for auto-assignment - use fresh user data
+          const autoAssignedTechnicianName = availableTechnician.user ? 
+            `${availableTechnician.user.emp_fname} ${availableTechnician.user.emp_lname}`.trim() : 
+            'Unknown Technician';
+            
           await addHistory(tx as any, {
             requestId: newRequest.id,
             action: "Auto-Assigned",
             actorName: "System",
             actorType: "system",
-            details: `Automatically assigned to ${availableTechnician.displayName}`,
+            details: `Automatically assigned to ${autoAssignedTechnicianName}`,
           });
-          console.log('✅ Created history entry: Auto-Assigned to', availableTechnician.displayName);
+          console.log('✅ Created history entry: Auto-Assigned to', autoAssignedTechnicianName);
 
           // 📧 For incidents: Send technician assignment notifications immediately
           try {
@@ -1114,7 +1118,7 @@ export async function POST(request: Request) {
                 if (level.approvers && level.approvers.length > 0) {
                   // First pass: Process all template approvers and determine final approvers
                   for (const approver of level.approvers) {
-                    console.log('Processing template approver:', approver);
+                    console.log(`Processing template approver - ID: ${approver.id}`);
                   
                     let actualApproverId = null;
                     let approverName = '';
@@ -1122,7 +1126,7 @@ export async function POST(request: Request) {
                     // Check if this is a special approver type (reporting to, department head)
                     const approverValue = String(approver.id || approver.name || approver).toLowerCase();
                     const approverNumericId = parseInt(approver.id || approver.name || approver);
-                    console.log(`Checking approver value: "${approverValue}" (original:`, approver, ') | Numeric ID:', approverNumericId);
+                    console.log(`Checking approver value: "${approverValue}" | Numeric ID: ${approverNumericId}`);
                     
                     // ✅ SKIP department_head for Level 1
                     if (approverValue === 'department_head' || 
@@ -1130,7 +1134,7 @@ export async function POST(request: Request) {
                         approverValue.includes('chief') ||
                         approver.type === 'department_head' ||
                         approverNumericId === -2) {
-                      console.log(`🚫 Skipping department_head for Level 1: ${JSON.stringify(approver)}`);
+                      console.log(`🚫 Skipping department_head for Level 1 - ID: ${approver.id}`);
                       continue;
                     }
                     
@@ -1318,7 +1322,7 @@ export async function POST(request: Request) {
               // For other levels, only use template approvers
               if (level.approvers && level.approvers.length > 0) {
                 for (const approver of level.approvers) {
-                  console.log(`Processing template approver for level ${levelNumber} (dormant):`, approver);
+                  console.log(`Processing template approver for level ${levelNumber} (dormant) - ID: ${approver.id}`);
                   
                   let actualApproverId = null;
                   let approverName = '';
@@ -1328,7 +1332,7 @@ export async function POST(request: Request) {
                   // Also handle numeric codes like -1 (reporting_to) and -2 (department_head)
                   const approverValue = String(approver.id || approver.name || approver).toLowerCase();
                   const approverNumericId = parseInt(approver.id || approver.name || approver);
-                  console.log(`Checking approver value for level ${levelNumber}: "${approverValue}" (original:`, approver, ') | Numeric ID:', approverNumericId);
+                  console.log(`Checking approver value for level ${levelNumber}: "${approverValue}" | Numeric ID: ${approverNumericId}`);
                   
                   if (approverValue === 'reporting_to' || 
                       approverValue.includes('reporting') || 
@@ -1398,7 +1402,7 @@ export async function POST(request: Request) {
                     
                     if (templateApprover) {
                       approverName = `${templateApprover.emp_fname} ${templateApprover.emp_lname}`;
-                      console.log(`✅ Using template approver for level ${levelNumber}: ${approverName} (ID: ${actualApproverId})`);
+                      console.log(`✅ Using template approver for level ${levelNumber}: ${approverName} (ID: ${actualApproverId}) - Email: ${templateApprover.emp_email}`);
                     } else {
                       console.warn(`⚠️ Template approver with ID ${actualApproverId} not found in database for level ${levelNumber}`);
                       continue;

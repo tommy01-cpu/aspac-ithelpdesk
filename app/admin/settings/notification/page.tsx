@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Mail, FileText, Server, Bell, Edit } from 'lucide-react';
+import { ArrowLeft, Mail, FileText, Server, Bell, Edit, Megaphone, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,291 @@ interface TabItem {
 
 // Dynamically import the components to avoid SSR issues
 const MailServerSettings = dynamic(() => import('./mail-server-settings/page'), { ssr: false });
+
+// Create announcements management component
+const AnnouncementsList = () => {
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [newAnnouncement, setNewAnnouncement] = useState({
+    title: '',
+    content: ''
+  });
+
+  useEffect(() => {
+    fetchAnnouncements();
+  }, []);
+
+  const fetchAnnouncements = async () => {
+    try {
+      const response = await fetch('/api/announcements');
+      if (response.ok) {
+        const data = await response.json();
+        setAnnouncements(data.announcements || []);
+      } else {
+        console.error('Failed to fetch announcements:', response.statusText);
+      }
+    } catch (error) {
+      console.error('Error fetching announcements:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAnnouncement.title.trim() || !newAnnouncement.content.trim()) return;
+
+    setCreating(true);
+    try {
+      const response = await fetch('/api/announcements', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newAnnouncement),
+      });
+
+      if (response.ok) {
+        setNewAnnouncement({ title: '', content: '' });
+        fetchAnnouncements(); // Refresh the list
+        alert('Announcement created successfully!');
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to create announcement');
+      }
+    } catch (error) {
+      console.error('Error creating announcement:', error);
+      alert('Failed to create announcement');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleToggleActive = async (id: number, isActive: boolean) => {
+    try {
+      const response = await fetch(`/api/announcements/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ isActive: !isActive }),
+      });
+
+      if (response.ok) {
+        fetchAnnouncements(); // Refresh the list
+      } else {
+        alert('Failed to update announcement');
+      }
+    } catch (error) {
+      console.error('Error updating announcement:', error);
+      alert('Failed to update announcement');
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this announcement?')) return;
+
+    try {
+      const response = await fetch(`/api/announcements/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        fetchAnnouncements(); // Refresh the list
+        alert('Announcement deleted successfully!');
+      } else {
+        alert('Failed to delete announcement');
+      }
+    } catch (error) {
+      console.error('Error deleting announcement:', error);
+      alert('Failed to delete announcement');
+    }
+  };
+
+  const filteredAnnouncements = announcements.filter(announcement =>
+    announcement.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    announcement.content?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (loading) {
+    return (
+      <div className="text-center py-12">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+        <p className="text-slate-600">Loading announcements...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Create New Announcement */}
+      <Card className="border border-blue-200 bg-blue-50/50">
+        <CardContent className="p-6">
+          <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+            <Plus className="w-5 h-5 text-blue-600" />
+            Create New Announcement
+          </h3>
+          <form onSubmit={handleCreate} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Title
+              </label>
+              <Input
+                type="text"
+                value={newAnnouncement.title}
+                onChange={(e) => setNewAnnouncement(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Enter announcement title..."
+                className="w-full"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Content
+              </label>
+              <textarea
+                value={newAnnouncement.content}
+                onChange={(e) => setNewAnnouncement(prev => ({ ...prev, content: e.target.value }))}
+                placeholder="Enter announcement content..."
+                className="w-full min-h-[100px] px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
+                required
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                type="submit" 
+                disabled={creating || !newAnnouncement.title.trim() || !newAnnouncement.content.trim()}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {creating ? 'Creating...' : 'Create Announcement'}
+              </Button>
+              <Button 
+                type="button"
+                variant="outline"
+                onClick={() => setNewAnnouncement({ title: '', content: '' })}
+              >
+                Clear
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Search */}
+      <div className="flex items-center justify-between">
+        <div className="flex-1 max-w-md">
+          <Input
+            type="text"
+            placeholder="Search announcements..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full"
+          />
+        </div>
+      </div>
+
+      {/* Announcements List */}
+      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Announcement
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Created
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {filteredAnnouncements.map((announcement, index) => (
+                <tr key={announcement.id} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                  <td className="px-6 py-4">
+                    <div className="flex items-start">
+                      <Megaphone className="w-4 h-4 text-slate-400 mr-3 mt-1 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-slate-900 truncate">
+                          {announcement.title}
+                        </div>
+                        <div className="text-sm text-slate-600 line-clamp-2 mt-1">
+                          {announcement.content}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      announcement.isActive
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {announcement.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                    <div>{new Date(announcement.createdAt).toLocaleDateString()}</div>
+                    <div className="text-xs text-slate-500">
+                      by {announcement.creator?.emp_fname} {announcement.creator?.emp_lname}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleToggleActive(announcement.id, announcement.isActive)}
+                        className="text-blue-600 hover:text-blue-700 border-blue-200 hover:bg-blue-50"
+                      >
+                        {announcement.isActive ? (
+                          <><EyeOff className="w-4 h-4 mr-1" /> Hide</>
+                        ) : (
+                          <><Eye className="w-4 h-4 mr-1" /> Show</>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDelete(announcement.id)}
+                        className="text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        Delete
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        
+        {filteredAnnouncements.length === 0 && !loading && (
+          <div className="text-center py-12">
+            <Megaphone className="w-16 h-16 mx-auto text-slate-400 mb-4" />
+            <h3 className="text-lg font-semibold text-slate-800 mb-2">
+              {searchQuery ? 'No announcements found' : 'No announcements yet'}
+            </h3>
+            <p className="text-slate-600">
+              {searchQuery 
+                ? 'Try adjusting your search query.' 
+                : 'Create your first announcement using the form above.'
+              }
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // Create a comprehensive email template list with full functionality
 const EmailTemplatesList = () => {
@@ -147,6 +432,12 @@ const EmailTemplatesList = () => {
 // Tab configuration
 const notificationTabs: TabItem[] = [
   {
+    id: 'announcements',
+    label: 'Announcements',
+    icon: Megaphone,
+    path: '/admin/settings/notification/announcements'
+  },
+  {
     id: 'email-template',
     label: 'Email Templates',
     icon: FileText,
@@ -163,7 +454,7 @@ const notificationTabs: TabItem[] = [
 export default function NotificationSettingsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState('email-template');
+  const [activeTab, setActiveTab] = useState('announcements');
 
   useEffect(() => {
     const tab = searchParams?.get('tab');
@@ -183,6 +474,17 @@ export default function NotificationSettingsPage() {
 
   const renderTabContent = () => {
     switch (activeTab) {
+      case 'announcements':
+        return (
+          <div className="p-6">
+            <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+              <Megaphone className="w-6 h-6 text-blue-600" />
+              Announcements Management
+            </h2>
+            <p className="text-slate-600 mb-6">Create and manage system announcements that appear on the homepage.</p>
+            <AnnouncementsList />
+          </div>
+        );
       case 'email-template':
         return (
           <div className="p-6">
@@ -205,10 +507,18 @@ export default function NotificationSettingsPage() {
               <Bell className="w-16 h-16 mx-auto text-indigo-600 mb-4" />
               <h3 className="text-xl font-semibold text-slate-800 mb-2">Select a Setting</h3>
               <p className="text-slate-600 mb-6">Choose a setting category from the sidebar to get started</p>
-              <div className="flex gap-4 justify-center">
+              <div className="flex gap-4 justify-center flex-wrap">
+                <Button 
+                  onClick={() => handleTabChange('announcements')}
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
+                >
+                  <Megaphone className="w-4 h-4" />
+                  Announcements
+                </Button>
                 <Button 
                   onClick={() => handleTabChange('email-template')}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+                  variant="outline"
+                  className="flex items-center gap-2"
                 >
                   <FileText className="w-4 h-4" />
                   Email Templates

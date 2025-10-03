@@ -99,6 +99,9 @@ export default function AdminSettingsPage() {
       case 'Mail Server Settings':
         router.push('/admin/settings/notification?tab=mail-server-settings');
         break;
+      case 'Announcements':
+        router.push('/admin/settings/notification?tab=announcements');
+        break;
       default:
         // All visible items should have routes defined above
         console.warn(`No route defined for: ${itemName}`);
@@ -137,7 +140,7 @@ export default function AdminSettingsPage() {
       bgColor: "bg-indigo-50",
       iconColor: "text-indigo-600",
       items: [
-        "Email Template", "Mail Server Settings"
+        "Announcements", "Email Template", "Mail Server Settings"
       ]
     },
     {

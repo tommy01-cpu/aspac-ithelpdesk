@@ -64,16 +64,40 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
           });
 
           if (revertedCount > 0) {
-            // Get original technician details for formData update
-            const originalTech = await tx.technician.findFirst({
-              where: { userId: config.original_technician_id },
-              include: { user: true }
+            // Get original technician user details directly (no displayName)
+            const originalUser = await tx.users.findUnique({
+              where: { id: config.original_technician_id },
+              select: {
+                id: true,
+                emp_fname: true,
+                emp_lname: true,
+                emp_email: true,
+              }
             });
 
-            const originalTechName = originalTech ? 
-              (originalTech.displayName || `${originalTech.user.emp_fname} ${originalTech.user.emp_lname}`.trim()) :
+            // Get backup technician user details directly (no displayName)
+            const backupUser = await tx.users.findUnique({
+              where: { id: config.backup_technician_id },
+              select: {
+                id: true,
+                emp_fname: true,
+                emp_lname: true,
+                emp_email: true,
+              }
+            });
+
+            const originalTechName = originalUser ? 
+              `${originalUser.emp_fname} ${originalUser.emp_lname}`.trim() :
               'Original Technician';
-            const originalTechEmail = originalTech?.user?.emp_email || '';
+            const originalTechEmail = originalUser?.emp_email || '';
+
+            const backupTechName = backupUser ? 
+              `${backupUser.emp_fname} ${backupUser.emp_lname}`.trim() :
+              'Backup Technician';
+
+            // Create Philippine time for history entries
+            const now = new Date();
+            const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
 
             // Update each request individually to restore original technician in formData
             for (const request of requestsToRevert) {
@@ -97,6 +121,21 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
                   updatedAt: new Date()
                 }
               });
+
+              // Create request history entry for manual deactivation reversion
+              await tx.requestHistory.create({
+                data: {
+                  requestId: request.id,
+                  action: 'Technician-Reassigned',
+                  details: `Assigned to: ${originalTechName}\nPrevious Technician: ${backupTechName}\nReason: Backup technician configuration manually deactivated`,
+                  actorId: parseInt(session.user.id),
+                  actorName: session.user.name || 'System',
+                  actorType: 'user',
+                  timestamp: philippineTime,
+                },
+              });
+
+              console.log(`✅ Request ${request.id} reverted and history entry created`);
             }
           }
 

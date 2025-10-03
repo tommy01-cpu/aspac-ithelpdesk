@@ -55,27 +55,52 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    // Use Philippine time (UTC+8)
+    const now = new Date();
+    const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+
     for (const req of requests) {
       const formData = req.formData as any;
+      
+      // Store previous technician before updating - get from users table using ID
+      let previousTechnician = 'None';
+      if (formData.assignedTechnicianId) {
+        const previousTechUser = await prisma.users.findUnique({
+          where: { id: parseInt(formData.assignedTechnicianId) },
+          select: {
+            emp_fname: true,
+            emp_lname: true
+          }
+        });
+        if (previousTechUser) {
+          previousTechnician = `${previousTechUser.emp_fname} ${previousTechUser.emp_lname}`.trim();
+        }
+      }
+      
+      // Update assignment with consistent format
       formData.assignedTechnicianId = technicianId;
-      formData.assignedAt = new Date().toISOString();
+      formData.assignedTechnicianEmail = technician.emp_email;
+      formData.assignedTechnician = technicianName; // Store the full name for consistency
+      formData.assignedAt = philippineTime.toISOString();
 
       await prisma.request.update({
         where: { id: req.id },
         data: {
           formData: formData,
-          updatedAt: new Date()
+          updatedAt: philippineTime
         }
       });
 
-      // Add history entry
+      // Add history entry with consistent format matching individual assignment
       await prisma.requestHistory.create({
         data: {
           requestId: req.id,
           actorId: user.id,
-          action: 'bulk_assign',
-          details: `Bulk assigned to ${technicianName} by ${`${user.emp_fname} ${user.emp_lname}`.trim()}`,
-          actorName: `${user.emp_fname} ${user.emp_lname}`.trim()
+          action: 'Technician-Reassigned',
+          details: `Assigned to: ${technicianName}\nPrevious Technician: ${previousTechnician}\nReason: Bulk assignment`,
+          actorName: `${user.emp_fname} ${user.emp_lname}`.trim(),
+          actorType: 'user',
+          timestamp: philippineTime
         }
       });
     }

@@ -302,11 +302,11 @@ export default function AppHeader() {
                         Requests
                       </Link>
                     </DropdownMenuItem>
-                    {/* <DropdownMenuItem asChild>
+                    <DropdownMenuItem asChild>
                       <Link href="/technician/reports" className="w-full text-white hover:text-white hover:bg-black/20">
                         Reports
                       </Link>
-                    </DropdownMenuItem> */}
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}

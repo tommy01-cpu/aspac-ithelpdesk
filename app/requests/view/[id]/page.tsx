@@ -4353,6 +4353,28 @@ export default function RequestViewPage() {
                             });
                             return;
                           }
+                          
+                          // Check if current template is service type - prevent change
+                          const currentTemplateType = templateData?.type || requestData?.formData?.['4'] || requestData?.type;
+                          if (currentTemplateType?.toLowerCase() === 'service') {
+                            toast({
+                              title: "Type Change Not Allowed",
+                              description: "Cannot change template type from Service to Incident. Service templates cannot be changed.",
+                              variant: "destructive"
+                            });
+                            return;
+                          }
+                          
+                          // Only allow if current template is incident type
+                          if (currentTemplateType?.toLowerCase() !== 'incident') {
+                            toast({
+                              title: "Type Change Not Allowed",
+                              description: "Template type changes are only allowed for Incident templates.",
+                              variant: "destructive"
+                            });
+                            return;
+                          }
+                          
                           setShowChangeTypeModal(true);
                         }}
                         className="w-full flex items-center justify-center gap-2"
@@ -4960,7 +4982,7 @@ export default function RequestViewPage() {
               <DialogHeader>
                 <DialogTitle>Change Type</DialogTitle>
                 <DialogDescription>
-                 Change Incident to Service Template
+                  Change to a different Incident template. Only Incident templates are available for template changes.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -4971,16 +4993,23 @@ export default function RequestViewPage() {
                     value={selectedCategory}
                     onChange={(e) => {
                       setSelectedCategory(e.target.value);
-                      // Load templates for selected category
+                      // Load templates for selected category - only incident templates
                       const categoryTemplates = availableTemplates.filter(template => 
-                        template.category?.id === parseInt(e.target.value)
+                        template.category?.id === parseInt(e.target.value) &&
+                        template.type?.toLowerCase() === 'incident'
                       );
                       setCategoryTemplates(categoryTemplates);
                       setSelectedTemplate('');
                     }}
                   >
                     <option value="">Select Category</option>
-                    {availableCategories.map(category => (
+                    {availableCategories.filter(category => 
+                      // Only show categories that have incident templates
+                      availableTemplates.some(template => 
+                        template.category?.id === category.id && 
+                        template.type?.toLowerCase() === 'incident'
+                      )
+                    ).map(category => (
                       <option key={category.id} value={category.id}>
                         {category.name}
                       </option>
@@ -5262,7 +5291,13 @@ export default function RequestViewPage() {
                   </div>
                   
                   <div className="space-y-2 overflow-y-auto flex-1 bg-white pb-4">
-                      {availableCategories.map((category: any) => (
+                      {availableCategories.filter((category: any) => {
+                        // Only show categories that have incident templates
+                        return availableTemplates.some(template => 
+                          template.category?.id === category.id && 
+                          template.type?.toLowerCase() === 'incident'
+                        );
+                      }).map((category: any) => (
                         <div
                           key={category.id}
                           className={`p-3 rounded-lg cursor-pointer transition-colors border ${
@@ -5270,7 +5305,16 @@ export default function RequestViewPage() {
                               ? 'bg-blue-50 border-blue-200 text-blue-700'
                               : 'hover:bg-gray-50 border-gray-200 bg-white'
                           }`}
-                          onClick={() => setSelectedCategory(String(category.id))}
+                          onClick={() => {
+                            setSelectedCategory(String(category.id));
+                            // Load only incident templates for selected category
+                            const categoryTemplates = availableTemplates.filter(template => 
+                              template.category?.id === category.id &&
+                              template.type?.toLowerCase() === 'incident'
+                            );
+                            setCategoryTemplates(categoryTemplates);
+                            setSelectedTemplate('');
+                          }}
                         >
                           <div className="flex items-center gap-3">
                             <div className="flex-shrink-0">

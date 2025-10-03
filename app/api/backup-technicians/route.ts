@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Transform data to match the expected format
-    const transformedConfigs = configs.map(config => {
+    const transformedConfigs = configs.map((config: any) => {
       const today = new Date();
       today.setHours(0, 0, 0, 0); // Set to start of day for accurate comparison
       
@@ -290,27 +290,37 @@ export async function POST(request: NextRequest) {
           transferredCount = requestsToTransfer.length;
 
           if (transferredCount > 0) {
-            // Get backup technician details for formData update
-            const backupTech = await tx.technician.findFirst({
-              where: { userId: backupTechId },
-              include: { user: true }
+            // Get backup technician user details directly
+            const backupUser = await tx.users.findUnique({
+              where: { id: backupTechId },
+              select: {
+                id: true,
+                emp_fname: true,
+                emp_lname: true,
+                emp_email: true,
+              }
             });
 
-            const backupTechName = backupTech ? 
-              (backupTech.displayName || `${backupTech.user.emp_fname} ${backupTech.user.emp_lname}`.trim()) :
+            const backupTechName = backupUser ? 
+              `${backupUser.emp_fname} ${backupUser.emp_lname}`.trim() :
               'Backup Technician';
-            const backupTechEmail = backupTech?.user?.emp_email || '';
+            const backupTechEmail = backupUser?.emp_email || '';
 
-            // Get original technician details for complete backup tracking
-            const originalTech = await tx.technician.findFirst({
-              where: { userId: originalTechId },
-              include: { user: true }
+            // Get original technician user details directly
+            const originalUser = await tx.users.findUnique({
+              where: { id: originalTechId },
+              select: {
+                id: true,
+                emp_fname: true,
+                emp_lname: true,
+                emp_email: true,
+              }
             });
 
-            const originalTechName = originalTech ? 
-              (originalTech.displayName || `${originalTech.user.emp_fname} ${originalTech.user.emp_lname}`.trim()) :
+            const originalTechName = originalUser ? 
+              `${originalUser.emp_fname} ${originalUser.emp_lname}`.trim() :
               'Original Technician';
-            const originalTechEmail = originalTech?.user?.emp_email || '';
+            const originalTechEmail = originalUser?.emp_email || '';
 
             console.log(`🔄 TRANSFER: ${originalTechName} → ${backupTechName}`);
 
@@ -335,8 +345,24 @@ export async function POST(request: NextRequest) {
                   updatedAt: new Date()
                 }
               });
+
+              // Create request history entry for the technician reassignment with Philippine time
+              const now = new Date();
+              const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
               
-              console.log(`✅ Request ${request.id} transferred successfully`);
+              await tx.requestHistory.create({
+                data: {
+                  requestId: request.id,
+                  action: 'Technician-Reassigned',
+                  details: `Assigned to: ${backupTechName}\nPrevious Technician: ${originalTechName}\nReason: Backup technician configuration active${reason ? ` (${reason})` : ''}`,
+                  actorId: null, // System action
+                  actorName: 'System',
+                  actorType: 'system',
+                  timestamp: philippineTime,
+                },
+              });
+              
+              console.log(`✅ Request ${request.id} transferred successfully with history entry`);
             }
 
             // Log the transferred requests in the backup table

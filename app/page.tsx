@@ -40,6 +40,9 @@ export default function Home() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [approvalCount, setApprovalCount] = useState(0);
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementsLoading, setAnnouncementsLoading] = useState(true);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<any>(null);
   const [verseOfTheDay, setVerseOfTheDay] = useState({
     text: "The heart is deceitful above all things, and desperately sick; who can understand it? I the LORD search the heart and test the mind, to give every man according to his ways, according to the fruit of his deeds.",
     reference: "Jeremiah 17:9-10",
@@ -93,6 +96,7 @@ export default function Home() {
     if (session?.user) {
       fetchRequestStats();
       fetchApprovalCount();
+      fetchAnnouncements();
     }
     fetchVerseOfTheDay();
   }, [session]);
@@ -123,6 +127,18 @@ export default function Home() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Close announcement modal with Escape key
+  useEffect(() => {
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && selectedAnnouncement) {
+        setSelectedAnnouncement(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscapeKey);
+    return () => document.removeEventListener('keydown', handleEscapeKey);
+  }, [selectedAnnouncement]);
 
   const searchTemplates = async (query: string) => {
     try {
@@ -267,6 +283,24 @@ export default function Home() {
     } catch (error) {
       console.error('Error fetching approval count:', error);
       setApprovalCount(0);
+    }
+  };
+
+  const fetchAnnouncements = async () => {
+    try {
+      setAnnouncementsLoading(true);
+      const response = await fetch('/api/announcements');
+      if (response.ok) {
+        const data = await response.json();
+        setAnnouncements(data.announcements || []);
+      } else {
+        setAnnouncements([]);
+      }
+    } catch (error) {
+      console.error('Error fetching announcements:', error);
+      setAnnouncements([]);
+    } finally {
+      setAnnouncementsLoading(false);
     }
   };
 
@@ -651,13 +685,60 @@ export default function Home() {
               {/* Announcements */}
               <div className="bg-white rounded-2xl p-3 sm:p-5 shadow-lg border border-gray-100">
                 <div className="text-center mb-2 sm:mb-4">
-                  <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-1">
+                  <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-1 flex items-center justify-center gap-2">
+                    <Megaphone className="h-5 w-5 text-blue-600" />
                     Announcements
                   </h2>
                 </div>
-                <div className="text-center py-1">
-                  <p className="text-slate-600 text-sm">There are no new announcements today.</p>
-                </div>
+                
+                {announcementsLoading ? (
+                  <div className="text-center py-4">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <p className="text-slate-600 text-sm">Loading announcements...</p>
+                  </div>
+                ) : announcements.length > 0 ? (
+                  <div className="space-y-3 max-h-40 overflow-y-auto">
+                    {announcements.slice(0, 3).map((announcement: any) => (
+                      <div 
+                        key={announcement.id} 
+                        className="p-3 bg-gradient-to-r from-slate-50 to-gray-50 rounded-lg border border-slate-200 hover:border-slate-300 cursor-pointer transition-all duration-200 hover:shadow-sm group"
+                        onClick={() => setSelectedAnnouncement(announcement)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-slate-900 text-sm mb-1 group-hover:text-blue-600 transition-colors">
+                              {announcement.title}
+                            </h3>
+                            <p className="text-slate-600 text-xs line-clamp-2 leading-relaxed">
+                              {announcement.content.length > 80 
+                                ? `${announcement.content.substring(0, 80)}...` 
+                                : announcement.content
+                              }
+                            </p>
+                            <p className="text-xs text-slate-500 mt-2">
+                              {new Date(announcement.createdAt).toLocaleDateString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                              })}
+                            </p>
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-blue-600 transition-colors flex-shrink-0 ml-2" />
+                        </div>
+                      </div>
+                    ))}
+                    {announcements.length > 3 && (
+                      <div className="text-center pt-2">
+                        <p className="text-xs text-slate-500">+{announcements.length - 3} more announcements</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <Megaphone className="h-8 w-8 text-slate-400 mx-auto mb-2" />
+                    <p className="text-slate-600 text-sm">No announcements at this time.</p>
+                  </div>
+                )}
               </div>
 
               {/* Bible Verse of the Day */}
@@ -688,6 +769,57 @@ export default function Home() {
             </div>
           </div>
         </section>
+
+        {/* Announcement Detail Modal */}
+        {selectedAnnouncement && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden relative">
+              {/* Close Button - Top Right */}
+              <button
+                onClick={() => setSelectedAnnouncement(null)}
+                className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/80 hover:bg-white shadow-lg border border-gray-200 hover:border-gray-300 transition-all duration-200 group"
+                aria-label="Close announcement"
+              >
+                <X className="h-4 w-4 text-gray-600 group-hover:text-gray-800" />
+              </button>
+
+              {/* Modal Header */}
+              <div className="px-6 pt-6 pb-4 border-b border-slate-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg">
+                    <Megaphone className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Announcement</h2>
+                    <p className="text-sm text-slate-600">
+                      {new Date(selectedAnnouncement.createdAt).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-6 overflow-y-auto max-h-[60vh]">
+                <h1 className="text-2xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  📢 {selectedAnnouncement.title}
+                </h1>
+                
+                <div className="prose prose-slate max-w-none">
+                  <p className="text-slate-700 leading-relaxed whitespace-pre-wrap text-base">
+                    {selectedAnnouncement.content}
+                  </p>
+                </div>
+              </div>
+
+             
+            </div>
+          </div>
+        )}
       </div>
     </SessionWrapper>
   );

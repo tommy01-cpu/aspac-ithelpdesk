@@ -74,6 +74,8 @@ PGPASSWORD="P@SSW0RD" pg_restore -h localhost -p 5432 -U postgres -d ithelpdesk_
 PGPASSWORD="eCN^2CPVT7.eA:15" pg_dump -h 34.61.129.126 -p 5432 -U postgres -d ithelpdesk_db -F c -f ithelpdesk_db
 
 
+PGPASSWORD="~2D(ub*V{RsE%+k)" pg_dump -h 34.126.122.104 -p 5432 -U postgres -d ithelpdesk_db -F c -f ithelpdesk_db
+
 
 
 PGPASSWORD="eCN^2CPVT7.eA:15" psql -h 34.61.129.126 -p 5432 -U postgres -c "DROP DATABASE IF EXISTS ithelpdesk_db.back;"

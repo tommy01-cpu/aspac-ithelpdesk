@@ -95,6 +95,7 @@ model users {
   backupTechLogActions                              backup_technician_logs[] @relation("BackupTechLogPerformer")
   requestBackupOriginal                             request_assignments_backup[] @relation("RequestBackupOriginalTech")
   requestBackupTech                                 request_assignments_backup[] @relation("RequestBackupTech")
+  announcementsCreated                              Announcement[] @relation("AnnouncementCreatedBy")
 }
 
 model Department {
@@ -941,4 +942,19 @@ enum BackupTechnicianLogAction {
   updated
   request_transferred
   auto_reversion
+}
+
+model Announcement {
+  id        Int      @id @default(autoincrement())
+  title     String   @db.VarChar(255)
+  content   String
+  isActive  Boolean  @default(true)
+  createdBy Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  creator   users    @relation("AnnouncementCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+  
+  @@index([isActive])
+  @@index([createdAt])
+  @@map("announcements")
 }

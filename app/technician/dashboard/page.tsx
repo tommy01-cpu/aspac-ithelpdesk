@@ -108,6 +108,19 @@ interface RecentRequest {
   slaStatus?: 'on-time' | 'at-risk' | 'overdue';
 }
 
+interface QuickAssignRequest {
+  id: number;
+  title: string;
+  subject: string;
+  requester: string;
+  status: string;
+  priority: string;
+  createdAt: string;
+  category?: string;
+  dueDate?: string;
+  slaStatus?: 'on-time' | 'at-risk' | 'overdue';
+}
+
 interface BackupTechnicianConfig {
   id: number;
   original_technician_id: number;
@@ -243,7 +256,7 @@ export default function DashboardPage() {
         setUpcomingExpirations(expirations.upcomingExpirations || []);
       }
 
-      if (logsRes.ok) {
+      if (logsRes && logsRes.ok) {
         const logs = await logsRes.json();
         setBackupLogs(logs.slice(0, 10));
       }
@@ -276,7 +289,7 @@ export default function DashboardPage() {
         setTechniciansList(techniciansData.data || []);
       }
 
-      if (logsRes && logsRes.ok) {
+      if (logsRes && logsRes.ok && 'json' in logsRes) {
         const logs = await logsRes.json();
         setBackupTechLogs(logs.slice(0, 10));
       }
@@ -2220,6 +2233,7 @@ This action cannot be undone.`,
                   <li>• Both technicians receive notifications about the reversion</li>
                   <li>• Already resolved/closed requests remain unchanged</li>
                   <li>• New request assignments resume normal flow to original technicians</li>
+                  <li>• Scheduled endpoint: <code className="bg-white px-1 rounded text-xs">/api/scheduled-tasks/backup-technician-reversion</code></li>
                 </ul>
               </div>
             </CardContent>

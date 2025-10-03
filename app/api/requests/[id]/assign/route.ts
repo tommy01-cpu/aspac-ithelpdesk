@@ -63,12 +63,25 @@ export async function POST(
     const technicianEmail = technician.emp_email;
     const formData = existingRequest.formData as any;
     
-    // Store previous technician before updating
-    const previousTechnician = formData.assignedTechnician || 'None';
+    // Store previous technician before updating - get from users table using ID
+    let previousTechnician = 'None';
+    if (formData.assignedTechnicianId) {
+      const previousTechUser = await prisma.users.findUnique({
+        where: { id: parseInt(formData.assignedTechnicianId) },
+        select: {
+          emp_fname: true,
+          emp_lname: true
+        }
+      });
+      if (previousTechUser) {
+        previousTechnician = `${previousTechUser.emp_fname} ${previousTechUser.emp_lname}`.trim();
+      }
+    }
     
     // Update assignment
     formData.assignedTechnicianId = technicianId;
     formData.assignedTechnicianEmail = technicianEmail;
+    formData.assignedTechnician = technicianName; // Store the full name for consistency
     formData.assignedAt = new Date().toISOString();
 
     await prisma.request.update({

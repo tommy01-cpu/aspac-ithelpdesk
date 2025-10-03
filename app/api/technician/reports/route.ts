@@ -159,15 +159,17 @@ export async function GET(request: NextRequest) {
           case 'requestSubject':
             try {
               const formData = typeof request.formData === 'string' ? JSON.parse(request.formData) : request.formData;
-              record.requestSubject = (formData as any)?.subject || (formData as any)?.title || '-';
+              // Extract subject from formData field 8, fallback to template name (matching main reports API)
+              record.requestSubject = (formData as any)?.['8'] || (formData as any)?.subject || template?.name || `Request #${request.id}`;
             } catch {
-              record.requestSubject = '-';
+              record.requestSubject = template?.name || `Request #${request.id}`;
             }
             break;
           case 'requestDescription':
             try {
               const formData = typeof request.formData === 'string' ? JSON.parse(request.formData) : request.formData;
-              record.requestDescription = (formData as any)?.description || (formData as any)?.summary || (formData as any)?.issue || '-';
+              // Extract description from formData field 9 (matching main reports API)
+              record.requestDescription = (formData as any)?.['9'] || (formData as any)?.description || (formData as any)?.details || (formData as any)?.issueDescription || '-';
             } catch {
               record.requestDescription = '-';
             }
@@ -219,7 +221,23 @@ export async function GET(request: NextRequest) {
           case 'priority':
             try {
               const formData = typeof request.formData === 'string' ? JSON.parse(request.formData) : request.formData;
-              record.priority = (formData as any)?.priority || 'Medium';
+              // Extract priority from formData field 2, matching main reports API
+              let priority = 'Medium'; // Default value
+              if ((formData as any)?.['2']) {
+                priority = (formData as any)['2'];
+              } else if ((formData as any)?.priority) {
+                priority = (formData as any).priority;
+              } else {
+                // Try to find priority in any field that might contain it
+                const priorityFields = Object.keys(formData || {}).filter(key => 
+                  key.toLowerCase().includes('priority') ||
+                  String((formData as any)[key]).toLowerCase().match(/^(low|medium|high|critical)$/i)
+                );
+                if (priorityFields.length > 0) {
+                  priority = (formData as any)[priorityFields[0]];
+                }
+              }
+              record.priority = priority;
             } catch {
               record.priority = 'Medium';
             }
@@ -227,7 +245,20 @@ export async function GET(request: NextRequest) {
           case 'technician':
             try {
               const formData = typeof request.formData === 'string' ? JSON.parse(request.formData) : request.formData;
-              record.technician = (formData as any)?.assigned_technician || 'Unassigned';
+              // Match main reports API technician field extraction
+              const technicianName = (request as any).assignedTechnician ||
+                                    (formData as any)?.assignedTechnician ||  // From actual formData structure
+                                    (formData as any)?.assignedTechnicianName || 
+                                    (formData as any)?.['assigned technician'] ||  // Key with space
+                                    (formData as any)?.assigned_technician || 
+                                    (formData as any)?.assignedTo ||
+                                    (formData as any)?.technician ||
+                                    null;
+              
+              // Return "Unassigned" if no technician or if value is empty/whitespace
+              record.technician = technicianName && technicianName.toString().trim() !== '' 
+                ? technicianName.toString().trim() 
+                : 'Unassigned';
             } catch {
               record.technician = 'Unassigned';
             }

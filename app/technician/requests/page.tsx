@@ -3,6 +3,7 @@
 import React from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { 
   ArrowLeft, 
@@ -34,6 +35,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { SessionWrapper } from '@/components/session-wrapper';
 import { toast } from '@/hooks/use-toast';
 import { getStatusColor, getPriorityColor, getApprovalStatusColor } from '@/lib/status-colors';
+import TechnicianName from '@/components/TechnicianName';
 
 interface RequestData {
   id: number;
@@ -790,7 +792,8 @@ export default function MyRequestsPage() {
 
                               return (
                                 <TooltipProvider key={request.id}>
-                                  <div
+                                  <Link
+                                    href={`/requests/view/${request.id}?from=/technician/requests`}
                                     className={`grid gap-2 px-3 py-3 transition-all duration-200 cursor-pointer border-l-4 border-transparent hover:border-blue-400 ${getRowBackgroundColor(
                                       request.status
                                     )}`}
@@ -798,10 +801,7 @@ export default function MyRequestsPage() {
                                       gridTemplateColumns:
                                         "60px 2fr 1.5fr 1fr 1fr 1fr 1.5fr 1.5fr 1.5fr",
                                     }}
-                                    onClick={() =>
-                                      router.push(`/requests/view/${request.id}?from=/technician/requests`)
-                                    }
-                                    // title="Click to view request details"
+                                    title="Click to view request details"
                                   >
                                     {/* ID */}
                                     <div className="flex items-center gap-2">
@@ -939,7 +939,7 @@ export default function MyRequestsPage() {
                                         />
                                       </span>
                                     </div>
-                                  </div>
+                                  </Link>
                                 </TooltipProvider>
                               );
                             })}
@@ -958,14 +958,12 @@ export default function MyRequestsPage() {
                             );
 
                             return (
-                              <div
+                              <Link
                                 key={request.id}
-                                className={`bg-white border border-slate-200 rounded-lg p-3 cursor-pointer transition-all duration-200 hover:shadow-md ${getRowBackgroundColor(
+                                href={`/requests/view/${request.id}?from=/technician/requests`}
+                                className={`block bg-white border border-slate-200 rounded-lg p-3 cursor-pointer transition-all duration-200 hover:shadow-md ${getRowBackgroundColor(
                                   request.status
                                 )}`}
-                                onClick={() =>
-                                  router.push(`/requests/view/${request.id}?from=/technician/requests`)
-                                }
                               >
                                 {/* Header Row */}
                                 <div className="flex items-start justify-between mb-2">
@@ -1076,7 +1074,7 @@ export default function MyRequestsPage() {
                                     </p>
                                   </div>
                                 </div>
-                              </div>
+                              </Link>
                             );
                           })}
                         </div>
