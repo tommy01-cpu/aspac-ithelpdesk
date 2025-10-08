@@ -121,6 +121,7 @@ async function createApprovalWithRouting(
           request_id: requestId,
           original_approver_id: originalApprovalData.approverId,
           backup_approver_id: backupConfig.backup_approver.id,
+          approval_id: createdApproval.id, // Link to the specific approval that was diverted
           backup_config_id: backupConfig.id,
           diversion_type: 'automatic',
           diverted_at: new Date()
@@ -980,6 +981,7 @@ export async function POST(request: Request) {
                   
                   // Mark as processed to avoid future duplicates
                   processedApproverIds.add(numericApproverId);
+                  console.log(`🔄 [FORM] Processing approver ${numericApproverId} for backup routing (processed set: ${Array.from(processedApproverIds)})`);
                   
                   // Fetch user details for the selected approver (using transaction)
                   const selectedApprover = await tx.users.findUnique({
@@ -1192,6 +1194,7 @@ export async function POST(request: Request) {
                   // Check for duplicates and process backup routing
                   if (actualApproverId && !processedApproverIds.has(actualApproverId)) {
                     processedApproverIds.add(actualApproverId);
+                    console.log(`🔄 [TEMPLATE] Processing approver ${actualApproverId} for backup routing (processed set: ${Array.from(processedApproverIds)})`);
                     
                     // Check for backup routing for this template approver
                     const backupConfig = await BackupApproverRoutingService.getActiveBackupApprover(actualApproverId);

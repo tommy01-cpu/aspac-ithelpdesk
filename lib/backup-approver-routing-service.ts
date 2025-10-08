@@ -3,6 +3,7 @@ import { ApprovalStatus } from '@prisma/client';
 
 /**
  * Service to handle routing approvals to backup approvers when active configurations exist
+ * Updated to allow backup approvers in multiple levels (validation removed)
  */
 export class BackupApproverRoutingService {
 
@@ -117,12 +118,13 @@ export class BackupApproverRoutingService {
         },
       });
 
-      // Create diversion record
+      // Create diversion record linked to the specific approval
       await prisma.approval_diversions.create({
         data: {
           request_id: requestId,
           original_approver_id: originalApproverId,
           backup_approver_id: backupConfig.backupApprover.id,
+          approval_id: approvalRecord.id, // Link to the specific approval that was diverted
           backup_config_id: backupConfig.configId!,
           diversion_type: 'automatic',
           notes: `New approval automatically routed to backup approver due to active backup configuration`,

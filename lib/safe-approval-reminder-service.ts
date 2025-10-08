@@ -436,15 +436,14 @@ class SafeApprovalReminderService {
         const requesterName = `${request.user.emp_fname} ${request.user.emp_lname}`.trim();
         const requestSubject = this.getRequestSubject(request.formData);
         const baseUrl = process.env.NEXTAUTH_URL || 'https:/ithelpdesk.aspacphils.com.ph';
-        const specificRequestApprovalUrl = `${baseUrl}/requests/approvals/${request.id}`;
         const specificRequestViewUrl = `${baseUrl}/requests/view/${request.id}`;
-        return `- Request #${request.id}: "${requestSubject}" from ${requesterName} - [View Request](${specificRequestViewUrl}) | [Approve Here](${specificRequestApprovalUrl})`;
+        return `- Request #${request.id}: "${requestSubject}" from ${requesterName} - [View Request](${specificRequestViewUrl})`;
       }).join('\n');
 
       const baseUrl = process.env.NEXTAUTH_URL || 'https:/ithelpdesk.aspacphils.com.ph';
       const primaryRequestId = approvals[0].requestId;
       const requestViewUrl = `${baseUrl}/requests/view/${primaryRequestId}`;
-      const specificApprovalUrl = `${baseUrl}/requests/approvals/${primaryRequestId}`;
+      const generalApprovalsUrl = `${baseUrl}/requests/approvals/`;
 
       const emailVariables = {
         Approver_Name: `${approver.emp_fname} ${approver.emp_lname}`.trim(),
@@ -452,9 +451,9 @@ class SafeApprovalReminderService {
         Pending_Requests_Count: approvals.length.toString(),
         Pending_Requests_List: requestsList,
         Base_URL: baseUrl,
-        approval_link: specificApprovalUrl,
+        approval_link: generalApprovalsUrl,
         request_link: requestViewUrl,
-        Encoded_Approvals_URL: encodeURIComponent(specificApprovalUrl)
+        Encoded_Approvals_URL: encodeURIComponent(generalApprovalsUrl)
       };
 
       // Try to get database template first
@@ -488,7 +487,7 @@ class SafeApprovalReminderService {
         
         <p>Please review and take action on these requests to avoid delays in processing.</p>
         
-        <p><a href="${emailVariables.approval_link}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Pending Approvals</a></p>
+        <p><a href="${emailVariables.approval_link}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View All Pending Approvals</a></p>
         
         <p>This mailbox is not monitored. Please do not reply to this message.</p>
         <p>Keep Calm & Use the IT Help Desk!</p>

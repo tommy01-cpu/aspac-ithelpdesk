@@ -11,11 +11,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get active announcements
-    const announcements = await prisma.announcement.findMany({
-      where: {
-        isActive: true,
-      },
+    // Check if this is an admin request or regular homepage request
+    const { searchParams } = new URL(request.url);
+    const isAdminView = searchParams.get('admin') === 'true';
+
+    let whereClause = {};
+    let limit: number | undefined = 5; // Default limit for homepage
+
+    if (isAdminView) {
+      // Admin view: show ALL announcements (active and inactive)
+      whereClause = {}; // No filter, show all
+      limit = undefined; // No limit for admin
+    } else {
+      // Homepage view: only show active announcements
+      whereClause = { isActive: true };
+    }
+
+    const queryOptions: any = {
+      where: whereClause,
       include: {
         creator: {
           select: {
@@ -26,9 +39,17 @@ export async function GET(request: NextRequest) {
       },
       orderBy: {
         createdAt: 'desc'
-      },
-      take: 5 // Limit to 5 most recent announcements
-    });
+      }
+    };
+
+    // Only add limit for non-admin requests
+    if (limit) {
+      queryOptions.take = limit;
+    }
+
+    const announcements = await prisma.announcement.findMany(queryOptions);
+
+    console.log(`Fetching announcements - isAdminView: ${isAdminView}, found: ${announcements.length}`);
 
     return NextResponse.json({ announcements });
 

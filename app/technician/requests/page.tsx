@@ -462,6 +462,7 @@ export default function MyRequestsPage() {
       (request.templateName && request.templateName.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
       request.id.toString().includes(debouncedSearchTerm) ||
       (request.formData?.['8'] && request.formData['8'].toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+      (request.formData?.['9'] && request.formData['9'].toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
       (request.user && `${request.user.emp_fname} ${request.user.emp_lname}`.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
     
     // Skip status filtering when we have special filters like 'overdue' from URL
@@ -657,7 +658,7 @@ export default function MyRequestsPage() {
                         <div className="relative flex-1">
                           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                           <Input
-                            placeholder="Search requests..."
+                            placeholder="Search by ID, subject, description, or requester..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             onBlur={() => {
@@ -722,7 +723,7 @@ export default function MyRequestsPage() {
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                       <Input
-                        placeholder="Search requests..."
+                        placeholder="Search by ID, subject, description, or requester..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         onBlur={() => {

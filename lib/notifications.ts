@@ -318,7 +318,7 @@ export const notifyApprovalRequired = async (requestData: any, templateData: any
     // Generate base URL and request URLs
     const baseUrl = getBaseUrl();
     const requestUrl = `${baseUrl}/requests/view/${requestId}`;
-    const approvalUrl = `${baseUrl}/requests/approvals/${requestId}`;
+    const approvalUrl = `${baseUrl}/requests/view/${requestId}`;
     const encodedRequestUrl = encodeURIComponent(requestUrl);
     const encodedApprovalUrl = encodeURIComponent(approvalUrl);
 

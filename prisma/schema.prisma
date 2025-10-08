@@ -513,6 +513,7 @@ model RequestApproval {
   conversations  ApprovalConversation[]
   approver       users?                 @relation("RequestApprovals", fields: [approverId], references: [id])
   request        Request                @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  diversions     approval_diversions[]
 
   @@index([requestId])
   @@index([approverId])
@@ -808,6 +809,7 @@ model approval_diversions {
   request_id           Int
   original_approver_id Int
   backup_approver_id   Int
+  approval_id          Int?               // Track which specific approval was diverted
   diverted_at          DateTime           @default(now())
   reverted_at          DateTime?
   backup_config_id     Int
@@ -820,6 +822,7 @@ model approval_diversions {
   original_approver    users              @relation("OriginalApproverDiversions", fields: [original_approver_id], references: [id], onDelete: Restrict)
   backup_approver      users              @relation("BackupApproverDiversions", fields: [backup_approver_id], references: [id], onDelete: Restrict)
   backup_config        backup_approvers   @relation(fields: [backup_config_id], references: [id], onDelete: Restrict)
+  approval             RequestApproval?   @relation(fields: [approval_id], references: [id], onDelete: SetNull)
 
   @@index([request_id])
   @@index([backup_config_id])

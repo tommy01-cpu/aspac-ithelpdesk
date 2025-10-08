@@ -5,6 +5,74 @@ import { prisma } from '@/lib/prisma';
  * This should be called by a cron job or scheduled task
  */
 export class BackupApproverService {
+
+  /**
+   * Revert a specific backup configuration (for manual deactivation)
+   * @param configId - The ID of the backup configuration to revert
+   * @param reversionType - Type of reversion ('manual' or 'automatic')
+   * @param performedBy - ID of user performing the reversion
+   * @param notes - Additional notes for the reversion
+   * @returns Number of approvals reverted
+   */
+  static async revertApprovalToOriginal(configId: number, reversionType: 'manual' | 'automatic' = 'manual', performedBy?: number, notes?: string): Promise<number> {
+    try {
+      console.log(`🔧 Starting reversion for backup config ${configId} (${reversionType})`);
+
+      // Get the backup configuration with approver details
+      const config = await prisma.backup_approvers.findUnique({
+        where: { id: configId },
+        include: {
+          original_approver: {
+            select: { id: true, emp_fname: true, emp_lname: true }
+          },
+          backup_approver: {
+            select: { id: true, emp_fname: true, emp_lname: true }
+          }
+        }
+      });
+
+      if (!config) {
+        console.log(`❌ Backup configuration ${configId} not found`);
+        return 0;
+      }
+
+      console.log(`📋 Config found: ${config.original_approver.emp_fname} ${config.original_approver.emp_lname} → ${config.backup_approver.emp_fname} ${config.backup_approver.emp_lname}`);
+
+      // Find all pending diversions for this configuration
+      const pendingDiversions = await prisma.approval_diversions.findMany({
+        where: {
+          backup_config_id: configId,
+          reverted_at: null,
+        },
+        include: {
+          request: {
+            select: { id: true, status: true }
+          }
+        }
+      });
+
+      console.log(`🔍 Found ${pendingDiversions.length} pending diversions to revert`);
+
+      let revertedCount = 0;
+
+      // Process each diversion
+      for (const diversion of pendingDiversions) {
+        try {
+          await this.revertSingleApproval(diversion, config, reversionType);
+          revertedCount++;
+        } catch (error) {
+          console.error(`❌ Error reverting diversion ${diversion.id}:`, error);
+        }
+      }
+
+      console.log(`✅ Successfully reverted ${revertedCount} approvals for config ${configId}`);
+      return revertedCount;
+
+    } catch (error) {
+      console.error(`❌ Error in revertApprovalToOriginal for config ${configId}:`, error);
+      throw error;
+    }
+  }
   
   /**
    * Process expired backup approver configurations and revert pending approvals
@@ -107,7 +175,7 @@ export class BackupApproverService {
         // Only revert if the request is still pending approval
         if (this.isRequestStillPendingApproval(currentRequest)) {
           // Revert the approval back to original approver
-          await this.revertApprovalToOriginal(diversion, config);
+          await this.revertSingleApproval(diversion, config, 'automatic');
           revertedCount++;
         } else {
           // Mark the diversion as completed (already approved/rejected)
@@ -188,63 +256,143 @@ export class BackupApproverService {
   }
 
   /**
-   * Revert an approval back to the original approver
+   * Revert a single approval back to the original approver
+   * PRECISE REVERSION: Use the approval_id from diversion record to identify exactly which approval to revert
    */
-  private static async revertApprovalToOriginal(diversion: any, config: any) {
+  private static async revertSingleApproval(diversion: any, config: any, reversionType: 'manual' | 'automatic' = 'automatic') {
     try {
-      console.log(`Reverting approval for request ${diversion.request_id} back to original approver`);
+      console.log(`🔄 Reverting approval for request ${diversion.request_id} back to original approver`);
+      console.log(`📋 Diversion: Original=${config.original_approver_id} (${config.original_approver.emp_fname} ${config.original_approver.emp_lname}) → Backup=${config.backup_approver_id} (${config.backup_approver.emp_fname} ${config.backup_approver.emp_lname})`);
+      console.log(`🆔 Diversion Approval ID: ${diversion.approval_id}`);
 
       // Get original approver details
       const originalApprover = config.original_approver;
       const originalApproverName = `${originalApprover.emp_fname} ${originalApprover.emp_lname}`;
 
-      // Find the approval record that was diverted
-      const approvalRecord = await prisma.requestApproval.findFirst({
-        where: {
-          requestId: diversion.request_id,
-          approverId: config.backup_approver_id, // Currently assigned to backup approver
-          status: {
-            in: ['pending_approval', 'for_clarification'],
-          },
-        },
-      });
+      let targetApprovalToRevert = null;
 
-      if (approvalRecord) {
-        // Update the approval record back to original approver
-        await prisma.requestApproval.update({
-          where: { id: approvalRecord.id },
-          data: {
-            approverId: config.original_approver_id,
-            approverName: originalApproverName,
-            approverEmail: originalApprover.emp_email,
+      // PRECISE STRATEGY: Use the approval_id stored in the diversion record
+      if (diversion.approval_id) {
+        // New method: Find the exact approval that was diverted
+        targetApprovalToRevert = await prisma.requestApproval.findUnique({
+          where: {
+            id: diversion.approval_id,
           },
         });
 
-        console.log(`Updated approval record ${approvalRecord.id} back to original approver`);
-      } else {
-        console.log(`No pending approval record found for request ${diversion.request_id} - may have already been processed`);
+        if (targetApprovalToRevert) {
+          // Verify this approval is still pending and assigned to the backup approver
+          if (targetApprovalToRevert.approverId !== config.backup_approver_id) {
+            console.log(`⚠️ Approval ${diversion.approval_id} is not currently assigned to backup approver (current: ${targetApprovalToRevert.approverId}, expected: ${config.backup_approver_id})`);
+            targetApprovalToRevert = null;
+          } else if (!['pending_approval', 'for_clarification'].includes(targetApprovalToRevert.status)) {
+            console.log(`⚠️ Approval ${diversion.approval_id} is not in pending status (current: ${targetApprovalToRevert.status})`);
+            return; // Don't revert already processed approvals
+          } else {
+            console.log(`✅ Found exact approval to revert: ${targetApprovalToRevert.id} (Level ${targetApprovalToRevert.level})`);
+          }
+        } else {
+          console.log(`⚠️ Approval ${diversion.approval_id} not found - may have been deleted`);
+        }
       }
 
-      // Update the diversion record
-      await prisma.approval_diversions.update({
-        where: { id: diversion.id },
+      // FALLBACK STRATEGY: If approval_id is not available (old diversions), use previous logic
+      if (!targetApprovalToRevert) {
+        console.log(`🔍 Falling back to pattern-based detection for diversion without approval_id`);
+        
+        const allApprovals = await prisma.requestApproval.findMany({
+          where: {
+            requestId: diversion.request_id,
+            status: {
+              in: ['pending_approval', 'for_clarification'],
+            },
+          },
+          orderBy: {
+            level: 'asc',
+          },
+        });
+
+        const backupApproverApprovals = allApprovals.filter(a => a.approverId === config.backup_approver_id);
+        console.log(`🔍 Found ${backupApproverApprovals.length} pending approvals assigned to backup approver`);
+        
+        // Use time-based matching as fallback
+        if (backupApproverApprovals.length > 0) {
+          const diversionTime = new Date(diversion.diverted_at);
+          const timeBuffer = 10 * 60 * 1000; // 10 minutes buffer
+          
+          const timeBoundApprovals = backupApproverApprovals.filter(approval => {
+            const approvalTime = new Date(approval.createdAt);
+            return Math.abs(approvalTime.getTime() - diversionTime.getTime()) <= timeBuffer;
+          });
+          
+          if (timeBoundApprovals.length > 0) {
+            targetApprovalToRevert = timeBoundApprovals[0];
+            console.log(`🎯 Fallback: Using time-based match - approval ${targetApprovalToRevert.id} (Level ${targetApprovalToRevert.level})`);
+          } else {
+            // Last resort: take the first approval for backup approver
+            targetApprovalToRevert = backupApproverApprovals[0];
+            console.log(`🎯 Last resort: Using first backup approval ${targetApprovalToRevert.id} (Level ${targetApprovalToRevert.level})`);
+          }
+        }
+      }
+
+      if (!targetApprovalToRevert) {
+        console.log(`❌ No suitable approval found for reversion`);
+        return;
+      }
+
+      // Perform the reversion
+      console.log(`🔄 Reverting approval ${targetApprovalToRevert.id} (Level ${targetApprovalToRevert.level}) back to original approver ${config.original_approver_id}`);
+      
+      await prisma.requestApproval.update({
+        where: { id: targetApprovalToRevert.id },
         data: {
-          reverted_at: new Date(),
-          reversion_type: 'expired',
-          notes: 'Automatically reverted after backup period ended',
+          approverId: config.original_approver_id,
+          approverName: originalApproverName,
+          approverEmail: originalApprover.emp_email,
         },
       });
+      
+      console.log(`✅ Successfully reverted approval ${targetApprovalToRevert.id} (Level ${targetApprovalToRevert.level}) back to ${originalApproverName}`);
 
-      // Add a history entry about the reversion
+
+      // For manual reversions, delete the diversion record to prevent duplicate processing
+      // For automatic reversions, update to mark as reverted
+      if (reversionType === 'manual') {
+        await prisma.approval_diversions.delete({
+          where: { id: diversion.id },
+        });
+        console.log(`🗑️ Deleted diversion record ${diversion.id} (manual deactivation)`);
+      } else {
+        await prisma.approval_diversions.update({
+          where: { id: diversion.id },
+          data: {
+            reverted_at: new Date(),
+            reversion_type: 'expired',
+            notes: 'Automatically reverted after backup period ended',
+          },
+        });
+        console.log(`📝 Updated diversion record ${diversion.id} (automatic reversion)`);
+      }
+
+      // Add a history entry about the reversion with Philippine time
+      const now = new Date();
+      const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+      
+      const historyAction = reversionType === 'manual' ? 'Backup Approver Deactivated' : 'Approval Reverted';
+      const historyDetails = reversionType === 'manual' 
+        ? `Backup approver configuration manually deactivated. Approval reverted from backup approver ${config.backup_approver.emp_fname} ${config.backup_approver.emp_lname} back to original approver ${originalApproverName}.\nReason: Manual deactivation`
+        : `Backup approver period expired. Approval automatically reverted from backup approver ${config.backup_approver.emp_fname} ${config.backup_approver.emp_lname} back to original approver ${originalApproverName}.\nReason: Backup period ended`;
+      
       await prisma.requestHistory.create({
         data: {
           requestId: diversion.request_id,
-          action: 'Approval Reverted',
-          details: `Approval automatically reverted from backup approver ${config.backup_approver.emp_fname} ${config.backup_approver.emp_lname} back to original approver ${originalApproverName} after backup period ended\nLevel : Level ${diversion.approval?.level || 'Unknown'}`,
+          action: historyAction,
+          details: historyDetails,
           actorId: config.original_approver_id,
-          actorName: 'System',
+          actorName: reversionType === 'manual' ? 'System (Manual Deactivation)' : 'System',
           actorType: 'system',
-          timestamp: new Date(),
+          timestamp: philippineTime,
         },
       });
 

@@ -372,12 +372,8 @@ export default function ApprovalDetailsPage() {
         await fetchConversations(approval.id);
       }
 
-      // Attempt auto-approve for duplicate approvers in later levels (system-like behavior)
-      try {
-        await maybeAutoApproveDuplicates(data.approvals || []);
-      } catch (e) {
-        console.warn('Auto-approve duplicates skipped:', e);
-      }
+      // NOTE: Auto-approve functionality moved to handleApprovalAction
+      // It should only run after manual approval, not on page load
     } catch (error) {
       console.error('Error fetching approvals:', error);
     }
@@ -390,34 +386,46 @@ export default function ApprovalDetailsPage() {
   const maybeAutoApproveDuplicates = async (all: any[]) => {
     if (autoApproveInProgress || !Array.isArray(all) || all.length === 0) return;
     
-    // Build map of approver -> lowest approved level
-    const keyOf = (a: any) => (a.approverEmail || a.approver?.emp_email || a.approverId || a.approverName || '').toString().toLowerCase();
+    console.log('🔍 Auto-approve check: analyzing', all.length, 'approvals');
+    
+    // Build map of approver -> lowest approved level (using approverId for accuracy)
     const approvedByApprover: Record<string, number> = {};
     for (const a of all) {
-      if (normalizeStatus(a.status) === 'approved') {
-        const k = keyOf(a);
-        if (!k) continue;
-        if (!(k in approvedByApprover) || a.level < approvedByApprover[k]) {
-          approvedByApprover[k] = a.level;
+      if (normalizeStatus(a.status) === 'approved' && a.approverId) {
+        const approverId = String(a.approverId);
+        if (!(approverId in approvedByApprover) || a.level < approvedByApprover[approverId]) {
+          approvedByApprover[approverId] = a.level;
+          console.log('📋 Approver', approverId, 'previously approved at level', a.level);
         }
       }
     }
 
     // Determine the next active approval level (smallest level currently pending)
     const pending = all.filter(a => normalizeStatus(a.status) === 'pending approval');
-    if (pending.length === 0) return;
+    if (pending.length === 0) {
+      console.log('⚠️ No pending approvals found');
+      return;
+    }
     const nextLevel = Math.min(...pending.map(a => a.level));
+    console.log('🎯 Next approval level to check:', nextLevel);
 
     // Candidates: only pending approvals at the next level whose approver previously approved a lower level
     const duplicates = pending.filter(a => {
       if (a.level !== nextLevel) return false;
-      const k = keyOf(a);
-      if (!k) return false;
-      const prev = approvedByApprover[k];
-      return typeof prev === 'number' && prev < a.level;
+      const approverId = String(a.approverId || '');
+      if (!approverId) return false;
+      const prev = approvedByApprover[approverId];
+      const isDuplicate = typeof prev === 'number' && prev < a.level;
+      if (isDuplicate) {
+        console.log('✅ Found duplicate:', approverId, 'at level', a.level, '(previously approved at level', prev, ')');
+      }
+      return isDuplicate;
     });
 
-    if (duplicates.length === 0) return;
+    if (duplicates.length === 0) {
+      console.log('ℹ️ No duplicate approvers found at next level');
+      return;
+    }
     
     console.log(`🔄 Auto-approving ${duplicates.length} duplicate approver(s) at level ${nextLevel}`);
     setAutoApproveInProgress(true);
@@ -426,11 +434,16 @@ export default function ApprovalDetailsPage() {
     const note = 'Auto approved by System since the approver has already approved in one of the previous levels.';
     const approvalPromises = duplicates.map(async (a) => {
       try {
-        console.log(`🤖 Auto-approving duplicate for ${keyOf(a)} at level ${a.level}`);
+        console.log(`🤖 Auto-approving duplicate for approver ${a.approverId} at level ${a.level}`);
         const res = await fetch('/api/approvals/action', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ approvalId: a.id, action: 'approve', comments: note })
+          body: JSON.stringify({ 
+            approvalId: a.id, 
+            action: 'approve', 
+            comments: note,
+            isAutoApproval: true // Flag to prevent email notifications
+          })
         });
         if (!res.ok) {
           console.warn('Auto-approve failed for', a.id, await res.text());
@@ -770,6 +783,20 @@ export default function ApprovalDetailsPage() {
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to process approval');
+      }
+
+      // If this was an approval (not reject/clarification), trigger auto-approve for duplicates
+      if (action === 'approve' && selectedApproval) {
+        try {
+          // Refresh approvals first to get updated state
+          const refreshResponse = await fetch(`/api/requests/${selectedApproval.requestId}/approvals`);
+          if (refreshResponse.ok) {
+            const refreshData = await refreshResponse.json();
+            await maybeAutoApproveDuplicates(refreshData.approvals || []);
+          }
+        } catch (e) {
+          console.warn('Auto-approve duplicates skipped after manual approval:', e);
+        }
       }
 
       // Close the dialogs first before showing success toast
@@ -1681,7 +1708,21 @@ export default function ApprovalDetailsPage() {
                               return levelApprovals.map((approval: any) => ({ ...approval, levelNum: parseInt(level) }));
                             });
 
-                            return allRelevantApprovals.map((approval: any) => {
+                            // 🎯 DEDUPLICATE: Show only one approval per unique approver (use the first/lowest level)
+                            const uniqueApprovals = new Map();
+                            allRelevantApprovals.forEach((approval: any) => {
+                              const approverKey = approval.approverId || approval.approverEmail || 'unknown';
+                              
+                              // Only keep the first occurrence (lowest level) for each approver
+                              if (!uniqueApprovals.has(approverKey)) {
+                                uniqueApprovals.set(approverKey, approval);
+                              }
+                            });
+                            
+                            const deduplicatedApprovals = Array.from(uniqueApprovals.values());
+                            console.log(`🔍 Deduplicated approvals: ${allRelevantApprovals.length} → ${deduplicatedApprovals.length}`);
+
+                            return deduplicatedApprovals.map((approval: any) => {
                               const approverName = (() => {
                                 if (approval.approver) {
                                   return `${approval.approver.emp_fname} ${approval.approver.emp_lname}`;

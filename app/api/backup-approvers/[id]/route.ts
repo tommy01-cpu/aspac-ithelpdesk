@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { BackupApproverService } from '@/lib/backup-approver-service';
 
 // PATCH: Update backup approver configuration
 export async function PATCH(
@@ -47,7 +48,7 @@ export async function PATCH(
       // If deactivating, revert any pending diversions first and get the count
       let revertedCount = 0;
       if (is_active === false) {
-        revertedCount = await revertPendingDiversions(configId, parseInt(session.user.id));
+        revertedCount = await BackupApproverService.revertApprovalToOriginal(configId, 'manual', parseInt(session.user.id), 'Backup approver configuration manually deactivated');
       }
 
       // Log the action with proper details
@@ -221,8 +222,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Configuration not found' }, { status: 404 });
     }
 
-    // Revert any pending diversions first
-    await revertPendingDiversions(configId, parseInt(session.user.id));
+    // Revert any pending diversions first using level-aware logic
+    await BackupApproverService.revertApprovalToOriginal(configId, 'manual', parseInt(session.user.id), 'Backup approver configuration deleted');
 
     // Delete the configuration (this will cascade to logs and diversions due to foreign key constraints)
     await prisma.backup_approvers.delete({
@@ -238,103 +239,3 @@ export async function DELETE(
   }
 }
 
-// Helper function to revert pending diversions
-async function revertPendingDiversions(configId: number, performedBy: number): Promise<number> {
-  try {
-    // Get the backup configuration details first
-    const backupConfig = await prisma.backup_approvers.findUnique({
-      where: { id: configId },
-    });
-
-    if (!backupConfig) {
-      console.error('Backup configuration not found for reversion');
-      return 0;
-    }
-
-    // Find all pending diversions for this configuration
-    const pendingDiversions = await prisma.approval_diversions.findMany({
-      where: {
-        backup_config_id: configId,
-        reverted_at: null,
-      },
-    });
-
-    let revertedCount = 0;
-
-    // Revert each diversion
-    for (const diversion of pendingDiversions) {
-      try {
-        // Create Philippine time timestamp for reversion
-        const philippineReversionTime = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Manila"}));
-        
-        // Update the diversion record as reverted
-        await prisma.approval_diversions.update({
-          where: { id: diversion.id },
-          data: {
-            reverted_at: philippineReversionTime,
-            reversion_type: 'manual',
-            notes: 'Backup approver configuration deactivated'
-          },
-        });
-
-        // Update the requestApproval to point back to original approver
-        const updated = await prisma.requestApproval.updateMany({
-          where: {
-            requestId: diversion.request_id,
-            approverId: diversion.backup_approver_id,
-            status: {
-              in: ['pending_approval', 'for_clarification']
-            }
-          },
-          data: {
-            approverId: diversion.original_approver_id,
-          },
-        });
-
-        if (updated.count > 0) {
-          // Get approver names for history entry
-          const [originalApprover, backupApprover] = await Promise.all([
-            prisma.users.findUnique({
-              where: { id: diversion.original_approver_id },
-              select: { emp_fname: true, emp_lname: true }
-            }),
-            prisma.users.findUnique({
-              where: { id: diversion.backup_approver_id },
-              select: { emp_fname: true, emp_lname: true }
-            })
-          ]);
-
-          const originalApproverName = originalApprover ? `${originalApprover.emp_fname} ${originalApprover.emp_lname}` : 'Original Approver';
-          const backupApproverName = backupApprover ? `${backupApprover.emp_fname} ${backupApprover.emp_lname}` : 'Backup Approver';
-
-          // Add request history entry for the reversion (same format as automatic service)
-          // Use Philippine time (UTC+8) like the routing service
-          const now = new Date();
-          const philippineTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
-          
-          await prisma.requestHistory.create({
-            data: {
-              requestId: diversion.request_id,
-              action: 'Approval Reverted',
-              details: `Approval manually reverted from backup approver ${backupApproverName} back to original approver ${originalApproverName} (configuration deactivated)`,
-              actorId: performedBy,
-              actorName: 'Manual Deactivation',
-              actorType: 'user',
-              timestamp: philippineTime,
-            },
-          });
-
-          revertedCount++;
-        }
-      } catch (error) {
-        console.error(`Error reverting diversion ${diversion.id}:`, error);
-      }
-    }
-
-    console.log(`Successfully reverted ${revertedCount} pending approvals back to original approver`);
-    return revertedCount;
-  } catch (error) {
-    console.error('Error reverting pending diversions:', error);
-    return 0;
-  }
-}

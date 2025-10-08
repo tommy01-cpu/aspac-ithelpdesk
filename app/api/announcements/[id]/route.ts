@@ -15,12 +15,23 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, title, content } = body;
+
+    // Prepare update data - only update provided fields
+    const updateData: any = {};
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (title !== undefined) updateData.title = title;
+    if (content !== undefined) updateData.content = content;
+    
+    // Add updatedAt timestamp if we're updating content
+    if (title !== undefined || content !== undefined) {
+      updateData.updatedAt = new Date();
+    }
 
     // Update announcement
     const announcement = await prisma.announcement.update({
       where: { id: parseInt(params.id) },
-      data: { isActive },
+      data: updateData,
       include: {
         creator: {
           select: {

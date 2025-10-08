@@ -25,11 +25,14 @@ const AnnouncementsList = () => {
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [newAnnouncement, setNewAnnouncement] = useState({
     title: '',
     content: ''
   });
+  const [editingAnnouncement, setEditingAnnouncement] = useState<any>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   useEffect(() => {
     fetchAnnouncements();
@@ -37,9 +40,11 @@ const AnnouncementsList = () => {
 
   const fetchAnnouncements = async () => {
     try {
-      const response = await fetch('/api/announcements');
+      // Fetch ALL announcements for admin view (including inactive ones)
+      const response = await fetch('/api/announcements?admin=true');
       if (response.ok) {
         const data = await response.json();
+        console.log('Admin announcements fetched:', data.announcements);
         setAnnouncements(data.announcements || []);
       } else {
         console.error('Failed to fetch announcements:', response.statusText);
@@ -78,6 +83,49 @@ const AnnouncementsList = () => {
       alert('Failed to create announcement');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleEdit = (announcement: any) => {
+    setEditingAnnouncement({
+      id: announcement.id,
+      title: announcement.title,
+      content: announcement.content
+    });
+    setShowEditModal(true);
+  };
+
+  const handleUpdateAnnouncement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAnnouncement.title.trim() || !editingAnnouncement.content.trim()) return;
+
+    setUpdating(true);
+    try {
+      const response = await fetch(`/api/announcements/${editingAnnouncement.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: editingAnnouncement.title,
+          content: editingAnnouncement.content
+        }),
+      });
+
+      if (response.ok) {
+        setShowEditModal(false);
+        setEditingAnnouncement(null);
+        fetchAnnouncements(); // Refresh the list
+        alert('Announcement updated successfully!');
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to update announcement');
+      }
+    } catch (error) {
+      console.error('Error updating announcement:', error);
+      alert('Failed to update announcement');
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -246,7 +294,7 @@ const AnnouncementsList = () => {
                         ? 'bg-green-100 text-green-800'
                         : 'bg-gray-100 text-gray-800'
                     }`}>
-                      {announcement.isActive ? 'Active' : 'Inactive'}
+                      {announcement.isActive ? 'Active' : 'Deactivated'}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
@@ -260,13 +308,22 @@ const AnnouncementsList = () => {
                       <Button
                         size="sm"
                         variant="outline"
+                        onClick={() => handleEdit(announcement)}
+                        className="text-emerald-600 hover:text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                      >
+                        <Edit className="w-4 h-4 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => handleToggleActive(announcement.id, announcement.isActive)}
                         className="text-blue-600 hover:text-blue-700 border-blue-200 hover:bg-blue-50"
                       >
                         {announcement.isActive ? (
-                          <><EyeOff className="w-4 h-4 mr-1" /> Hide</>
+                          <><EyeOff className="w-4 h-4 mr-1" /> Deactivate</>
                         ) : (
-                          <><Eye className="w-4 h-4 mr-1" /> Show</>
+                          <><Eye className="w-4 h-4 mr-1" /> Activate</>
                         )}
                       </Button>
                       <Button
@@ -301,6 +358,74 @@ const AnnouncementsList = () => {
           </div>
         )}
       </div>
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <h3 className="text-lg font-semibold text-slate-800">Edit Announcement</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingAnnouncement(null);
+                }}
+              >
+                ✕
+              </Button>
+            </div>
+            
+            <form onSubmit={handleUpdateAnnouncement} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Title
+                </label>
+                <Input
+                  type="text"
+                  value={editingAnnouncement?.title || ''}
+                  onChange={(e) => setEditingAnnouncement((prev: any) => ({ ...prev, title: e.target.value }))}
+                  placeholder="Enter announcement title..."
+                  className="w-full"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Content
+                </label>
+                <textarea
+                  value={editingAnnouncement?.content || ''}
+                  onChange={(e) => setEditingAnnouncement((prev: any) => ({ ...prev, content: e.target.value }))}
+                  placeholder="Enter announcement content..."
+                  className="w-full min-h-[120px] px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
+                  required
+                />
+              </div>
+              <div className="flex gap-2 justify-end pt-4 border-t border-slate-200">
+                <Button 
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditingAnnouncement(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={updating || !editingAnnouncement?.title?.trim() || !editingAnnouncement?.content?.trim()}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                  {updating ? 'Updating...' : 'Update Announcement'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

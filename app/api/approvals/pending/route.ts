@@ -16,20 +16,34 @@ export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session?.user?.email) {
+    console.log('🔍 Pending approvals API - Session user:', { 
+      id: session?.user?.id, 
+      email: session?.user?.email, 
+      name: session?.user?.name 
+    });
+    
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get the user from the database  
-    const user = await prisma.users.findFirst({
-      where: { emp_email: session.user.email },
+    // Get the user from the database using user ID from session instead of email
+    // This fixes the issue where multiple users share the same email address
+    const userId = parseInt(session.user.id);
+    console.log('🔍 Looking for user with ID:', userId);
+    
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
     });
 
+    console.log('🔍 Found user:', user ? `${user.emp_fname} ${user.emp_lname} (${user.emp_email})` : 'NOT FOUND');
+    
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     // Check if user has any approval assignments (instead of checking isServiceApprover flag)
+    console.log('🔍 Querying for approvals where approverId =', user.id, 'and status in:', [APPROVAL_STATUS.PENDING_APPROVAL, APPROVAL_STATUS.FOR_CLARIFICATION]);
+    
     const potentialApprovals = await prisma.requestApproval.findMany({
       where: {
         approverId: user.id,
@@ -64,6 +78,17 @@ export async function GET(request: NextRequest) {
         }
       }
     });
+
+    console.log('🔍 Found', potentialApprovals.length, 'potential approvals');
+    if (potentialApprovals.length > 0) {
+      console.log('🔍 First approval:', {
+        id: potentialApprovals[0].id,
+        requestId: potentialApprovals[0].requestId,
+        level: potentialApprovals[0].level,
+        status: potentialApprovals[0].status,
+        approverId: potentialApprovals[0].approverId
+      });
+    }
 
     // Filter approvals to ensure sequential workflow - only show approvals where all previous levels are approved
     const validApprovals = [];
@@ -114,20 +139,24 @@ export async function GET(request: NextRequest) {
       let requestType = 'Service'; // Default to Service
       try {
         if (approval.request.templateId) {
-          const template = await prisma.template.findUnique({
-            where: { id: parseInt(approval.request.templateId) },
-            select: { category: true, name: true }
-          });
-          
-          if (template) {
-            // Check if template category or name contains "incident"
-            const templateInfo = `${template.category || ''} ${template.name || ''}`.toLowerCase();
-            if (templateInfo.includes('incident')) {
-              requestType = 'Incident';
+          const templateId = parseInt(approval.request.templateId);
+          if (!isNaN(templateId)) {
+            const template = await prisma.template.findUnique({
+              where: { id: templateId },
+              select: { category: true, name: true }
+            });
+            
+            if (template) {
+              // Check if template category or name contains "incident"
+              const templateInfo = `${template.category || ''} ${template.name || ''}`.toLowerCase();
+              if (templateInfo.includes('incident')) {
+                requestType = 'Incident';
+              }
             }
           }
         }
       } catch (error) {
+        console.error('❌ Query error in Template.findUnique:', error);
         console.log('Could not determine template type, defaulting to Service');
       }
       
