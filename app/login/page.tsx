@@ -452,7 +452,7 @@ export default function LoginPage() {
                 />
                 <h1 className="text-xl font-semibold font-neo-sans" style={{ fontSize: '35px' }}>IT Help Desk</h1>
               </div>
-               <p className="text-sm font-bold ">Version 1.251007</p>
+               <p className="text-sm font-bold ">Version 1.251009</p>
             </CardHeader>
 
             <CardContent className="space-y-6">

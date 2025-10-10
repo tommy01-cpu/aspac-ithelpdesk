@@ -10,13 +10,16 @@ import { Toaster } from '@/components/ui/toaster';
 // Import SAFE background service manager to auto-start all services
 import '@/lib/safe-background-service-manager';
 
-// Hide console.log globally in all environments
-if (typeof window !== 'undefined') {
-  console.log = function () {};
-  console.info = function () {};
-  console.warn = function () {}; // Optional: also hide warnings
-  // Keep console.error for debugging critical issues
+// Extend Window interface to include debugMode
+declare global {
+  interface Window {
+    debugMode?: boolean;
+  }
 }
+
+  
+// UNCOMMENT THIS FOR REMOVING THE CONSOLE.LOG IN LIVE
+
 
 const inter = Inter({ subsets: ['latin'] });
 const nunitoSans = Nunito_Sans({ 
@@ -41,6 +44,7 @@ export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
+  
 }) {
   return (
     <html lang="en">

@@ -32,6 +32,8 @@ interface SearchResult {
 }
 
 export default function Home() {
+  
+  console.log = function () {};
   const { data: session, status } = useSession();
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');

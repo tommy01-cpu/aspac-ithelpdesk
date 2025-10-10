@@ -568,6 +568,9 @@ export default function RequestViewPage() {
   const [newRequestStatus, setNewRequestStatus] = useState('');
   const [slaAction, setSlaAction] = useState(''); // 'start' or 'stop'
   const [isAssigning, setIsAssigning] = useState(false);
+  
+  // Change Type modal search state
+  const [categorySearchTerm, setCategorySearchTerm] = useState('');
 
   // Change Status modal states
   const [showChangeStatusModal, setShowChangeStatusModal] = useState(false);
@@ -844,13 +847,21 @@ export default function RequestViewPage() {
   // Edit functions
   const loadCategories = async () => {
     try {
-      const res = await fetch('/api/service-categories');
+      console.log('Loading categories for change type modal...');
+      const res = await fetch('/api/service-categories?type=service&limit=100');
       if (res.ok) {
         const data = await res.json();
-        setAvailableCategories(data.categories || []);
+        console.log('Categories API response:', data);
+        const categoriesArray = data.categories || [];
+        console.log('Setting availableCategories:', categoriesArray.length, 'items');
+        setAvailableCategories(categoriesArray);
+      } else {
+        console.error('Failed to load categories, status:', res.status);
+        setAvailableCategories([]);
       }
     } catch (e) {
       console.error('Failed to load categories', e);
+      setAvailableCategories([]);
     }
   };
 
@@ -889,7 +900,7 @@ export default function RequestViewPage() {
   // Load templates by category for change type modal
   const loadTemplatesByCategory = async (categoryId: string) => {
     try {
-      // Only load service type templates for change type modal (changing to service)
+      // Load service type templates for change type modal (changing from incident to service)
       const res = await fetch(`/api/templates?categoryId=${categoryId}&type=service`);
       if (res.ok) {
         const data = await res.json();
@@ -1091,13 +1102,16 @@ export default function RequestViewPage() {
     }
   }, [showAssignModal, requestData, availableTechnicians]);
 
-  // Load categories when change type modal opens
+  // Load categories and templates when change type modal opens
   useEffect(() => {
     if (showChangeTypeModal) {
+      console.log('Change type modal opened, loading categories and templates...');
       loadCategories();
+      loadTemplates(); // Also load templates for filtering
       setSelectedCategory('');
       setSelectedTemplate('');
       setCategoryTemplates([]);
+      setCategorySearchTerm(''); // Reset search term
     }
   }, [showChangeTypeModal]);
 
@@ -4340,48 +4354,37 @@ export default function RequestViewPage() {
                         <UserCheck className="h-4 w-4" />
                         Assign Technician
                       </Button>
-                      {/* Change Type button - with validation */}
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          // Check if current status is resolved or closed
-                          if (requestData?.status === 'resolved' || requestData?.status === 'closed') {
-                            toast({
-                              title: "Type Change Not Allowed",
-                              description: "Cannot change type from resolved or closed state.",
-                              variant: "destructive"
-                            });
-                            return;
-                          }
-                          
-                          // Check if current template is service type - prevent change
-                          const currentTemplateType = templateData?.type || requestData?.formData?.['4'] || requestData?.type;
-                          if (currentTemplateType?.toLowerCase() === 'service') {
-                            toast({
-                              title: "Type Change Not Allowed",
-                              description: "Cannot change template type from Service to Incident. Service templates cannot be changed.",
-                              variant: "destructive"
-                            });
-                            return;
-                          }
-                          
-                          // Only allow if current template is incident type
-                          if (currentTemplateType?.toLowerCase() !== 'incident') {
-                            toast({
-                              title: "Type Change Not Allowed",
-                              description: "Template type changes are only allowed for Incident templates.",
-                              variant: "destructive"
-                            });
-                            return;
-                          }
-                          
-                          setShowChangeTypeModal(true);
-                        }}
-                        className="w-full flex items-center justify-center gap-2"
-                      >
-                        <Tag className="h-4 w-4" />
-                        Change Type
-                      </Button>
+                      {/* Change Type button - only show for incident requests */}
+                      {(() => {
+                        const currentTemplateType = templateData?.type || requestData?.formData?.['4'] || requestData?.type;
+                        
+                        // Only show Change Type button for incident requests
+                        if (currentTemplateType?.toLowerCase() === 'incident') {
+                          return (
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                // Check if current status is resolved or closed
+                                if (requestData?.status === 'resolved' || requestData?.status === 'closed') {
+                                  toast({
+                                    title: "Type Change Not Allowed",
+                                    description: "Cannot change type from resolved or closed state.",
+                                    variant: "destructive"
+                                  });
+                                  return;
+                                }
+                                
+                                setShowChangeTypeModal(true);
+                              }}
+                              className="w-full flex items-center justify-center gap-2"
+                            >
+                              <Tag className="h-4 w-4" />
+                              Change Type
+                            </Button>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   </CardContent>
                 </Card>
@@ -5270,7 +5273,7 @@ export default function RequestViewPage() {
                   Change Request Type
                 </DialogTitle>
                 <DialogDescription className="text-gray-600">
-                  Select a service category and then choose a template to change the request type.
+                  Change from incident to service request. Select a service category and template.
                 </DialogDescription>
               </DialogHeader>
               
@@ -5284,20 +5287,36 @@ export default function RequestViewPage() {
                       <Input
                         placeholder="Search categories..."
                         className="pl-10 text-sm bg-white border-gray-300 text-gray-900"
-                        value=""
-                        onChange={() => {}}
+                        value={categorySearchTerm}
+                        onChange={(e) => setCategorySearchTerm(e.target.value)}
                       />
                     </div>
                   </div>
                   
                   <div className="space-y-2 overflow-y-auto flex-1 bg-white pb-4">
-                      {availableCategories.filter((category: any) => {
-                        // Only show categories that have incident templates
-                        return availableTemplates.some(template => 
-                          template.category?.id === category.id && 
-                          template.type?.toLowerCase() === 'incident'
-                        );
-                      }).map((category: any) => (
+                      {(() => {
+                        console.log('Debug - availableCategories:', availableCategories);
+                        console.log('Debug - availableTemplates:', availableTemplates);
+                        console.log('Debug - categorySearchTerm:', categorySearchTerm);
+                        
+                        return availableCategories.filter((category: any) => {
+                          // Filter by search term first
+                          const matchesSearch = !categorySearchTerm || 
+                            category.name.toLowerCase().includes(categorySearchTerm.toLowerCase());
+                          
+                          if (!matchesSearch) return false;
+                          
+                          // For now, show all categories - we'll filter when templates are selected
+                          // This ensures categories show up even if template loading is delayed
+                          return true;
+                          
+                          // Original filtering logic (commented out for debugging)
+                          // return availableTemplates.some(template => 
+                          //   template.category?.id === category.id && 
+                          //   template.type?.toLowerCase() === 'service'
+                          // );
+                        });
+                      })().map((category: any) => (
                         <div
                           key={category.id}
                           className={`p-3 rounded-lg cursor-pointer transition-colors border ${
@@ -5307,10 +5326,10 @@ export default function RequestViewPage() {
                           }`}
                           onClick={() => {
                             setSelectedCategory(String(category.id));
-                            // Load only incident templates for selected category
+                            // Load only service templates for selected category (incident → service conversion)
                             const categoryTemplates = availableTemplates.filter(template => 
                               template.category?.id === category.id &&
-                              template.type?.toLowerCase() === 'incident'
+                              template.type?.toLowerCase() === 'service'
                             );
                             setCategoryTemplates(categoryTemplates);
                             setSelectedTemplate('');
@@ -5342,7 +5361,10 @@ export default function RequestViewPage() {
                       {availableCategories.length === 0 && (
                         <div className="text-center py-8 text-gray-500 bg-white">
                           <Tag className="h-8 w-8 mx-auto text-gray-300 mb-2" />
-                          <p className="text-sm">No categories available</p>
+                          <p className="text-sm">Loading categories...</p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            Debug: Categories loaded = {availableCategories.length}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -5424,12 +5446,12 @@ export default function RequestViewPage() {
                     onClick={async () => {
                       // Show confirmation dialog
                       const confirmed = window.confirm(
-                        'Are you sure you want to change the request type?\n\n' +
+                        'Are you sure you want to change from incident to service request?\n\n' +
                         'This will:\n' +
-                        '• Change the request template and type\n' +
-                        '• Update the request status\n' +
-                        '• Reset approvals if the new template requires them\n' +
-                        '• All existing request data will be updated\n\n' +
+                        '• Change the request template from incident to service\n' +
+                        '• Update the request status to "For Approval"\n' +
+                        '• Create new approval workflow based on service template\n' +
+                        '• All existing request data will be preserved\n\n' +
                         'This action cannot be undone. Do you want to continue?'
                       );
                       
@@ -5453,7 +5475,7 @@ export default function RequestViewPage() {
                           const result = await response.json();
                           toast({
                             title: "Type Changed Successfully",
-                            description: `Request type changed to ${result.newType}. Status updated to ${result.newStatus === 'for_approval' ? 'For Approval' : 'Open'}.`,
+                            description: `Request type changed from incident to service. Status updated to ${result.newStatus === 'for_approval' ? 'For Approval' : 'Open'}.`,
                             className: "bg-green-50 border-green-200 text-green-800"
                           });
                           
